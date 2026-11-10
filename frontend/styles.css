@@ -190,100 +190,51 @@ body.launcher-mode .content{padding:0;margin:0;max-width:none;min-height:100vh;d
  .breakdown-scope{width:100%;max-width:190px}
 }
 
-/* v1.4 — one drill-down traffic view; one navigation rail on every device. */
-.traffic-view{display:flex;flex-direction:column;gap:13px;min-width:0}
-.traffic-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px 20px;flex-wrap:wrap;margin:0 0 1px}
-.traffic-left{min-width:0;flex:1}.traffic-left h1{font-size:22px;line-height:1.15;letter-spacing:-.6px;margin:0 0 8px;font-weight:750}
-.drill-crumbs{display:flex;align-items:center;flex-wrap:wrap;gap:5px;color:var(--muted);font-size:11px;line-height:1.5}
-.drill-crumbs button{background:transparent;color:var(--muted);padding:2px 4px;border:0;border-radius:5px;font-size:inherit;max-width:220px;text-align:left}
-.drill-crumbs button:not(.current):hover{color:var(--aqua);background:var(--panel2)}
-.drill-crumbs button.current{color:var(--text);font-weight:650;cursor:default}
-.drill-crumbs>span{color:var(--dim);font-size:16px}
-.traffic-header-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
-.traffic-header-actions .segmented{padding:3px;border-radius:8px}
-.traffic-header-actions .segmented button{font-size:11px;padding:8px 11px;font-weight:650}
-.traffic-header-actions #zoomBack{height:35px}
-.traffic-options{border:1px solid var(--line);background:var(--panel);border-radius:9px;overflow:hidden;font-size:12px}
-.traffic-options>summary{padding:9px 13px;display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;color:var(--muted);font-weight:650;width:max-content;max-width:100%}
-.traffic-options>summary:hover,.traffic-options[open]>summary{color:var(--text)}
-.traffic-options>summary::-webkit-details-marker{display:none}
-.traffic-options[open]>summary{width:100%;border-bottom:1px solid var(--line)}
-.traffic-options-body{padding:13px;display:flex;flex-direction:column;gap:11px}
-.traffic-options .range-picker{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
-.traffic-options .range-choice{padding:7px 11px;border:1px solid var(--line);background:var(--panel2);color:var(--muted);border-radius:7px;font-size:11px}
-.traffic-options .range-choice.selected{background:var(--panel3);color:var(--aqua);border-color:var(--line2)}
-.traffic-options .range-inputs{display:flex;flex-wrap:wrap;gap:9px;align-items:flex-end}
-.traffic-options .range-inputs .field{flex:0 1 195px}.traffic-options .field input,.traffic-options .field select{min-height:37px;padding:7px 9px}
-.traffic-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
-.traffic-filter-actions{display:flex;gap:8px;align-items:center;justify-content:flex-start}
-.traffic-options .field>span{font-size:10px;margin-bottom:5px}
-.traffic-view .main-chart-panel{margin:0;padding:17px;border-radius:10px}
-.traffic-view .main-chart-head{align-items:center}.traffic-view .main-chart-head h2{font-size:15px}
-.traffic-selected{font-size:11px;color:var(--muted);max-width:800px;line-height:1.45;margin-top:4px}
-.traffic-view .chart-toggle{border:0;padding:0}.traffic-view .chart-toggle button.on{background:var(--panel3);border-color:var(--aqua);color:var(--aqua)}
-.traffic-view .chart-foot{border-top:1px solid var(--line);padding-top:8px;font-size:10px}
-.traffic-view .compact-stats{margin:13px 0 11px;padding:10px 0}
-.traffic-view .mini-stat strong{font-size:19px}
-.traffic-view .chart-hit{cursor:pointer}
-.traffic-view .chart-frame .chart-shell{min-height:220px}
-.traffic-view .chart-frame .chart-shell svg{max-height:none}
-.breakdown-section{border:1px solid var(--line);background:var(--panel);border-radius:10px;min-width:0;padding:15px}
-.breakdown-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
-.breakdown-heading h2{font-size:14px;font-weight:700;letter-spacing:-.1px;margin:0}
-.breakdown-section .breakdown-grid{gap:10px}
-.breakdown-section .breakdown-grid .panel{background:var(--panel2);border-radius:8px;padding:13px;min-height:140px}
-.breakdown-section .panel-title{font-size:12px}
-.breakdown-section .panel-top{margin-bottom:7px}
-.traffic-view .pattern-panel{border-radius:10px;padding:15px;min-width:0}
-.traffic-view .pattern-panel .panel-top{margin-bottom:9px}
-.traffic-view .pattern-subgrid{grid-template-columns:1fr 1fr;gap:11px}
-.traffic-view .pattern-subgrid .panel{border-radius:10px;padding:13px;min-width:0}
-.traffic-view .pattern-subgrid h3{font-size:12px;margin:0 0 7px}
-.compact-heatmap{grid-template-columns:39px repeat(24,minmax(23px,1fr));min-width:655px;gap:3px;align-items:center}
-.compact-heatmap .heat-cell{height:20px;min-height:20px;aspect-ratio:auto;border-radius:3px;display:block}
-.compact-heatmap .heat-label{font-size:10px;text-align:center}
-.compact-heatmap .heat-day{font-size:10px;font-weight:700;padding-left:2px}
-.traffic-view .heat-outer{overflow-x:auto;max-width:100%;padding:2px 0;scrollbar-color:var(--line2) transparent}
-.traffic-view .heat-legend{margin-top:7px;font-size:10px;gap:6px;justify-content:flex-end}
-.traffic-view .heat-legend i{width:12px;height:11px;border-radius:2px}
-.traffic-view .pattern-bars{height:175px;gap:5px}
-.traffic-view .pattern-bar{max-width:55px}
-.traffic-view .chart-frame .chart-scroll{scrollbar-color:var(--line2) transparent}
-@media(max-width:1100px){.traffic-header-actions{width:100%}.traffic-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:980px){
- .sidebar,.overlay,.mobile-menu{display:none!important}
- .layout{display:block!important;grid-template-columns:minmax(0,1fr)!important}
- .mobile-tabbar{display:flex!important;position:fixed;bottom:0;left:0;right:0;z-index:20;padding:7px 6px calc(7px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--panel);justify-content:space-around;gap:1px}
- .mobile-tabbar a{display:flex;flex:1;align-items:center;flex-direction:column;gap:3px;font-size:10px;color:var(--muted);padding:5px 1px;min-width:0}
- .mobile-tabbar a.active{color:var(--aqua)}.mobile-tabbar svg{width:20px;height:20px}
- .content{padding-bottom:calc(95px + env(safe-area-inset-bottom))}
- .topbar{height:49px;padding:0 17px}.top-back,.top-separator{display:none}
- .topbar-left:before{content:'Airspace';font-size:12px;color:var(--muted);font-weight:700}
- .topbar-left strong{display:none}
-}
+/* v1.5 — v1.3 zoom restored, screen-width charts and one top navigation. */
+.layout{display:block!important;min-height:100vh}
+.sidebar,.mobile-tabbar,.overlay,.mobile-menu{display:none!important}
+.workspace{min-width:0;width:100%}
+.streamlined-topbar{height:55px;padding:0 clamp(11px,2.8vw,32px);gap:8px;position:sticky;top:0;z-index:20;background:var(--bg)}
+.streamlined-topbar .topbar-left{gap:7px;min-width:0}
+.top-icon-link{display:inline-flex;justify-content:center;align-items:center;width:35px;height:35px;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:9px;flex-shrink:0}
+.top-icon-link:hover,.top-settings.active{border-color:var(--aqua);color:var(--aqua)}
+.top-nav-link{display:inline-flex;align-items:center;justify-content:center;padding:9px 12px;border-radius:8px;font-size:12px;color:var(--muted);font-weight:620;white-space:nowrap}
+.top-nav-link.active{background:var(--panel2);color:var(--aqua)}
+.top-nav-link:hover{color:var(--text)}
+.sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.content{max-width:1460px;margin:auto;padding:17px clamp(12px,2.8vw,34px) 42px}
+.chart-period{font-size:12px;font-weight:650;color:var(--aqua);margin:0 0 5px}
+.chart-scroll{width:100%;max-width:100%;overflow:visible!important;touch-action:pan-y}
+.chart-shell{overflow:visible;min-height:0}
+.chart-shell svg{display:block;width:100%;min-width:0!important;height:auto;max-height:none!important;touch-action:pan-y;user-select:none}
+.chart-axis{font-size:15px}
+.chart-axis.hour-axis{font-size:14px}
+.chart-hit{touch-action:pan-y}
+.chart-frame{min-height:0}
+.pattern-subgrid{min-width:0}
+.pattern-subgrid .panel{min-width:0}
+.heat-outer{overflow:visible!important;width:100%;min-width:0}
+.heatmap{min-width:0!important;width:100%;grid-template-columns:27px repeat(24,minmax(0,1fr));gap:2px;overflow:visible}
+.heat-cell{min-height:6px;border-radius:2px}
+.heat-label{font-size:8px}
+.heat-day{font-size:9px}
+.breakdown-head{display:flex;justify-content:flex-end;padding:10px 13px 0}
 @media(max-width:700px){
- .content{padding:13px 12px calc(95px + env(safe-area-inset-bottom))}
- .topbar{height:45px;padding:0 12px}
- .traffic-header{gap:10px}.traffic-left h1{font-size:20px;margin-bottom:5px}
- .traffic-header-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}
- .traffic-header-actions .segmented{width:100%;min-width:0}
- .traffic-header-actions .segmented button{padding:7px 4px;font-size:10px;white-space:nowrap}
- .traffic-header-actions #zoomBack{padding:7px 8px;font-size:10px;height:32px}
- .drill-crumbs{font-size:11px;gap:3px}.drill-crumbs button{max-width:150px}
- .traffic-view .main-chart-panel{padding:11px}
- .traffic-view .main-chart-head h2{font-size:14px}
- .traffic-view .main-chart-head{gap:7px}.traffic-view .chart-tools{width:auto}
- .traffic-view .compact-stats{grid-template-columns:repeat(2,minmax(0,1fr));margin:10px 0 4px}
- .traffic-view .mini-stat{padding:8px 8px;border-bottom:1px solid var(--line)}
- .traffic-view .mini-stat:nth-child(2n){border-right:0;padding-left:10px}
- .traffic-view .mini-stat:nth-child(n+3){border-bottom:0}
- .traffic-view .mini-stat strong{font-size:18px}
- .traffic-view .pattern-subgrid{grid-template-columns:1fr}
- .breakdown-section{padding:11px}.breakdown-section .breakdown-grid{grid-template-columns:1fr}
- .breakdown-section .breakdown-grid .panel{min-height:0}
- .traffic-view .pattern-panel{padding:11px}.traffic-view .heat-legend{justify-content:flex-start}
- .traffic-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
- .traffic-options-body{padding:10px}.traffic-options .range-inputs .field{flex:1 1 120px}
- .mobile-tabbar a{font-size:9px}
+ .content{padding:13px 10px 24px}
+ .topbar{height:50px;padding:0 10px}
+ .top-nav-link{padding:8px 10px;font-size:11px}
+ .top-icon-link{width:32px;height:32px}
+ .chart-period{font-size:11px}
+ .chart-axis{font-size:16px}
+ .chart-axis.hour-axis{font-size:15px}
+ .chart-shell svg{min-width:0!important}
+ .chart-shell{min-height:0}
+ .chart-frame{min-height:0}
+ .pattern-subgrid{display:grid;grid-template-columns:minmax(0,1fr)!important}
+ .heatmap{grid-template-columns:24px repeat(24,minmax(0,1fr));gap:1.5px}
+ .heat-label{font-size:7px}
+ .heat-cell{min-height:5px}
+ .toast-wrap{bottom:16px}
+ .main-chart-panel{padding:10px}
+ .main-chart-head{gap:9px}
 }
-@media(max-width:375px){.traffic-filter-grid{grid-template-columns:1fr}.traffic-header-actions .segmented button{font-size:9px}}

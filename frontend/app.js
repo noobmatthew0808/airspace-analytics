@@ -11,7 +11,7 @@ const short=(t,n=35)=>String(t??'—').length>n?String(t).slice(0,n-1)+'…':Str
 const loading=(label='Analysing your receiver history…')=>`<div class="loading"><span class="spinner"></span>${esc(label)}</div>`;
 const safeError=e=>`<div class="notice error-note"><strong>Couldn't load this view.</strong> ${esc(e.message||e)} <a class="btn small" href="#home">Return home</a></div>`;
 const key='airspace-analytics-prefs-v1';
-const defaults={metric:'flights',period:'all',bucket:'auto',category:'all',type:'all',airline:'all',icao:'all',amount:7,unit:'days',start:'',end:'',chart:'bar',theme:'dark',breakdownViz:'bars',operatorScope:'airline'};
+const defaults={metric:'flights',period:'rolling',bucket:'auto',category:'all',type:'all',airline:'all',icao:'all',amount:7,unit:'days',start:'',end:'',chart:'line',theme:'dark',comparison:'previous',offset:1,other_start:'',other_end:'',typeViz:'bars',airlineViz:'bars',operatorScope:'airline'};
 const state={...defaults,...readPrefs()};
 // Convert old preset preferences to the new single duration picker. A preset
 // never reappears as a confusing legacy dropdown after an update.
@@ -24,6 +24,7 @@ if(!['rolling','custom','all'].includes(state.period)){
 
 function readPrefs(){try {return JSON.parse(localStorage.getItem(key))||{}}catch{return {}}}
 function persist(){localStorage.setItem(key,JSON.stringify(state))}
+const savedViewsKey='airspace-analytics-views-v1';
 // A previously paired browser stays paired across reloads without showing a
 // password box each time. The updater's server-side token check remains active.
 const pairedUpdaterKey='airspace-updater-pairing';
@@ -76,31 +77,30 @@ function icon(name,size=18){
  };
  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]||paths.grid}</svg>`;
 }
-const pages=[['explore','Traffic','chart'],['aircraft','Aircraft','plane'],['database','Database','database'],['settings','Settings','settings']];
+const pages=[['explore','Traffic','chart'],['patterns','Patterns','activity'],['database','Database','database'],['settings','Settings','settings']];
 const names={home:'Launcher',...Object.fromEntries(pages.map(x=>[x[0],x[1]]))};
 let currentPage='home',currentChart='line',currentAnalytics=null,latestOverview=null,healthInfo=null,activeTimer=null,renderId=0;
 const zoomHistory=[];
-let drill={level:'year',mode:'all',start:'',end:'',amount:7,unit:'days',trail:[]};
-let firstRecordedLocal=null;
 function setTheme(theme){document.documentElement.dataset.theme=theme||'dark';state.theme=theme;persist()}
 setTheme(state.theme);
 
 function shell(){
  $('#app').innerHTML=`<div class="overlay" id="overlay"></div><div class="layout">
-   <aside class="sidebar" id="sidebar">
-     <a class="brand" href="/" aria-label="Open launcher"><span class="logo">${icon('radar',21)}</span><span><strong>Airspace</strong><small>Analytics</small></span></a>
-     <nav class="nav-list" aria-label="Analytics sections">${pages.map(nav).join('')}</nav>
-     
-     <div class="sidebar-bottom"><div class="sidebar-status"><div class="status-row"><i class="dot" id="sidebarDot"></i><strong class="status-label" id="sidebarTitle">Checking data source</strong></div><p id="sidebarDetail">Aerodrome</p></div><div class="version"><span class="versionValue">v1.4.0</span> · Local database</div></div>
-   </aside>
-   <div class="workspace"><header class="topbar"><div class="topbar-left"><button class="icon-button mobile-menu" id="mobileMenu" aria-label="Open menu">${icon('menu')}</button><a class="top-back" href="/">${icon('grid',16)} <span>Launcher</span></a><span class="top-separator">/</span><strong id="topTitle">Explore</strong></div><div class="top-actions"><span class="top-live"><i class="dot" id="topDot"></i><span id="topStatus">Connecting</span></span><button class="icon-button" id="themeButton" title="Toggle dark/light mode" aria-label="Toggle theme">${icon('sun')}</button></div></header>
-   <main class="content" id="page" aria-live="polite"></main></div>
- </div>
- <nav class="mobile-tabbar" id="mobileTabs"><a href="/" data-page="home">${icon('grid',20)}<span>Home</span></a>${[['explore','Traffic','chart'],['aircraft','Aircraft','plane'],['database','Database','database'],['settings','Settings','settings']].map(([id,label,ic])=>`<a href="#${id}" data-page="${id}">${icon(ic,20)}<span>${label}</span></a>`).join('')}</nav>
- <div class="toast-wrap" id="toasts" role="status" aria-live="polite"></div>`;
- $('#mobileMenu').onclick=()=>setMenu(true);
+   <aside class="sidebar" id="sidebar" aria-hidden="true"><span id="sidebarDot"></span><span id="sidebarTitle"></span><span id="sidebarDetail"></span><span class="versionValue"></span></aside>
+   <div class="workspace"><header class="topbar streamlined-topbar">
+     <div class="topbar-left">
+       <a class="top-icon-link" href="/" title="Home launcher" aria-label="Home">${icon('grid',19)}</a>
+       <a class="top-nav-link" href="/analytics#explore" data-page="explore">Traffic</a>
+       <a class="top-nav-link" href="/analytics#patterns" data-page="patterns">Patterns</a>
+       <strong id="topTitle" class="sr-only">Traffic</strong>
+     </div>
+     <div class="top-actions">
+       <span class="sr-only"><span id="topDot"></span><span id="topStatus"></span></span>
+       <a class="top-icon-link top-settings" href="/analytics#settings" data-page="settings" title="Settings" aria-label="Settings">${icon('settings',20)}</a>
+     </div>
+   </header><main class="content" id="page" aria-live="polite"></main></div>
+ </div><div class="toast-wrap" id="toasts" role="status" aria-live="polite"></div>`;
  $('#overlay').onclick=()=>setMenu(false);
- $('#themeButton').onclick=()=>setTheme(state.theme==='dark'?'light':'dark');
 }
 function nav([id,title,ic]){return `<a class="nav-link" href="#${id}" data-page="${id}">${icon(ic)}<span>${title}</span></a>`}
 function setMenu(open){$('#sidebar').classList.toggle('open',open);$('#overlay').classList.toggle('show',open)}
@@ -120,68 +120,90 @@ function hrefFor(link){const host=location.hostname;const proto=location.protoco
 }
 async function renderHome(){
  $('#page').innerHTML=`<div class="launcher-screen"><header class="launcher-header"><div class="launcher-brand"><span class="launcher-brand-icon">${icon('radar',24)}</span><div><h1>Airspace</h1><span>Application launcher</span></div></div><a class="launcher-settings" href="/analytics#settings" title="Edit links in Settings" aria-label="Settings">${icon('settings',19)}</a></header>
- <div class="launcher-list"><a class="launcher-link launcher-primary" href="/analytics#explore"><span class="launcher-link-icon">${icon('chart',20)}</span><span class="launcher-link-text"><strong>Airspace Analytics</strong><small>Aircraft history and patterns</small></span><span class="launcher-link-arrow">${icon('chevron',18)}</span></a>${links()}</div>
+ <div class="launcher-list"><a class="launcher-link launcher-primary" href="/analytics#explore"><span class="launcher-link-icon">${icon('chart',20)}</span><span class="launcher-link-text"><strong>Airspace Analytics</strong><small>Traffic, trends and comparisons</small></span><span class="launcher-link-arrow">${icon('chevron',18)}</span></a>${links()}</div>
  <footer class="launcher-footer"><span><i class="dot" id="launcherDot"></i><span id="launcherStatus">Checking Aerodrome</span></span><a href="/analytics#settings">Manage shortcuts</a></footer></div>`;
  try{const h=await api('/api/health');if(currentPage!=='home')return;const dot=$('#launcherDot');if(dot)dot.classList.toggle('good',h.fresh===true);$('#launcherStatus').textContent=h.fresh?'Aerodrome connected':h.ok?'Aerodrome history available':'Database unavailable';setStatus(h)}catch{if($('#launcherStatus'))$('#launcherStatus').textContent='Status unavailable'}
 }
+function queryArgs(groupOverride){return {period:state.period,metric:state.metric,bucket:groupOverride||state.bucket,
+ category:state.category,type:state.type,airline:state.airline,icao:state.icao,
+ amount:state.amount,unit:state.unit,start:state.start,end:state.end}}
 function field(label,element){return `<label class="field"><span>${esc(label)}</span>${element}</label>`}
-
-const opts=(options,chosen)=>options.map(([value,label])=>`<option value="${esc(value)}" ${value===chosen?'selected':''}>${esc(label)}</option>`).join('');
-function metrics(){return `<div class="segmented" role="group" aria-label="Measurement">${[['flights','Estimated visits'],['aircraft','Aircraft'],['observations','Observations']].map(([k,v])=>`<button data-metric="${k}" class="${state.metric===k?'on':''}" type="button">${v}</button>`).join('')}</div>`}
-function initialDates(){const now=new Date(),previous=new Date(now.getTime()-7*86400000);return [ukDatetime(previous.toISOString()),ukDatetime(now.toISOString())]}
-function rangeMode(){return ['rolling','custom','all'].includes(drill.mode)?drill.mode:'all'}
-function queryArgs(){return {period:drill.mode,bucket:drill.level,metric:state.metric,category:state.category,type:state.type,airline:state.airline,icao:state.icao,amount:drill.amount,unit:drill.unit,start:drill.start,end:drill.end}}
-function rangeControls(){
- const mode=rangeMode(),[fstart,fend]=initialDates();
- return `<details class="traffic-options" id="trafficOptions"><summary>${icon('settings',15)} Range & filters</summary><div class="traffic-options-body">
- <div class="range-picker" role="group" aria-label="Time range">
- ${[['all','All history'],['rolling','Last…'],['custom','From / to']].map(([k,v])=>`<button type="button" data-range-mode="${k}" class="range-choice ${mode===k?'selected':''}">${v}</button>`).join('')}
- </div>
- <div class="range-inputs ${mode==='rolling'?'':'hidden'}" id="rollingBox">
- ${field('Number',`<input type="number" inputmode="numeric" min="1" max="100000" id="amount" value="${esc(drill.amount)}">`)}
- ${field('Unit',`<select id="unit">${opts([['minutes','Minutes'],['hours','Hours'],['days','Days'],['weeks','Weeks'],['months','Months'],['years','Years']],drill.unit)}</select>`)}
- </div>
- <div class="range-inputs ${mode==='custom'?'':'hidden'}" id="customBox">
- ${field('From · UK time',`<input type="datetime-local" id="customStart" value="${esc(drill.start||fstart)}">`)}
- ${field('To · UK time',`<input type="datetime-local" id="customEnd" value="${esc(drill.end||fend)}">`)}
- </div>
- <div class="traffic-filter-grid">
- ${field('Aviation',`<select id="category">${opts([['all','All aviation'],['commercial','Commercial'],['general_aviation','General aviation'],['military','Military'],['helicopter','Helicopters'],['unknown','Unknown']],state.category)}</select>`)}
- ${field('Aircraft type',`<select id="aircraftType"><option value="all">All types</option></select>`)}
- ${field('Airline / operator',`<select id="airline"><option value="all">All operators</option></select>`)}
- ${field('ICAO',`<input id="icao" spellcheck="false" placeholder="All aircraft" value="${esc(state.icao==='all'?'':state.icao)}" maxlength="12">`)}
- </div><div class="traffic-filter-actions"><button class="btn primary" type="button" id="trafficApply">Apply</button><button class="btn small" type="button" id="clearFilters">Clear filters</button></div>
- </div></details>`;
+const groups=[['auto','Automatic'],['hour','Hourly'],['day','Daily'],['week','Weekly'],['month','Monthly'],['year','Yearly'],['weekday','Average weekday'],['hour_of_day','Average hour'],['month_of_year','Average month']];
+const opts=(options,chosen)=>options.map(([val,text])=>`<option value="${esc(val)}" ${chosen===val?'selected':''}>${esc(text)}</option>`).join('');
+function metrics(){return `<div class="segmented" role="group" aria-label="Measurement">${[['flights','Visits'],['aircraft','Aircraft'],['observations','Samples']].map(([k,v])=>`<button data-metric="${k}" class="${state.metric===k?'on':''}" type="button">${v}</button>`).join('')}</div>`}
+function rangeMode(){return ['rolling','custom','all'].includes(state.period)?state.period:'rolling'}
+function initialDates(){
+ const now=new Date();const prev=new Date(now.getTime()-7*86400000);
+ return [ukDatetime(prev.toISOString()),ukDatetime(now.toISOString())];
 }
-function nextRootLevel(mode,amount,unit,start,end){
- if(mode==='all')return 'year';
- let seconds=86400*365;
- if(mode==='rolling')seconds=amount*({minutes:60,hours:3600,days:86400,weeks:604800,months:2629800,years:31557600}[unit]||86400);
- if(mode==='custom')seconds=(Date.parse(end+':00Z')-Date.parse(start+':00Z'))/1000;
- if(seconds<=72*3600)return 'hour';
- if(seconds<=90*86400)return 'day';
- if(seconds<=3*365*86400)return 'month';
- return 'year';
+function controls(extra=false){
+ const mode=rangeMode(),[fallbackStart,fallbackEnd]=initialDates();
+ return `<div class="control-card compact-controls">
+  <div class="metric-toolbar"><div class="metric-toolbar-left">${metrics()}</div></div>
+  <div class="range-layout">
+   <div class="range-picker" role="group" aria-label="Time period">
+    <button class="range-choice ${mode==='rolling'?'selected':''}" type="button" data-range-mode="rolling">Last</button>
+    <button class="range-choice ${mode==='custom'?'selected':''}" type="button" data-range-mode="custom">Dates</button>
+    <button class="range-choice ${mode==='all'?'selected':''}" type="button" data-range-mode="all">All time</button>
+   </div>
+   <input type="hidden" id="period" value="${esc(mode)}">
+   <div class="range-inputs ${mode==='rolling'?'':'hidden'}" id="rollingBox">
+    ${field('Duration',`<input type="number" inputmode="numeric" id="amount" min="1" max="100000" value="${esc(state.amount)}" aria-label="Number of units">`)}
+    ${field('Unit',`<select id="unit">${opts([['minutes','Minutes'],['hours','Hours'],['days','Days'],['weeks','Weeks'],['months','Months'],['years','Years']],state.unit)}</select>`)}
+   </div>
+   <div class="range-inputs date-inputs ${mode==='custom'?'':'hidden'}" id="customBox">
+    ${field('From · UK time',`<input type="datetime-local" id="customStart" value="${esc(state.start||fallbackStart)}">`)}
+    ${field('To · UK time',`<input type="datetime-local" id="customEnd" value="${esc(state.end||fallbackEnd)}">`)}
+   </div>
+   <div class="range-group">${field('Group by',`<select id="bucket">${opts(groups,state.bucket)}</select>`)}</div>
+   <button class="btn primary compact-apply" id="applyFilters" type="button">Show</button>
+  </div>
+  <details class="advanced-panel" id="advancedPanel" ${state.category!=='all'||state.type!=='all'||state.airline!=='all'||state.icao!=='all'?'open':''}><summary>${icon('layers',16)} Filters ${[state.category,state.type,state.airline,state.icao].filter(x=>x!=='all').length?'<span class="filter-dot">Active</span>':''}</summary><div class="advanced-grid">
+   ${field('Aviation',`<select id="category">${opts([['all','All aviation'],['commercial','Commercial'],['general_aviation','General aviation'],['military','Military'],['helicopter','Helicopters'],['unknown','Unknown']],state.category)}</select>`)}
+   ${field('Aircraft type',`<select id="aircraftType"><option value="all">All types</option></select>`)}
+   ${field('Airline / operator',`<select id="airline"><option value="all">All operators</option></select>`)}
+   ${field('ICAO address',`<input id="icao" placeholder="All aircraft" value="${esc(state.icao==='all'?'':state.icao)}" spellcheck="false" maxlength="12">`)}
+   <button class="btn" id="resetFilters" type="button">Clear filters</button>
+  </div></details>
+  ${extra?'<div class="compact-save"><button class="btn small" id="saveView" type="button">'+icon('bookmark',15)+' Save view</button></div>':''}
+ </div>`;
 }
-function bindRangeControls(){
+function collectControls(){
+ state.period=$('#period')?.value||state.period;
+ state.bucket=$('#bucket')?.value||state.bucket;
+ state.category=$('#category')?.value||state.category;
+ state.amount=Number($('#amount')?.value||state.amount);
+ state.unit=$('#unit')?.value||state.unit;
+ state.start=$('#customStart')?.value||state.start;
+ state.end=$('#customEnd')?.value||state.end;
+ state.type=$('#aircraftType')?.value||state.type;
+ state.airline=$('#airline')?.value||state.airline;
+ state.icao=($('#icao')?.value||'').trim().toLowerCase()||'all';
+ persist();
+}
+function initControls(refresh,extra=false){
+ $$('[data-metric]').forEach(b=>b.onclick=()=>{collectControls();state.metric=b.dataset.metric;persist();refresh()});
  $$('[data-range-mode]').forEach(b=>b.onclick=()=>{
-  $$('[data-range-mode]').forEach(el=>el.classList.toggle('selected',el===b));
-  $('#rollingBox').classList.toggle('hidden',b.dataset.rangeMode!=='rolling');
-  $('#customBox').classList.toggle('hidden',b.dataset.rangeMode!=='custom');
+   collectControls();state.period=b.dataset.rangeMode;
+   const [start,end]=initialDates();
+   if(state.period==='custom'){state.start=state.start||start;state.end=state.end||end;}
+   persist();refresh();
  });
- $('#trafficApply').onclick=()=>{
-  const mode=$('[data-range-mode].selected')?.dataset.rangeMode||'all';
-  const amount=Number($('#amount').value),unit=$('#unit').value;
-  const start=$('#customStart').value,end=$('#customEnd').value;
-  if(mode==='rolling'&&(!Number.isInteger(amount)||amount<1||amount>100000)){toast('Enter a valid duration','Use a whole number between 1 and 100000.',true);return}
-  if(mode==='custom'&&(!start||!end||Date.parse(start+':00Z')>=Date.parse(end+':00Z'))){toast('Check the dates','End must be later than start.',true);return}
-  state.category=$('#category').value;state.type=$('#aircraftType').value;state.airline=$('#airline').value;
-  state.icao=$('#icao').value.trim().toLowerCase()||'all';persist();
-  zoomHistory.length=0;
-  drill={level:nextRootLevel(mode,amount,unit,start,end),mode,start:mode==='custom'?start:'',end:mode==='custom'?end:'',amount,unit,trail:[]};
-  renderExplore();
+ $('#bucket').onchange=()=>{collectControls();refresh()};
+ $('#amount').onchange=()=>{collectControls();refresh()};
+ $('#unit').onchange=()=>{collectControls();refresh()};
+ $$('#customStart,#customEnd').forEach(x=>x.onchange=()=>{collectControls();if(state.start&&state.end)refresh()});
+ $('#applyFilters').onclick=()=>{collectControls();refresh()};
+ $('#resetFilters').onclick=()=>{
+   const metric=state.metric,period=state.period,amount=state.amount,unit=state.unit,start=state.start,end=state.end,bucket=state.bucket;
+   Object.assign(state,{...defaults,metric,period,amount,unit,start,end,bucket});zoomHistory.length=0;persist();refresh()
  };
- $('#clearFilters').onclick=()=>{state.category='all';state.type='all';state.airline='all';state.icao='all';persist();renderExplore()};
+ if(extra&&$('#saveView'))$('#saveView').onclick=()=>{
+  collectControls();const name=prompt('Name this view:');if(!name)return;
+  let views=[];try{views=JSON.parse(localStorage.getItem(savedViewsKey))||[]}catch{}
+  views=[...views.filter(v=>v.name!==name),{name:name.slice(0,50),query:queryArgs(),saved:Date.now()}].slice(-20);
+  localStorage.setItem(savedViewsKey,JSON.stringify(views));toast('View saved');renderSavedViews();
+ };
 }
 let cachedGlobalFilters=null;
 async function populateFilters(){
@@ -198,190 +220,134 @@ function fillFilterOptions(result){
  if(state.airline!=='all'&&!airlines.some(x=>x[0]===state.airline))airlines.push([state.airline,state.airline]);
  type.innerHTML=opts(types,state.type);air.innerHTML=opts(airlines,state.airline);
 }
-function hourTick(s){
- const value=String(s.key||'');
- if(/^\d{4}-\d{2}-\d{2}T\d{2}:00Z$/.test(value)){
-   return new Date(value.slice(0,-1)+':00Z').toLocaleTimeString('en-GB',{timeZone:'Europe/London',hour:'2-digit',minute:'2-digit',hour12:false});
- }
- return String(s.label).match(/\b\d{2}:\d{2}\b/)?.[0]||s.label;
+function renderSavedViews(){const place=$('#savedViews');if(!place)return;let views=[];try{views=JSON.parse(localStorage.getItem(savedViewsKey))||[]}catch{}
+ place.innerHTML=views.length?views.map((v,i)=>`<button class="chip aqua" data-view="${i}">${icon('bookmark',12)} ${esc(v.name)}</button>`).join(' '):'<span class="muted tiny">No saved views yet. Save your favourite filters and time groupings.</span>';
+ $$('[data-view]',place).forEach(b=>b.onclick=()=>{Object.assign(state,views[+b.dataset.view].query);persist();renderExplore()});
 }
-function shortAxisLabel(s,kind,hourAxis){
- if(hourAxis)return hourTick(s);
- const k=String(s.key||'');
- if(kind==='day'&&/^\d{4}-\d{2}-\d{2}$/.test(k))return `${Number(k.slice(8))} ${new Date(k+'T12:00:00Z').toLocaleString('en-GB',{month:'short',timeZone:'UTC'})}`;
- if(kind==='month'&&/^\d{4}-\d{2}$/.test(k))return new Date(k+'-12T12:00:00Z').toLocaleString('en-GB',{month:'short',timeZone:'UTC'});
- if(kind==='week'&&/^\d{4}-\d{2}-\d{2}$/.test(k))return new Date(k+'T12:00:00Z').toLocaleString('en-GB',{day:'numeric',month:'short',timeZone:'UTC'});
- return short(s.label,14);
-}
-function renderChart(series,kind='line',{height=315,mini=false,color='aqua',hourAxis=false,bucket=''}={}){
- if(!series?.length||series.every(x=>x.value===null||x.value===undefined||!Number(x.value)))return `<div class="chart-empty">No observations in this period. Try another range.</div>`;
- const n=series.length;const width=hourAxis?Math.max(720, n*47+90):Math.max(mini?630:730,Math.min(20000,(kind==='bar'?n*34:n*24)+80));
- const W=width,H=height,L=mini?45:56,R=18,T=18,B=mini?36:46;
- const plotW=W-L-R,plotH=H-T-B, max=Math.max(1,...series.map(x=>Number(x.value)||0));
- const x=i=>L+(n===1?plotW/2:plotW*i/(n-1));
- const y=v=>T+plotH-(Number(v||0)/max)*(plotH-10);
+function renderChart(series,kind='line',{height=305,mini=false,color='aqua',everyHour=false}={}){
+ if(!series?.length||series.every(s=>s.value===null||s.value===undefined))return `<div class="chart-empty">No observations in this period.</div>`;
+ const n=series.length,W=720,H=height,L=55,R=14,T=19,B=49;
+ const plotW=W-L-R,plotH=H-T-B;
+ const max=Math.max(1,...series.map(s=>Number(s.value)||0));
+ const slot=plotW/n;
+ const x=i=>L+slot*(i+.5);
+ const y=value=>T+plotH-(Math.max(0,Number(value)||0)/max)*(plotH-9);
+ const stroke=({aqua:'var(--aqua)',blue:'var(--blue)',pink:'var(--pink)'})[color]||'var(--aqua)';
  const ticks=Array.from({length:5},(_,i)=>max*i/4);
- const palette={aqua:'var(--aqua)',blue:'var(--blue)',pink:'var(--pink)'};
- const stroke=palette[color]||palette.aqua;
  let shape='';
  if(kind==='bar'){
-   const barWidth=Math.max(3,Math.min(33,plotW/Math.max(1,n)*.72));
-   shape=series.map((s,i)=>s.value===null||s.value===undefined?'':`<rect class="chart-bar" data-index="${i}" x="${x(i)-barWidth/2}" y="${y(s.value)}" width="${barWidth}" height="${Math.max(0,T+plotH-y(s.value))}" rx="${Math.min(3,barWidth/4)}" style="fill:${stroke}"/>`).join('');
+   const bw=Math.max(1.2,Math.min(31,slot*.72));
+   shape=series.map((s,i)=>s.value==null?'':`<rect class="chart-bar" data-index="${i}" x="${x(i)-bw/2}" y="${y(s.value)}" width="${bw}" height="${Math.max(0,T+plotH-y(s.value))}" rx="${Math.min(2.8,bw/4)}" style="fill:${stroke}"/>`).join('');
  }else{
-   const coords=series.map((s,i)=>s.value===null||s.value===undefined?null:[x(i),y(s.value)]);
-   let inSegment=false;const path=coords.map(pt=>{if(!pt){inSegment=false;return ''}const command=inSegment?'L':'M';inSegment=true;return `${command}${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`}).join(' ');
-   shape=`<path class="chart-area" d="${path} L${x(n-1)} ${T+plotH} L${x(0)} ${T+plotH} Z"/><path class="chart-line" d="${path}" style="stroke:${stroke}"/>`;
-   if(n<80)shape+=coords.map((pt,i)=>pt?`<circle class="chart-point"  data-index="${i}" cx="${pt[0]}" cy="${pt[1]}" r="3.5" style="fill:${stroke}"/>`:'').join('');
+   const coords=series.map((s,i)=>s.value==null?null:[x(i),y(s.value)]);
+   let running=false;
+   const path=coords.map(pt=>{if(!pt){running=false;return ''}const command=running?'L':'M';running=true;return `${command}${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`}).join(' ');
+   shape=`<path class="chart-line" d="${path}" style="stroke:${stroke}"/>`;
+   if(n<=80)shape+=coords.map((pt,i)=>pt?`<circle class="chart-point" data-index="${i}" cx="${pt[0]}" cy="${pt[1]}" r="3.3" style="fill:${stroke}"/>`:'').join('');
  }
- const labels=hourAxis?n:Math.min(n,mini?6:(n<=32?n:10)),skip=Math.max(1,Math.ceil(n/labels));
- return `<div class="chart-shell"><div class="chart-scroll"><svg style="min-width:${hourAxis?W:Math.min(W,730)}px" viewBox="0 0 ${W} ${H}" role="img" aria-label="Interactive chart with ${n} time buckets">
-   <defs><linearGradient id="chartfade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#31dfc1" stop-opacity=".28"/><stop offset="1" stop-color="#31dfc1" stop-opacity="0"/></linearGradient></defs>
-   ${ticks.map(t=>`<line class="chart-gridline" x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}"/><text class="chart-axis" x="${L-9}" y="${y(t)+3}" text-anchor="end">${fmt(t,max<10?1:0)}</text>`).join('')}
-   ${series.map((s,i)=>i%skip===0||i===n-1?`<text class="chart-axis" text-anchor="middle" x="${x(i)}" y="${H-12}">${esc(mini?short(s.label,9):shortAxisLabel(s,bucket,hourAxis))}</text>`:'').join('')}
-   ${shape}${series.map((s,i)=>`<rect class="chart-hit" data-index="${i}" x="${Math.max(L,x(i)-plotW/Math.max(n,1)/2)}" y="${T}" width="${Math.max(5,plotW/Math.max(n,1))}" height="${plotH}"/>`).join('')}
-   </svg></div><div class="chart-tooltip hidden" role="status"></div></div>`;
+ const hourTick=s=>{const m=String(s.label).match(/(\d{1,2}):(\d{2})/);return m?m[1].padStart(2,'0'):String(s.label).slice(0,2)};
+ const everyTick=everyHour&&n<=25;
+ const labels=Math.min(n,mini?10:14),skip=everyTick?1:Math.max(1,Math.ceil(n/labels));
+ const axis=series.map((s,i)=>{
+   if(i%skip!==0&&i!==n-1)return '';
+   const text=everyHour?hourTick(s):short(s.label,11);
+   return `<text class="chart-axis ${everyHour?'hour-axis':''}" text-anchor="middle" x="${x(i)}" y="${H-15}">${esc(text)}</text>`;
+ }).join('');
+ return `<div class="chart-shell"><div class="chart-scroll"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Interactive traffic chart with ${n} intervals, scaled to screen width" preserveAspectRatio="xMidYMid meet">
+ ${ticks.map(t=>`<line class="chart-gridline" x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}"/><text class="chart-axis" x="${L-9}" y="${y(t)+4}" text-anchor="end">${fmt(t,0)}</text>`).join('')}
+ ${axis}${shape}
+ ${series.map((s,i)=>`<rect class="chart-hit" data-index="${i}" x="${L+slot*i}" y="${T}" width="${slot}" height="${plotH}"/>`).join('')}
+ </svg></div><div class="chart-tooltip hidden" role="status"></div></div>`;
 }
 function hookChart(container,series,group,drill=true){if(!container||!series)return;const tip=$('.chart-tooltip',container);const wrap=$('.chart-shell',container);if(!tip||!wrap)return;
  $$('.chart-hit',container).forEach(hit=>{
   const index=+hit.dataset.index;
   hit.addEventListener('pointermove',ev=>{
+    if(ev.pointerType==='touch')return;
     const s=series[index];tip.innerHTML=`${esc(s.label)}<strong>${s.value===null||s.value===undefined?'—':fmt(s.value,2)}</strong>${s.samples?`<span class="muted">${s.samples} occurrences</span>`:''}`;
     tip.classList.remove('hidden');const box=wrap.getBoundingClientRect();tip.style.left=Math.min(box.width-155,Math.max(0,ev.clientX-box.left+8))+'px';tip.style.top=Math.max(45,ev.clientY-box.top)+'px';
   });
   hit.addEventListener('pointerleave',()=>tip.classList.add('hidden'));
+  if(!drill)hit.addEventListener('click',()=>{
+    const s=series[index];
+    tip.innerHTML=`${esc(s.label)}<strong>${s.value==null?'—':fmt(s.value,2)}</strong>`;
+    tip.classList.remove('hidden');
+    const area=wrap.getBoundingClientRect(),point=hit.getBoundingClientRect();
+    tip.style.left=Math.max(0,Math.min(area.width-142,point.left-area.left))+'px';
+    tip.style.top=Math.max(42,point.top-area.top+25)+'px';
+  });
   if(drill&&['year','month','week','day','hour'].includes(group))hit.addEventListener('click',()=>drillInto(series[index],group));
  });
 }
 function ukDatetime(iso){const d=new Date(iso);return d.toLocaleString('sv-SE',{timeZone:'Europe/London'}).replace(' ','T').slice(0,16)}
 function drillInto(point,group){
- if(!['year','month','week','day'].includes(group))return;
- const key=String(point.key);let from,to,next,label;
- if(group==='year'){
-  from=`${key}-01-01T00:00`;to=`${Number(key)+1}-01-01T00:00`;next='month';label=key;
-  if(firstRecordedLocal&&from<firstRecordedLocal)from=firstRecordedLocal;
- }else if(group==='month'){
-  const [y,m]=key.split('-').map(Number);
-  from=`${key}-01T00:00`;to=m===12?`${y+1}-01-01T00:00`:`${y}-${String(m+1).padStart(2,'0')}-01T00:00`;
-  next='week';label=new Date(`${key}-12T12:00:00Z`).toLocaleDateString('en-GB',{month:'long',year:'numeric',timeZone:'UTC'});
- }else if(group==='week'){
-  const x=new Date(key+'T12:00:00Z'),z=new Date(x);
-  z.setUTCDate(z.getUTCDate()+7);from=key+'T00:00';to=z.toISOString().slice(0,10)+'T00:00';next='day';
-  const last=new Date(x);last.setUTCDate(last.getUTCDate()+6);
-  label=`${x.toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'UTC'})} – ${last.toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'UTC'})}`;
- }else{
-  const x=new Date(key+'T12:00:00Z');x.setUTCDate(x.getUTCDate()+1);
-  from=key+'T00:00';to=x.toISOString().slice(0,10)+'T00:00';next='hour';
-  label=new Date(key+'T12:00:00Z').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'long',year:'numeric',timeZone:'UTC'});
- }
- // A week straddling two months displays only the days within the selected month.
- // This keeps the chart, heatmap and averages tied to one exact period.
- if(drill.mode==='custom'&&drill.start&&drill.end){
-  if(from<drill.start)from=drill.start;
-  if(to>drill.end)to=drill.end;
- }
- if(from>=to)return;
- zoomHistory.push({...drill,trail:[...drill.trail]});
- drill={...drill,mode:'custom',level:next,start:from,end:to,trail:[...drill.trail,label]};
- renderExplore();window.scrollTo({top:0,behavior:'instant'});
+ const key=point.key;let from,to,next;
+ if(group==='year'){from=`${key}-01-01T00:00`;to=`${(+key+1)}-01-01T00:00`;next='month'}
+ else if(group==='month'){const [y,m]=key.split('-').map(Number);from=`${key}-01T00:00`;to=m===12?`${y+1}-01-01T00:00`:`${y}-${String(m+1).padStart(2,'0')}-01T00:00`;next='day'}
+ else if(group==='week'){from=key+'T00:00';const x=new Date(key+'T12:00:00Z');x.setUTCDate(x.getUTCDate()+7);to=x.toISOString().slice(0,10)+'T00:00';next='day'}
+ else if(group==='day'){from=key+'T00:00';const x=new Date(key+'T12:00:00Z');x.setUTCDate(x.getUTCDate()+1);to=x.toISOString().slice(0,10)+'T00:00';next='hour'}
+ else if(group==='hour'){from=ukDatetime(key);const x=new Date(Date.parse(key)+3600*1000);to=ukDatetime(x.toISOString());next='hour'}
+ if(from&&to){zoomHistory.push({period:state.period,start:state.start,end:state.end,bucket:state.bucket,amount:state.amount,unit:state.unit});state.period='custom';state.start=from;state.end=to;state.bucket=next;persist();location.hash='#explore';if(currentPage==='explore')renderExplore();toast('Drilled into '+point.label,'Click Reset to return to your normal time range.');}
 }
-function categoryName(n){return ({general_aviation:'General aviation',commercial:'Commercial',military:'Military',helicopter:'Helicopters',unknown:'Unknown',other:'Other'})[n]||n}
-function donut(items,pretty=false){if(!items?.length)return `<div class="empty">No breakdown available.</div>`;
+function donut(items){if(!items?.length)return `<div class="empty">No breakdown available.</div>`;
  const top=items.slice(0,5),total=items.reduce((a,x)=>a+Number(x.value),0);
  if(total<=0)return '<div class="empty">No classifications available for this selection.</div>';
  const colors=['#31dfc1','#6795ff','#cb8efa','#f1b970','#e37d92','#52647d'];let at=0;
  const portions=top.map((s,i)=>{const p=s.value/total*100;const segment=`${colors[i]} ${at.toFixed(2)}% ${(at+p).toFixed(2)}%`;at+=p;return segment});
  if(at<100)portions.push(`${colors[5]} ${at.toFixed(2)}% 100%`);
  return `<div class="donut-layout"><div class="donut" style="background:conic-gradient(${portions.join(',')})"><div class="donut-center"><strong>${fmt(total)}</strong><span>${esc(state.metric)}</span></div></div>
- <div class="legend">${top.map((x,i)=>`<div class="legend-row"><span title="${esc(x.name)}"><i class="legend-swatch" style="background:${colors[i]}"></i>${esc(short(pretty?categoryName(x.name):x.name,21))}</span><strong>${pct(x.value,total)}</strong></div>`).join('')}${top.length<items.length?`<div class="legend-row"><span><i class="legend-swatch" style="background:${colors[5]}"></i>Other</span><strong>${pct(total-top.reduce((a,x)=>a+x.value,0),total)}</strong></div>`:''}</div></div>`;
+ <div class="legend">${top.map((x,i)=>`<div class="legend-row"><span title="${esc(x.name)}"><i class="legend-swatch" style="background:${colors[i]}"></i>${esc(short(x.name,21))}</span><strong>${pct(x.value,total)}</strong></div>`).join('')}${top.length<items.length?`<div class="legend-row"><span><i class="legend-swatch" style="background:${colors[5]}"></i>Other</span><strong>${pct(total-top.reduce((a,x)=>a+x.value,0),total)}</strong></div>`:''}</div></div>`;
 }
 function breakdownList(items,field,color='aqua'){
  if(!items?.length)return '<div class="empty">No information available for this period.</div>';
  const top=items.slice(0,10),max=top[0].value||1;
- return `<div class="breakdown-list">${top.map(s=>`<div class="breakdown-row" title="Filter by ${esc(s.name)}" data-filter="${esc(field)}" data-value="${esc(s.name)}"><div><div class="breakdown-name">${esc(field==='category'?categoryName(s.name):s.name)}</div><div class="bar-track"><div class="bar-fill ${color==='aqua'?'':color}" style="width:${Math.max(0,s.value/max*100)}%"></div></div></div><strong class="breakdown-value">${fmt(s.value)}</strong></div>`).join('')}</div>`;
+ return `<div class="breakdown-list">${top.map(s=>`<div class="breakdown-row" title="Filter by ${esc(s.name)}" data-filter="${esc(field)}" data-value="${esc(s.name)}"><div><div class="breakdown-name">${esc(s.name)}</div><div class="bar-track"><div class="bar-fill ${color==='aqua'?'':color}" style="width:${Math.max(0,s.value/max*100)}%"></div></div></div><strong class="breakdown-value">${fmt(s.value)}</strong></div>`).join('')}</div>`;
 }
 function bindBreakdowns(){ $$('[data-filter]').forEach(el=>el.onclick=()=>{const f=el.dataset.filter,value=el.dataset.value;if(!['type','airline','category'].includes(f))return;if(f==='airline'&&value.toLowerCase().startsWith('unknown'))return;state[f]=value;persist();renderExplore();toast('Filter applied',`${value} — click Reset to clear.`)}) }
 function summaryFor(a){const unit={flights:'estimated visits',aircraft:'unique aircraft',observations:'observation records'}[a.metric];
  return `<div class="summary-row"><div class="summary-item"><span>Period total</span><strong>${fmt(a.total)}</strong></div><div class="summary-item"><span>${a.aggregation_label}</span><strong>${fmt(a.average,2)}</strong></div><div class="summary-item"><span>Highest bucket</span><strong>${fmt(a.peak,2)}</strong></div><div class="summary-item"><span>Distinct aircraft</span><strong>${fmt(a.unique_aircraft)}</strong></div></div>`;
 }
-function currentSelection(){
- const names={year:'Years',month:'Months',week:'Weeks',day:'Days',hour:'Hours'};
- return `${names[drill.level]} · ${drill.trail.length?drill.trail.join(' / '):drill.mode==='all'?'All recorded history':drill.mode==='rolling'?`Last ${drill.amount} ${drill.unit}`:'Custom dates'}`;
-}
-function drillCrumbs(){
- const labels=['All years',...drill.trail];
- return labels.map((label,i)=>`<button type="button" data-crumb="${i}" class="${i===labels.length-1?'current':''}">${esc(label)}</button>`).join('<span aria-hidden="true">›</span>');
-}
-function drawCurrentChart(){
- if(!currentAnalytics)return;
- const isHour=currentAnalytics.bucket==='hour';
- $('#exploreChart').innerHTML=renderChart(currentAnalytics.series,state.chart||'bar',{hourAxis:isHour,bucket:currentAnalytics.bucket});
- hookChart($('#exploreChart'),currentAnalytics.series,currentAnalytics.bucket);
- $('#lineSwitch').classList.toggle('on',state.chart==='line');
- $('#barSwitch').classList.toggle('on',state.chart!=='line');
-}
-async function renderExplore(){
- const rid=++renderId;currentAnalytics=null;
- $('#page').innerHTML=`<div class="traffic-view">
- <header class="traffic-header"><div class="traffic-left"><h1>Traffic</h1><nav class="drill-crumbs" id="drillCrumbs" aria-label="Selected dates">${drillCrumbs()}</nav></div>
- <div class="traffic-header-actions">${metrics()}<button class="btn small" id="zoomBack" ${zoomHistory.length?'':'disabled'} type="button">${icon('chevron',14)} Zoom out</button></div></header>
- ${rangeControls()}
- <section class="main-chart-panel"><div class="main-chart-head"><div><h2 id="chartLabel">Estimated flight visits</h2><div class="traffic-selected" id="chartMeta">${esc(currentSelection())}</div></div>
- <div class="chart-tools"><div class="chart-toggle"><button class="btn small" id="barSwitch" type="button">Bars</button><button class="btn small" id="lineSwitch" type="button">Line</button></div></div></div>
+async function renderExplore(){const rid=++renderId;currentAnalytics=null;
+ $('#page').innerHTML=title('','Traffic')+
+ `${controls(false)}
+ <section class="main-chart-panel"><div class="main-chart-head"><div><div id="chartPeriod" class="chart-period">Loading period…</div><h2 id="chartLabel">Traffic over time</h2><div id="chartMeta" class="muted tiny">Loading…</div></div><div class="chart-tools"><button class="btn small ${zoomHistory.length?'':'hidden'}" id="zoomBack" type="button" title="Previous zoom">${icon('chevron',13)} Zoom out</button><button class="btn small" id="zoomReset" type="button">Reset zoom</button><span class="chart-toggle"><button class="btn small" id="lineSwitch" type="button">Line</button><button class="btn small" id="barSwitch" type="button">Bars</button></span></div></div>
  <div id="exploreStats" class="compact-stats">${loading()}</div>
  <div id="exploreChart" class="chart-frame">${loading()}</div>
- <div class="chart-foot"><span id="pointCount"></span><span id="chartHelp">Select a bar or point to zoom in</span></div></section>
- <section class="breakdown-section"><div class="breakdown-heading"><h2>Breakdown</h2><button class="btn small" id="allVizSwitch" type="button">${state.breakdownViz==='pie'?'Show bars':'Show pies'}</button></div>
- <div class="grid-three breakdown-grid"><div class="panel"><h3 class="panel-title">Aviation category</h3><div id="categoryDonut">${loading()}</div></div>
- <div class="panel"><h3 class="panel-title">Aircraft types</h3><div id="typeBars">${loading()}</div></div>
- <div class="panel"><div class="panel-top"><select id="operatorScope" class="breakdown-scope" aria-label="Operator breakdown">${opts([['airline','Commercial airlines'],['operator','All operators']],state.operatorScope||'airline')}</select></div><div id="airlineBars">${loading()}</div></div></div></section>
-
- <div class="pattern-panel panel"><div class="panel-top"><h2 class="panel-title">Hourly activity</h2><span class="tiny muted" id="patternRange">${esc(currentSelection())}</span></div><div id="heatmap">${loading()}</div></div>
- <div class="pattern-subgrid"><section class="panel"><h3 class="panel-title">Average by weekday</h3><div id="weekdayPattern">${loading()}</div></section><section class="panel"><h3 class="panel-title">Average by hour</h3><div id="hourPattern">${loading()}</div></section></div>
- </div>`;
- bindRangeControls();populateFilters();
- $$('[data-metric]').forEach(b=>b.onclick=()=>{state.metric=b.dataset.metric;persist();renderExplore()});
+ <div class="chart-foot"><span id="pointCount">—</span><span>Click a chart point to zoom into that period</span></div></section>
+ <details class="foldout" id="breakdownDetails"><summary><span>${icon('layers',18)} Breakdowns <small>Category · aircraft type · operator</small></span>${icon('chevron',17)}</summary><div class="breakdown-head"><button class="btn small" id="breakdownVizSwitch" type="button">${state.typeViz==='pie'?'Show bars':'Show pies'}</button></div><div class="grid-three breakdown-grid"><div class="panel"><h3 class="panel-title">Aviation category</h3><div id="categoryDonut">${loading()}</div></div>
+ <div class="panel"><div class="panel-top"><h3 class="panel-title">Aircraft types</h3></div><div id="typeBars">${loading()}</div></div>
+ <div class="panel"><div class="panel-top"><select id="operatorScope" class="breakdown-scope" aria-label="Operator breakdown">${opts([['airline','Airlines · commercial'],['operator','Operators · all']],state.operatorScope||'airline')}</select></div><div id="airlineBars">${loading()}</div></div></div></details>
+`;
+ initControls(renderExplore,false);populateFilters();
  $('#lineSwitch').onclick=()=>{state.chart='line';persist();drawCurrentChart()};
  $('#barSwitch').onclick=()=>{state.chart='bar';persist();drawCurrentChart()};
- $('#zoomBack').onclick=()=>{const prev=zoomHistory.pop();if(prev){drill=prev;renderExplore()}};
- $$('[data-crumb]').forEach(b=>b.onclick=()=>{const index=+b.dataset.crumb;if(index>=drill.trail.length)return;
-  if(index===0){zoomHistory.length=0;drill={level:'year',mode:'all',start:'',end:'',amount:7,unit:'days',trail:[]}}
-  else {const previous=zoomHistory[index];if(previous){drill={...previous,trail:[...previous.trail]};zoomHistory.length=index}}
-  renderExplore();
- });
- $('#allVizSwitch').onclick=()=>{state.breakdownViz=state.breakdownViz==='pie'?'bars':'pie';persist();drawBreakdowns()};
- $('#operatorScope').onchange=()=>{state.operatorScope=$('#operatorScope').value;persist();drawBreakdowns()};
- function drawBreakdowns(){
-  if(!currentAnalytics)return;
-  const a=currentAnalytics, pie=state.breakdownViz==='pie';
-  $('#categoryDonut').innerHTML=pie?donut(a.breakdowns.category,true):breakdownList(a.breakdowns.category,'category','aqua');
-  $('#typeBars').innerHTML=pie?donut(a.breakdowns.type):breakdownList(a.breakdowns.type,'type','blue');
-  const scope=a.breakdowns[state.operatorScope||'airline']||a.breakdowns.airline;
-  $('#airlineBars').innerHTML=pie?donut(scope):breakdownList(scope,'airline','pink');
-  $('#allVizSwitch').textContent=pie?'Show bars':'Show pies';bindBreakdowns();
- }
- try{
-  const a=await api('/api/analytics',queryArgs());if(rid!==renderId)return;
-  if(drill.mode==='all'&&drill.level==='year'&&a.start)firstRecordedLocal=ukDatetime(new Date(a.start*1000).toISOString());
+ $('#zoomBack').onclick=()=>{const prev=zoomHistory.pop();if(prev){Object.assign(state,prev);persist();renderExplore()}};
+ $('#zoomReset').onclick=()=>{zoomHistory.length=0;state.period='rolling';state.amount=7;state.unit='days';state.bucket='auto';state.start='';state.end='';persist();renderExplore()};
+ try{const a=await api('/api/analytics',queryArgs());if(rid!==renderId)return;
   currentAnalytics=a;fillFilterOptions(a);
-  $('#exploreStats').innerHTML=`<div class="mini-stat"><span>Total</span><strong>${fmt(a.total)}</strong></div><div class="mini-stat"><span>Average per interval</span><strong>${fmt(a.average,2)}</strong></div><div class="mini-stat"><span>Highest interval</span><strong>${fmt(a.peak,2)}</strong></div><div class="mini-stat"><span>Unique aircraft</span><strong>${fmt(a.unique_aircraft)}</strong></div>`;
+  $('#exploreStats').innerHTML=`<div class="mini-stat"><span>Period total</span><strong>${fmt(a.total)}</strong></div><div class="mini-stat"><span>${esc(a.aggregation_label)}</span><strong>${fmt(a.average,2)}</strong></div><div class="mini-stat"><span>Peak interval</span><strong>${fmt(a.peak,2)}</strong></div><div class="mini-stat"><span>Unique aircraft</span><strong>${fmt(a.unique_aircraft)}</strong></div>`;
   $('#chartLabel').textContent={flights:'Estimated flight visits',aircraft:'Unique aircraft',observations:'Recorded observations'}[a.metric];
-  $('#chartMeta').textContent=`${currentSelection()} · ${when(a.start)} – ${when(a.end)}`;
-  $('#patternRange').textContent=`${when(a.start)} – ${when(a.end)}`;
-  $('#pointCount').textContent=`${a.series.length} ${drill.level==='hour'?'hours':drill.level==='day'?'days':drill.level==='week'?'weeks':drill.level==='month'?'months':'years'}`;
-  $('#chartHelp').textContent=drill.level==='hour'?'Every recorded hour · UK local time':'Select a bar or point to zoom in';
-  drawCurrentChart();drawBreakdowns();
-  // Pattern query is serial after analytics because both use Aerodrome's
-  // bounded read-only semaphore; parallel queries could reject one another.
-  try{
-   const patterns=await api('/api/patterns',queryArgs());if(rid!==renderId)return;
-   const single=drill.level==='hour'&&drill.mode==='custom'&&drill.start?.slice(0,10)===new Date(Date.parse(drill.end+':00Z')-60000).toISOString().slice(0,10);
-   $('#heatmap').innerHTML=renderHeatmap(patterns.heatmap,single?drill.start.slice(0,10):null);
-   $('#weekdayPattern').innerHTML=renderWeekBars(patterns.weekday,true);
-   $('#hourPattern').innerHTML=renderChart(patterns.hourly,'bar',{height:205,hourAxis:true});
-   hookChart($('#hourPattern'),patterns.hourly,'hour_of_day',false);
-  }catch(e){if(rid!==renderId)return;['heatmap','weekdayPattern','hourPattern'].forEach(id=>$('#'+id).innerHTML=`<div class="empty">${esc(e.message)}</div>`)}
- }catch(e){if(rid!==renderId)return;$('#exploreStats').innerHTML='';$('#exploreChart').innerHTML=safeError(e);['heatmap','weekdayPattern','hourPattern','categoryDonut','typeBars','airlineBars'].forEach(id=>$('#'+id).innerHTML='')}
+  const dateOnly=ts=>new Date(ts*1000).toLocaleDateString('en-GB',{timeZone:'Europe/London',weekday:'short',day:'numeric',month:'short',year:'numeric'});
+  $('#chartPeriod').textContent=dateOnly(a.start)===dateOnly(a.end-1)?dateOnly(a.start):`${dateOnly(a.start)} – ${dateOnly(a.end-1)}`;
+  $('#chartMeta').textContent=a.aggregation_label;
+  $('#pointCount').textContent=`${a.series.length} intervals`;
+  drawCurrentChart();
+
+  function showBreakdowns(){
+   const pie=state.typeViz==='pie';
+   $('#categoryDonut').innerHTML=pie?donut(a.breakdowns.category):breakdownList(a.breakdowns.category,'category','aqua');
+   $('#typeBars').innerHTML=pie?donut(a.breakdowns.type):breakdownList(a.breakdowns.type,'type','blue');
+   const operatorBreakdown=a.breakdowns[state.operatorScope||'airline']||a.breakdowns.airline;
+   $('#airlineBars').innerHTML=pie?donut(operatorBreakdown):breakdownList(operatorBreakdown,'airline','pink');
+   $('#breakdownVizSwitch').textContent=pie?'Show bars':'Show pies';
+   bindBreakdowns();
+  }
+  $('#breakdownVizSwitch').onclick=()=>{state.typeViz=state.typeViz==='pie'?'bars':'pie';persist();showBreakdowns()};
+  $('#operatorScope').onchange=()=>{state.operatorScope=$('#operatorScope').value;persist();showBreakdowns()};showBreakdowns();
+ }catch(e){if(rid!==renderId)return;$('#exploreStats').innerHTML='';$('#exploreChart').innerHTML=safeError(e);['categoryDonut','typeBars','airlineBars'].forEach(id=>$('#'+id).innerHTML='<span class="muted">Not available</span>')}
 }
+function drawCurrentChart(){if(!currentAnalytics)return;$('#exploreChart').innerHTML=renderChart(currentAnalytics.series,state.chart||'line',{everyHour:currentAnalytics.bucket==='hour'});hookChart($('#exploreChart'),currentAnalytics.series,currentAnalytics.bucket);}
+
 function renderWeekBars(series,shortLabels=false){if(!series?.length)return '<div class="empty">No data available.</div>';
  const observed=series.filter(x=>x.samples>0&&x.value!==null);
  if(!observed.length)return '<div class="empty">No recorded days in this range.</div>';
@@ -391,21 +357,70 @@ function renderWeekBars(series,shortLabels=false){if(!series?.length)return '<di
   return `<div class="pattern-col" title="${esc(s.label)}: ${has?fmt(s.value,2)+' average from '+s.samples+' recorded day(s)':'No recorded days'}"><strong class="tiny muted">${has?fmt(s.value,1):'—'}</strong><div class="pattern-bar ${has?'':'missing'}" style="height:${has?Math.max(2,150*s.value/max):2}px"></div><small>${esc(shortLabels?String(s.label).slice(0,3):s.label)}</small></div>`;
  }).join('')}</div>`;
 }
-function renderHeatmap(cells,singleDate=null){
- if(!cells?.length)return '<div class="empty">No hourly records.</div>';
- const max=Math.max(1,...cells.filter(x=>x.samples).map(x=>x.value||0));
- const dimension={flights:'visits',aircraft:'aircraft',observations:'samples'}[state.metric]||'traffic';
+function renderHeatmap(cells){if(!cells?.length)return '<div class="empty">No hourly observations.</div>';
+ const max=Math.max(1,...cells.map(x=>x.value)),colorScale=v=>{
+  if(v===null||v===undefined)return 'var(--panel2)';const f=.12+.85*Math.pow(v/max,.65);return `rgba(49,223,193,${f.toFixed(3)})`;
+ };
+ const cols=[...Array(24)].map((_,h)=>`<div class="heat-label">${h%3===0?String(h).padStart(2,'0'):''}</div>`).join('');
  const weekdays=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
- const selectedWeekday=singleDate?(new Date(singleDate+'T12:00:00Z').getUTCDay()+6)%7:null;
- const rows=selectedWeekday===null?[0,1,2,3,4,5,6]:[selectedWeekday];
- const map=new Map(cells.map(c=>[`${c.weekday}-${c.hour}`,c]));
- const format=v=>v===null||v===undefined?'var(--panel2)':`rgba(98,229,208,${(.13+.83*Math.pow(Math.max(0,v)/max,.7)).toFixed(3)})`;
- return `<div class="heat-outer"><div class="heatmap compact-heatmap"><span></span>${Array.from({length:24},(_,h)=>`<span class="heat-label">${String(h).padStart(2,'0')}</span>`).join('')}
- ${rows.map(wd=>`<span class="heat-day">${weekdays[wd]}</span>${Array.from({length:24},(_,hour)=>{
-  const x=map.get(`${wd}-${hour}`),has=x?.samples>0;
-  const detail=has?`${fmt(x.value,2)} average · ${x.samples} recorded ${x.samples===1?'hour':'hours'}`:'No recorded samples';
-  return `<span class="heat-cell" role="img" tabindex="0" aria-label="${weekdays[wd]} ${String(hour).padStart(2,'0')}:00 — ${detail}" title="${weekdays[wd]} ${String(hour).padStart(2,'0')}:00 — ${detail}" style="background:${format(has?x.value:null)}"></span>`;
- }).join('')}`).join('')}</div></div><div class="heat-legend"><span>Fewer ${dimension}</span>${[.15,.3,.5,.7,.95].map(op=>`<i style="background:rgba(98,229,208,${op})"></i>`).join('')}<span>More ${dimension}</span></div>`;
+ return `<div class="heat-outer"><div class="heatmap"><span></span>${cols}${weekdays.map((d,wd)=>`<span class="heat-day">${d}</span>${cells.filter(x=>x.weekday===wd).map(x=>`<div class="heat-cell" tabindex="0" title="${d} ${String(x.hour).padStart(2,'0')}:00 — ${x.samples?`avg ${fmt(x.value,2)}, ${x.samples} recorded hours`:'No samples'}" style="background:${colorScale(x.value)}"></div>`).join('')}`).join('')}</div></div><div class="heat-legend"><span>Less busy</span>${[.08,.24,.43,.65,.85].map(x=>`<i style="background:rgba(49,223,193,${x})"></i>`).join('')}<span>More busy</span></div>`;
+}
+async function renderPatterns(){const rid=++renderId;
+ $('#page').innerHTML=title('','Patterns')+
+ controls(false)+`<div class="panel"><div class="panel-top"><div><h2 class="panel-title">Day × hour heatmap</h2></div></div><div id="heatmap">${loading()}</div></div>
+ 
+ <div class="pattern-subgrid"><div class="panel"><h3 class="panel-title">Average by weekday</h3><div id="weekdayPattern">${loading()}</div></div>
+ <div class="panel"><h3 class="panel-title">Average by hour</h3><div id="hourPattern">${loading()}</div></div></div>
+`;
+ initControls(renderPatterns);populateFilters();
+ try{const a=await api('/api/patterns',queryArgs());if(rid!==renderId)return;
+ $('#heatmap').innerHTML=renderHeatmap(a.heatmap);
+ $('#weekdayPattern').innerHTML=renderWeekBars(a.weekday,true);
+ $('#hourPattern').innerHTML=renderChart(a.hourly,'bar',{height:230,everyHour:true});hookChart($('#hourPattern'),a.hourly,'hour_of_day',false);
+ }catch(e){if(rid!==renderId)return;['heatmap','weekdayPattern','hourPattern'].forEach(x=>$('#'+x).innerHTML=safeError(e))}
+}
+function comparisonFields(){return `<div class="secondary-controls" style="margin:0 0 16px;border:none;padding:0">
+ ${field('Compare against',`<select id="comparison">${opts([['previous','An earlier equivalent period'],['year_ago','Same dates last year'],['custom','Another custom date range']],state.comparison)}</select>`)}
+ <label class="field" id="offsetField"><span>Periods back</span><input id="offset" type="number" min="1" max="100" step="1" value="${esc(state.offset)}"></label>
+ </div><div class="custom-controls ${state.comparison==='custom'?'':'hidden'}" id="otherBox" style="margin-bottom:15px">
+ ${field('Compare from (UK)',`<input type="datetime-local" id="otherStart" value="${esc(state.other_start)}">`)}
+ ${field('Compare to (UK)',`<input type="datetime-local" id="otherEnd" value="${esc(state.other_end)}">`)}
+ </div>`;}
+function overlayChart(left,right){const A=left?.series||[],B=right?.series||[];
+ if(!A.length||!B.length)return '<div class="empty">Not enough data to compare these windows.</div>';
+ const n=Math.max(A.length,B.length),W=Math.max(760,Math.min(n*12+80,12000)),H=320,L=57,R=20,T=21,bot=43;
+ const ymax=Math.max(1,...A.map(x=>x.value),...B.map(x=>x.value));const xx=i=>L+(n===1?0:i/(n-1)*(W-L-R));const yy=v=>T+(1-v/ymax)*(H-T-bot);
+ const pts=a=>a.map((v,i)=>`${i?'L':'M'}${xx(i).toFixed(1)} ${yy(v.value).toFixed(1)}`).join(' ');
+ const ticks=Array.from({length:5},(_,i)=>i*ymax/4);
+ return `<div class="chart-shell"><div class="chart-scroll"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Comparison of two historical traffic series">
+  ${ticks.map(t=>`<line class="chart-gridline" x1="${L}" y1="${yy(t)}" x2="${W-R}" y2="${yy(t)}"/><text class="chart-axis" x="${L-7}" y="${yy(t)+3}" text-anchor="end">${fmt(t)}</text>`).join('')}
+  <path d="${pts(A)}" fill="none" stroke="var(--aqua)" stroke-width="2.4"/>
+  <path d="${pts(B)}" fill="none" stroke="var(--blue)" stroke-width="2.4" stroke-dasharray="6,4"/>
+  ${Array.from({length:6},(_,i)=>`<text x="${L+i*(W-L-R)/5}" y="${H-11}" class="chart-axis" text-anchor="middle">${fmt(i*100/5)}%</text>`).join('')}
+ </svg></div></div><div class="chart-footer"><span><i class="legend-swatch" style="background:var(--aqua)"></i>Selected period</span><span><i class="legend-swatch" style="background:var(--blue)"></i>Comparison period</span><span>Horizontal axis = progress through each period</span></div>`;
+}
+async function renderCompare(){const rid=++renderId;
+ $('#page').innerHTML=title('','Compare periods')+`<div class="analytics-tabs"><a href="#explore">Traffic</a><a href="#patterns">Patterns</a><a class="selected" href="#compare">Compare</a></div>`+
+ controls(false)+`<div class="control-card">${comparisonFields()}<button class="btn primary" id="runComparison">${icon('compare')} Compare periods</button></div>
+ <div id="compareResults">${loading()}</div>`;
+ initControls(renderCompare);populateFilters();
+ if(state.comparison==='year_ago')$('#offsetField').classList.add('hidden');
+ $('#comparison').onchange=()=>{const c=$('#comparison').value;$('#offsetField').classList.toggle('hidden',c==='custom'||c==='year_ago');$('#otherBox').classList.toggle('hidden',c!=='custom')};
+ $('#runComparison').onclick=()=>{collectControls();state.comparison=$('#comparison').value;state.offset=+($('#offset').value||1);state.other_start=$('#otherStart')?.value||'';state.other_end=$('#otherEnd')?.value||'';persist();renderCompare()};
+ try{const args={...queryArgs(),comparison:state.comparison,offset:state.offset,other_start:state.other_start,other_end:state.other_end};
+   const d=await api('/api/compare',args);if(rid!==renderId)return;
+   const dir=d.difference>0?'positive':d.difference<0?'negative':'',txt=d.change_percent===null?'Insufficient comparable baseline':`${d.change_percent>0?'+':''}${fmt(d.change_percent,1)}% compared`;
+   const mx=Math.max(d.left.total,d.right.total,1);
+   $('#compareResults').innerHTML=`<div class="comparison-header">
+     <div class="compare-period"><span class="tiny muted"><i class="period-color"></i>Selected period</span><div class="big">${fmt(d.left.total)}</div><div class="tiny muted">${when(d.left.start)} – ${when(d.left.end)}</div></div>
+     <div class="compare-period other"><span class="tiny muted"><i class="period-color"></i>Comparison period</span><div class="big">${fmt(d.right.total)}</div><div class="tiny muted">${when(d.right.start)} – ${when(d.right.end)}</div></div>
+   </div><div class="panel" style="margin-top:16px"><div class="panel-top"><h3 class="panel-title">Difference</h3><span class="chip ${dir==='positive'?'aqua':dir==='negative'?'red':''}">${esc(txt)}</span></div><div class="delta ${dir}" style="font-size:24px;margin:0 0 14px">${d.difference>0?'+':''}${fmt(d.difference)} ${esc(state.metric)}</div>
+   <div class="compare-tracks"><span class="muted">Selected</span><div class="compare-track"><div class="compare-fill" style="width:${d.left.total/mx*100}%"></div></div><span class="muted">Comparison</span><div class="compare-track"><div class="compare-fill other" style="width:${d.right.total/mx*100}%"></div></div></div></div>
+   ${section('Traffic comparison')}
+   <div class="panel">${overlayChart(d.left,d.right)}</div>
+   ${section('Averages')}
+   <div class="grid-two"><div class="panel"><h3 class="panel-title">Selected period</h3>${summaryFor(d.left)}</div><div class="panel"><h3 class="panel-title">Comparison period</h3>${summaryFor(d.right)}</div></div>`;
+ }catch(e){if(rid===renderId)$('#compareResults').innerHTML=safeError(e)}
 }
 async function renderAircraft(){const rid=++renderId;
  $('#page').innerHTML=title('','Aircraft')+
@@ -432,7 +447,7 @@ async function showAircraft(icao){const target=$('#aircraftDetail');if(!target)r
 }
 let dbPage=1;
 async function renderDatabase(){const rid=++renderId;
- $('#page').innerHTML=title('','Database')+
+ $('#page').innerHTML=title('','Database','','<a class="btn small" href="#settings">← Settings</a>')+
  `<div class="control-card"><div class="secondary-controls" style="border:0;margin:0;padding:0">
  ${field('Database table',`<select id="dbTable"><option>Loading tables…</option></select>`)}
  ${field('Search ICAO / callsign / operator',`<input type="search" id="dbSearch" placeholder="Optional filter">`)}
@@ -485,8 +500,8 @@ async function renderSettings(){const rid=++renderId;
    `<div class="settings-entry">${field('Colour theme',`<select id="settingTheme">${opts([['dark','Dark / midnight'],['light','Light / cloud']],state.theme)}</select>`)}${field('Default measurement',`<select id="settingMetric">${opts([['flights','Estimated flights'],['aircraft','Unique aircraft'],['observations','Observations']],state.metric)}</select>`)}</div><button class="btn primary" id="saveAppearance" style="margin-top:13px">Save preferences</button>`)}
  ${settingsRow('Launcher links','The Analytics link always comes first. Add, remove and reorder the other links.',settingsLinks())}
  ${settingsRow('GitHub updates','',updateBox())}
- ${settingsRow('Aerodrome database','',`<div id="databaseInfo">${loading()}</div>`)}
-
+  ${settingsRow('Aerodrome database','',`<div id="databaseInfo">${loading()}</div>`)}
+  ${settingsRow('Database explorer','',`<a class="btn primary" href="/analytics#database">${icon('database',16)} Open database →</a>`)}
  </div>`;
  $('#saveAppearance').onclick=()=>{setTheme($('#settingTheme').value);state.metric=$('#settingMetric').value;persist();toast('Preferences saved')};
  function saveLinks(){try{putLinks(collectSettingsLinks());toast('Launcher links saved');return true}catch(e){toast('Invalid link',e.message,true);return false}}
@@ -536,11 +551,11 @@ function setUpdateInfo(d){if(!$('#updateDetails'))return;
  $('#updateDetails').innerHTML=`<div class="detail-grid">${[['Version',d.version],['Installed',d.local_sha||'—'],['GitHub',d.remote_sha||'—']].map(([k,v])=>`<div class="detail-item"><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('')}</div>
  ${d.error?`<p style="color:var(--orange)">${esc(d.error)}</p>`:''}`;
 }
-async function loadPage(){const fallback=location.pathname==='/analytics'?'explore':'home';const hash=(location.hash||'#'+fallback).slice(1).split('?')[0];currentPage=['patterns','compare'].includes(hash)?'explore':(names[hash]?hash:fallback);renderId++;document.body.classList.toggle('launcher-mode',currentPage==='home');document.title=(currentPage==='home'?'Airspace · Launcher':names[currentPage]+' · Airspace Analytics');
- $$('.nav-link,.mobile-tabbar a').forEach(el=>el.classList.toggle('active',el.dataset.page===currentPage));
+async function loadPage(){const fallback=location.pathname==='/analytics'?'explore':'home';const hash=(location.hash||'#'+fallback).slice(1).split('?')[0];currentPage=names[hash]?hash:fallback;renderId++;document.body.classList.toggle('launcher-mode',currentPage==='home');document.title=(currentPage==='home'?'Airspace · Launcher':names[currentPage]+' · Airspace Analytics');
+ $$('.top-nav-link,.top-settings').forEach(el=>el.classList.toggle('active',el.dataset.page===currentPage||(currentPage==='database'&&el.dataset.page==='settings')));
  $('#topTitle').textContent=names[currentPage];setMenu(false);
  window.scrollTo({top:0,behavior:'instant'});
- const routes={home:renderHome,explore:renderExplore,aircraft:renderAircraft,database:renderDatabase,settings:renderSettings};
+ const routes={home:renderHome,explore:renderExplore,patterns:renderPatterns,database:renderDatabase,settings:renderSettings};
  try{await routes[currentPage]()}catch(e){$('#page').innerHTML=safeError(e)}
 }
 async function refreshStatus(){try{const h=await api('/api/health');setStatus(h)}catch{setStatus(null)}}

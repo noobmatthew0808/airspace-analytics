@@ -1,5 +1,11 @@
 # Airspace Analytics
 
+**v1.5.0 uses the original v1.3 zoom controls and chart drill-down**, with simplified top navigation.
+The top-left Home button opens the launcher; Traffic and Patterns are beside it, with Settings at top right. Open the read-only Database from the bottom of Settings. Compare, Aircraft and Saved Views are removed from navigation. Charts scale to the phone width, and hourly charts label every hour on a single-day view.
+
+To investigate unresolved commercial airline metadata without changing Aerodrome, run `python3 scripts/operator_diagnostics.py --days 7 --metric flights` on the Linux host. It reports missing callsigns and unrecognised prefixes, plus the number of commercial observations represented by each group.
+
+
 A private, responsive, self-hosted ADS-B analytics homepage and historical explorer for an existing [Aerodrome](https://github.com/preston-peterson/aerodrome) installation.
 
 **Design goal:** one Aerodrome database, no duplicate ADS-B collector, no changes to ADSB.im/Ultrafeeder/feeders, and a simple in-app update button.
@@ -8,17 +14,13 @@ A private, responsive, self-hosted ADS-B analytics homepage and historical explo
 
 ## What it includes
 
-- **Home (`/`)**: a compact application launcher. Airspace Analytics is always the first link; all other links can be added, removed and reordered in Settings.
-- **Traffic (`/analytics#explore`)**: one interactive chart that starts with all recorded **years**, then drills down via **year → month → week → day → individual hours**. The selected period is visible above the graph, and **Zoom out** returns to the previous level. Every hourly point has its own time label; wide charts scroll horizontally on mobile.
-- **Traffic breakdowns**: aviation category, aircraft types and commercial-airline/all-operator totals for the currently selected period. One **Show pies / Show bars** button changes all three visualisations together.
-- **Hourly patterns, on Traffic**: a compact weekday × hour heatmap plus average traffic by weekday and by individual hour. These use the same selected period, metric and filters as the main graph. A single-day heatmap contracts to one row.
-- **Range & filters**: optional controls for all history, any rolling duration, custom UK start/end time, aviation category, aircraft type, airline/operator and ICAO address. The default layout stays uncluttered.
-- **Aircraft**: search historical aircraft and inspect recorded visits and observations.
-- **Database**: browse a read-only whitelist of Aerodrome tables, search and export CSV without arbitrary SQL.
-- **Settings**: editable launcher links, theme, data-source health, and authenticated GitHub updates/rollback. A paired browser remembers the update token; a new browser can pair from a collapsed control.
-- **Mobile**: one bottom navigation bar, with no duplicated tabs at the top. Desktop uses a left sidebar.
-
-The separate Compare and Patterns navigation pages and Saved Views feature were removed in v1.4, but the pattern charts remain available directly inside Traffic. The corresponding read-only historical API endpoints remain for backward compatibility.
+- **Home:** live-ish source status, today's unique aircraft, observations, peak concurrency, shortcuts to ADSB.im, Aerodrome, SkyStats, readsb map, receiver graphs, and optional Dozzle.
+- **Explore:** flights / unique aircraft / observations, flexible windows (any rolling duration from minutes to years, exact custom start/end dates, or all recorded history), hourly/daily/weekly/monthly/yearly charts, recurring weekday/hour/month averages, aircraft category/type/airline breakdowns, click-to-drill, line/bar switch, bookmarks saved in the browser.
+- **Patterns:** 7 × 24 average-traffic heatmap, typical weekday and hour profiles, filtered by measurement, period and aircraft.
+- **Aircraft:** search historical ICAO codes, callsigns, aircraft types or operators; inspect stored observations.
+- **Database:** view a whitelist of Aerodrome tables, paginate, search, CSV export (up to 5,000 rows at a time); never execute arbitrary SQL.
+- **Settings:** dark/light theme, editable local-service shortcuts, version checks, update, restore previous version, database health and storage.
+- **Security:** an unprivileged web server, read-only SQLite connections, private per-installation update token, separate updater systemd unit, read-safe queries with a time budget, no unsafe code execution endpoint.
 
 All UI assets are bundled locally; there are no CDNs or mandatory npm packages. Python 3.10+ and a modern browser are enough. Node.js is **not** required after all.
 
@@ -106,7 +108,7 @@ The website does **not** duplicate observations into another database. Small tra
 
 **Retention:** the website obeys Aerodrome's configured retention and cannot recreate history that Aerodrome has already deleted. Make long-term backup/retention decisions separately. Periods before initial collection return no observations; they are not reconstructed from FR24/FlightAware.
 
-**Performance:** one analysis at a time, ≤14 s SQL safety timeout, ≤5 million hourly aircraft rows, ≤1,200 chart points. Multi-year charts automatically group at the appropriate drill-down level, starting with years. No writes, VACUUM, migrations or indexes are applied to Aerodrome.
+**Performance:** one analysis at a time, ≤14 s SQL safety timeout, ≤5 million hourly aircraft rows, ≤1,200 chart points. For multi-year data choose weekly/monthly/yearly grouping. No writes, VACUUM, migrations or indexes are applied to Aerodrome.
 
 ## Configuration
 
@@ -116,7 +118,7 @@ The website does **not** duplicate observations into another database. Small tra
 | `AIRSPACE_HOST` | `0.0.0.0` | Network interface (LAN access by default) |
 | `AIRSPACE_PORT` | `8088` | Website port |
 
-Website display settings and launcher shortcuts are stored in each browser's local storage, so iPhone and PC preferences are independent. They do not duplicate aircraft observations.
+Website display settings and shortcuts are stored in each browser's local storage (so iPhone and PC preferences are independent).
 
 ### Managing the service
 
@@ -161,12 +163,22 @@ VERSION            Site version
 
 MIT — see `LICENSE`.
 
-## Current UI and updates (v1.4)
+## v1.2 compact redesign and update from v1.1
 
-The root URL is the service launcher; `/analytics#explore` opens Traffic on the same port. All links except the first, pinned Airspace Analytics link are editable through Settings. On mobile, all workspace destinations are in the bottom navigation; no top tabs or sidebar menu are repeated.
+The normal URL `http://<your-host>:8088/` is now a simple **application launcher**. Its first, fixed link is **Airspace Analytics**, which opens `http://<your-host>:8088/analytics#explore` on the same port. The other links can be edited, removed, added and reordered under **Settings → Launcher links**. The links live in each browser's storage, so changes made on a phone do not automatically appear on a PC.
 
-The historical chart opens on years. Tap a year to open its months, a month to open weeks, a week to open days, and a day to open every hour (UK time). The current selection is shown as a breadcrumb above the chart; the Zoom out button returns one step. The breakdown charts, weekday averages, hourly averages and heatmap use the same date range and filters. Changing metrics does not lose the selected date.
+The Analytics workspace now exposes Traffic and Patterns at the top, plus Settings with a database explorer link. Traffic displays a single main chart, flexible duration/date controls, metric selector (Visits, Aircraft, Samples), grouping, a click-to-drill zoom with a **Zoom out** button, and collapsible Filters and Breakdowns. No new aircraft collection process or writeable database is created.
 
-For arbitrary ranges, expand **Range & filters** and choose **All history**, **Last…** with any number/unit, or exact **From / to** dates. Custom ranges start at a sensible grouping for the duration and remain drillable. No fixed time presets are required.
+To upgrade an already-installed Git checkout, **commit the changed files to that same GitHub repository's default branch**. Then, from the still-running v1.1 website, open **Settings → GitHub updates → Check GitHub → Update now**. The site's existing private update token remains valid. There is no need to rerun the installer or edit Aerodrome. The new interface takes effect after the existing updater restarts only Airspace Analytics.
 
-To install this release over an existing v1.3 Git checkout, push the updated project files to the same GitHub repository, then open **Settings → GitHub updates → Check GitHub → Update now**. Your existing pairing code continues to work. Only the Airspace Analytics service is restarted; Aerodrome, ADSB.im, SkyStats, and the ADS-B feeders are untouched.
+If GitHub's website is used to upload this release, extract the ZIP locally and replace project files in the **same repository**, not a new one. Do not upload this ZIP as a single file; upload its contents. Particularly important files are `VERSION`, `frontend/app.js`, `frontend/styles.css`, `frontend/index.html`, and `CHANGELOG.md`. The backend and installer have no functional changes in this release.
+
+The home screen intentionally contains no analytics charts; use the pinned Analytics button to open the workspace. On mobile, Analytics has compact bottom navigation; the Database section remains accessible from the menu in the upper-left.
+
+## v1.3 — streamlined personal interface
+
+Traffic, Patterns and Compare share a single date-range control: **Last** (input any number and select minutes, hours, days, weeks, months or years), **Dates** (custom UK start/end), or **All time**. No fixed 46-hour example or oversized preset strip. The Patterns screen now reports actual recorded-day averages even while Aerodrome is newly collecting, rather than displaying misleading zeros for incomplete calendar days.
+
+The **Commercial airlines** chart excludes general aviation and can identify familiar carriers from callsigns like `EZY123` when Aerodrome's operator field is empty. Choose **Operators · all** to include owners and non-airline operators. No source records are changed.
+
+The website no longer shows routine caveat boxes, the About Installation panel, or the Understanding These Numbers section. Update actions remain authenticated, but an already paired browser no longer displays or requests the token each time.
