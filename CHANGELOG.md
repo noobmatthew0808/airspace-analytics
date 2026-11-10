@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.6.0 — 10 November 2026
+- Unified Patterns and Traffic into one scrollable analytics page; removed the separate Patterns navigation.
+- Default yearly traffic view with click-to-drill through month, week, day and hour. Zoom out and All years remain.
+- Collapsible Traffic filter panel with On/Off and Reset; when off, the normal unfiltered drill-down is used.
+- Compact x-axis labels that show month names, week beginnings, dates or individual hours; the selected period appears above the graph.
+- One Bars/Smooth line control; eased cubic Bezier curves for line graphs.
+- Existing aviation, type and operator breakdowns kept underneath the main chart.
+- Higher-contrast heatmap with linked Year/Month/Week/Day selector.
+- Average by weekday and average by hour now use all recorded data, independently of the selected drill-down time range.
+- Aerodrome remains read-only; ADS-B feeders and authenticated website updater remain unchanged.
+
 ## v1.5.0 — 10 November 2026
 - Restored v1.3 traffic chart zoom behaviour, rather than v1.4 fixed year-to-hour navigation.
 - Hourly and average-by-hour charts fit phone width, with every hour labelled on 24-hour views.

@@ -1,5 +1,7 @@
 # Airspace Analytics
 
+**v1.6.0: One Traffic page, with years → months → weeks → days → hours.** The collapsed Traffic filters have On/Off and Reset controls. The breakdowns, heatmap and all-time weekday/hour averages are all on Traffic. Heatmap Year/Month/Week/Day selection follows the chart and can be changed manually. The top navigation is Home, Traffic and Settings; Database is accessed through Settings. The existing Aerodrome database and updater are unchanged.
+
 **v1.5.0 uses the original v1.3 zoom controls and chart drill-down**, with simplified top navigation.
 The top-left Home button opens the launcher; Traffic and Patterns are beside it, with Settings at top right. Open the read-only Database from the bottom of Settings. Compare, Aircraft and Saved Views are removed from navigation. Charts scale to the phone width, and hourly charts label every hour on a single-day view.
 
