@@ -149,3 +149,43 @@ body.launcher-mode .content{padding:0;margin:0;max-width:none;min-height:100vh;d
  .mobile-tabbar{background:var(--panel);border-top:1px solid var(--line)}.mobile-tabbar a.active{color:var(--aqua)}
 }
 @media(max-width:360px){.advanced-grid{grid-template-columns:1fr}.shortcut-edit-main{grid-template-columns:1fr}.launcher-link-text small{font-size:10px}}
+
+/* v1.3 — one flexible time selector in Traffic, Patterns and Compare */
+.range-layout{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.range-picker{display:inline-flex;align-self:flex-end;gap:2px;flex-shrink:0;padding:3px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;min-height:36px}
+.range-choice{border:0;border-radius:6px;min-width:62px;background:transparent;color:var(--muted);padding:7px 11px;font-size:12px;font-weight:650;cursor:pointer;white-space:nowrap}
+.range-choice.selected{background:var(--panel3);color:var(--text);box-shadow:inset 0 0 0 1px var(--line2)}
+.range-choice:hover:not(.selected){color:var(--text)}
+.range-inputs{display:flex;align-items:flex-end;flex:1;min-width:210px;gap:8px}
+.range-inputs .field{flex:1;min-width:0;margin:0}
+.range-inputs .field:first-child:has(#amount){flex:0 0 90px}
+.range-inputs .field input,.range-inputs .field select{width:100%;min-width:0}
+.range-inputs.date-inputs{flex:2 1 320px}
+.range-inputs.date-inputs .field{min-width:135px}
+.range-group{flex:0 1 160px;min-width:125px}
+.range-group .field{margin:0}
+.range-group select{width:100%}
+.range-layout .compact-apply{height:36px;min-width:70px;flex:0 0 auto}
+.range-layout .hidden{display:none!important}
+.compact-controls .metric-toolbar{margin-bottom:12px}
+.compact-controls .advanced-panel{margin-top:12px}
+.breakdown-scope{max-width:205px;min-width:125px;width:auto;min-height:32px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--text);font-size:12px;font-weight:650;padding:5px 8px}
+.updater-pair{margin-top:12px}
+.updater-pair .settings-entry{display:flex;align-items:flex-end;flex-wrap:wrap;padding-top:10px}
+.updater-pair .settings-entry .field{flex:1;min-width:170px;max-width:330px}
+.updater-pair .settings-entry .btn{height:36px}
+.pattern-bar.missing{background:var(--line2);opacity:.45}
+@media(max-width:920px){
+ .range-layout{gap:8px}
+ .range-group{flex:1 1 140px}
+}
+@media(max-width:700px){
+ .range-picker{width:100%}
+ .range-choice{flex:1;min-width:0;padding:8px 9px}
+ .range-inputs{width:100%;flex:1 1 100%;min-width:0}
+ .range-inputs.date-inputs{flex-wrap:wrap}
+ .range-inputs.date-inputs .field{flex:1 1 145px}
+ .range-group{flex:1 1 58%}
+ .range-layout .compact-apply{flex:1 1 65px}
+ .breakdown-scope{width:100%;max-width:190px}
+}

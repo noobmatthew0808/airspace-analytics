@@ -81,9 +81,37 @@ class TestReadOnlyAnalytics(unittest.TestCase):
         all_week = data.analyze({'period':'last_7d','metric':'aircraft','bucket':'weekday'})
         self.assertEqual(len(all_week['series']),7)
         self.assertTrue(any(p['samples'] >= 1 for p in all_week['series']))
-        self.assertTrue(any(p['samples'] == 0 for p in all_week['series']))
+        self.assertTrue(all(p['samples'] > 0 for p in all_week['series']))
         monday = data.coverage_eligible('2025-01-06','day',int(datetime(2025,1,1,tzinfo=data.UTC).timestamp()),int(datetime(2025,1,10,tzinfo=data.UTC).timestamp()),{})
         self.assertFalse(monday)
+
+    def test_partial_days_have_weekday_averages(self):
+        # All sampled calendar dates in a six-hour window are necessarily
+        # incomplete, but observed weekday/hour patterns should remain useful.
+        p=data.patterns({'period':'rolling','amount':'6','unit':'hours','metric':'observations'})
+        self.assertTrue(any(x['samples']>0 and x['value']>0 for x in p['weekday']))
+        self.assertTrue(any(x['samples']==0 and x['value'] is None for x in p['weekday']))
+        a=data.analyze({'period':'rolling','amount':'6','unit':'hours',
+                        'metric':'observations','bucket':'weekday'})
+        self.assertTrue(any(x['samples']>0 and x['value']>0 for x in a['series']))
+        self.assertTrue(any(x['samples']==0 and x['value'] is None for x in a['series']))
+
+    def test_commercial_airlines_not_general_aviation(self):
+        a=data.analyze({'period':'last_7d','metric':'aircraft'})
+        airlines={x['name'] for x in a['breakdowns']['airline']}
+        operators={x['name'] for x in a['breakdowns']['operator']}
+        self.assertIn('easyJet',airlines)
+        self.assertNotIn('Private',airlines)
+        self.assertIn('Private',operators)
+        self.assertEqual(data.resolved_airline('commercial',None,None,'EZY123'),'easyJet')
+        self.assertEqual(data.resolved_airline('general_aviation',None,None,'EZY123'),'')
+        self.assertEqual(data.resolved_airline('commercial',None,None,'GABCD'),'Unknown airline')
+        self.assertEqual(data.resolved_operator('general_aviation',None,'',None),'Unknown GA operator')
+
+    def test_dynamic_rolling_months(self):
+        lo,hi,period=data.resolve_period({'period':'rolling','amount':'1','unit':'months'})
+        self.assertGreater(hi-lo,27*86400)
+        self.assertLess(hi-lo,32*86400)
 
     def test_raw_tables_search_and_detail(self):
         self.assertIn('all_sightings',[t['name'] for t in data.list_tables()])

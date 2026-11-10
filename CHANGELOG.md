@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.0 — Flexible analysis and cleaner presentation
+
+- Replaced time-preset chips and the 46-hour example with a single duration control (minutes through years), custom UK date/time range, or all history. Available in Traffic, Patterns and Compare.
+- Remove explanatory boxes, installation/about section, and recurring caveat banners; retain real error messages.
+- Fix weekday averages showing 0 after a fresh Aerodrome install: include observed partial days when enough minute samples exist; no sample now returns null/dash, not zero.
+- Separate commercial airline breakdown from all-aviation operator breakdown. Add conservative airline-prefix inference from recognised commercial callsigns; no records or categories are overwritten.
+- Make existing update pairing automatic on the browser that already has a token, and hide the token input under optional new-browser pairing. The backend remains authenticated.
+- Numeric comparison offset rather than a list of arbitrary preset choices.
+
+
 ## 1.2.0 — Compact redesign
 
 - Separate application launcher at `/`, with Airspace Analytics pinned as the first link. No duplicated statistics, large hero, or promotional copy.

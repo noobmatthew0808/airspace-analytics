@@ -11,11 +11,28 @@ const short=(t,n=35)=>String(t??'—').length>n?String(t).slice(0,n-1)+'…':Str
 const loading=(label='Analysing your receiver history…')=>`<div class="loading"><span class="spinner"></span>${esc(label)}</div>`;
 const safeError=e=>`<div class="notice error-note"><strong>Couldn't load this view.</strong> ${esc(e.message||e)} <a class="btn small" href="#home">Return home</a></div>`;
 const key='airspace-analytics-prefs-v1';
-const defaults={metric:'flights',period:'last_7d',bucket:'auto',category:'all',type:'all',airline:'all',icao:'all',amount:46,unit:'hours',start:'',end:'',chart:'line',theme:'dark',comparison:'previous',offset:1,other_start:'',other_end:'',typeViz:'bars',airlineViz:'bars'};
+const defaults={metric:'flights',period:'rolling',bucket:'auto',category:'all',type:'all',airline:'all',icao:'all',amount:7,unit:'days',start:'',end:'',chart:'line',theme:'dark',comparison:'previous',offset:1,other_start:'',other_end:'',typeViz:'bars',airlineViz:'bars',operatorScope:'airline'};
 const state={...defaults,...readPrefs()};
+// Convert old preset preferences to the new single duration picker. A preset
+// never reappears as a confusing legacy dropdown after an update.
+if(!['rolling','custom','all'].includes(state.period)){
+ const previous={last_24h:[24,'hours'],last_7d:[7,'days'],last_30d:[30,'days'],last_90d:[90,'days'],last_365d:[365,'days']};
+ const chosen=previous[state.period]||[7,'days'];
+ state.period='rolling';state.amount=chosen[0];state.unit=chosen[1];
+ try{localStorage.setItem(key,JSON.stringify(state))}catch{}
+}
+
 function readPrefs(){try {return JSON.parse(localStorage.getItem(key))||{}}catch{return {}}}
 function persist(){localStorage.setItem(key,JSON.stringify(state))}
 const savedViewsKey='airspace-analytics-views-v1';
+// A previously paired browser stays paired across reloads without showing a
+// password box each time. The updater's server-side token check remains active.
+const pairedUpdaterKey='airspace-updater-pairing';
+try {
+ const old=sessionStorage.getItem('airspace-token');
+ if(old&&!localStorage.getItem(pairedUpdaterKey))localStorage.setItem(pairedUpdaterKey,old);
+} catch {}
+
 const defaultLinks=[
   {name:'ADSB.im',sub:'Receiver controls',path:'/',color:'aqua',icon:'radar'},
   {name:'Aerodrome',sub:'History & records',port:'8000',path:'/',color:'blue',icon:'plane'},
@@ -73,7 +90,7 @@ function shell(){
      <a class="brand" href="/" aria-label="Open launcher"><span class="logo">${icon('radar',21)}</span><span><strong>Airspace</strong><small>Analytics</small></span></a>
      <nav class="nav-list" aria-label="Analytics sections">${pages.slice(0,3).map(nav).join('')}</nav>
      <div class="nav-section"><div class="nav-caption">More</div><nav class="nav-list">${pages.slice(3).map(nav).join('')}</nav></div>
-     <div class="sidebar-bottom"><div class="sidebar-status"><div class="status-row"><i class="dot" id="sidebarDot"></i><strong class="status-label" id="sidebarTitle">Checking data source</strong></div><p id="sidebarDetail">Aerodrome</p></div><div class="version"><span class="versionValue">v1.2.0</span> · Local database</div></div>
+     <div class="sidebar-bottom"><div class="sidebar-status"><div class="status-row"><i class="dot" id="sidebarDot"></i><strong class="status-label" id="sidebarTitle">Checking data source</strong></div><p id="sidebarDetail">Aerodrome</p></div><div class="version"><span class="versionValue">v1.3.0</span> · Local database</div></div>
    </aside>
    <div class="workspace"><header class="topbar"><div class="topbar-left"><button class="icon-button mobile-menu" id="mobileMenu" aria-label="Open menu">${icon('menu')}</button><a class="top-back" href="/">${icon('grid',16)} <span>Launcher</span></a><span class="top-separator">/</span><strong id="topTitle">Explore</strong></div><div class="top-actions"><span class="top-live"><i class="dot" id="topDot"></i><span id="topStatus">Connecting</span></span><button class="icon-button" id="themeButton" title="Toggle dark/light mode" aria-label="Toggle theme">${icon('sun')}</button></div></header>
    <main class="content" id="page" aria-live="polite"></main></div>
@@ -110,46 +127,81 @@ function queryArgs(groupOverride){return {period:state.period,metric:state.metri
  category:state.category,type:state.type,airline:state.airline,icao:state.icao,
  amount:state.amount,unit:state.unit,start:state.start,end:state.end}}
 function field(label,element){return `<label class="field"><span>${esc(label)}</span>${element}</label>`}
-const presets=[['last_24h','Last 24 hours'],['last_46h','Last 46 hours'],['last_7d','Last 7 days'],['last_30d','Last 30 days'],['last_90d','Last 90 days'],['last_365d','Last 365 days'],['today','Today'],['yesterday','Yesterday'],['this_week','This week'],['this_month','This month'],['this_year','This year'],['all','All recorded time'],['rolling','Rolling duration…'],['custom','Custom range…']];
-const groups=[['auto','Automatic'],['hour','Per hour'],['day','Per day'],['week','Per week'],['month','Per month'],['year','Per year'],['weekday','Average weekday'],['hour_of_day','Average hour of day'],['month_of_year','Average month of year']];
+const groups=[['auto','Automatic'],['hour','Hourly'],['day','Daily'],['week','Weekly'],['month','Monthly'],['year','Yearly'],['weekday','Average weekday'],['hour_of_day','Average hour'],['month_of_year','Average month']];
 const opts=(options,chosen)=>options.map(([val,text])=>`<option value="${esc(val)}" ${chosen===val?'selected':''}>${esc(text)}</option>`).join('');
 function metrics(){return `<div class="segmented" role="group" aria-label="Measurement">${[['flights','Visits'],['aircraft','Aircraft'],['observations','Samples']].map(([k,v])=>`<button data-metric="${k}" class="${state.metric===k?'on':''}" type="button">${v}</button>`).join('')}</div>`}
-const quickPeriods=[['last_24h','24h'],['last_7d','7 days'],['last_30d','30 days'],['this_year','This year'],['all','All time']];
-function controls(extra=false){return `<div class="control-card compact-controls">
- <div class="metric-toolbar"><div class="metric-toolbar-left">${metrics()}</div><div class="quick-periods" role="group" aria-label="Quick time periods">${quickPeriods.map(([k,v])=>`<button type="button" class="period-chip ${state.period===k?'selected':''}" data-quick-period="${k}">${v}</button>`).join('')}</div></div>
- <div class="control-grid compact-grid">
- ${field('Time range',`<select id="period">${opts(presets,state.period)}</select>`)}
- ${field('Show',`<select id="bucket">${opts(groups,state.bucket)}</select>`)}
- <button class="btn primary compact-apply" id="applyFilters" type="button">${icon('refresh',15)} Apply</button>
- </div>
- <div class="custom-controls ${state.period==='rolling'?'':'hidden'}" id="rollingBox">
- ${field('Last',`<input type="number" id="amount" min="1" max="100000" value="${esc(state.amount)}">`)}
- ${field('Unit',`<select id="unit">${opts([['hours','Hours'],['days','Days'],['weeks','Weeks']],state.unit)}</select>`)}
- </div><div class="custom-controls ${state.period==='custom'?'':'hidden'}" id="customBox">
- ${field('From · UK time',`<input type="datetime-local" id="customStart" value="${esc(state.start)}">`)}
- ${field('To · UK time',`<input type="datetime-local" id="customEnd" value="${esc(state.end)}">`)}
- </div>
- <details class="advanced-panel" id="advancedPanel" ${state.category!=='all'||state.type!=='all'||state.airline!=='all'||state.icao!=='all'?'open':''}><summary>${icon('layers',16)} Filters ${[state.category,state.type,state.airline,state.icao].filter(x=>x!=='all').length?'<span class="filter-dot">Active</span>':''}</summary><div class="advanced-grid">
- ${field('Aviation',`<select id="category">${opts([['all','All aviation'],['commercial','Commercial'],['general_aviation','General aviation'],['military','Military'],['helicopter','Helicopters'],['unknown','Unknown']],state.category)}</select>`)}
- ${field('Aircraft type',`<select id="aircraftType"><option value="all">All types</option></select>`)}
- ${field('Airline / operator',`<select id="airline"><option value="all">All operators</option></select>`)}
- ${field('ICAO address',`<input id="icao" placeholder="All aircraft" value="${esc(state.icao==='all'?'':state.icao)}" spellcheck="false" maxlength="12">`)}
- <button class="btn" id="resetFilters" type="button">Clear filters</button></div></details>
- ${extra?'<div class="compact-save"><button class="btn small" id="saveView" type="button">'+icon('bookmark',15)+' Save view</button></div>':''}
- </div>`;}
-function collectControls(){state.period=$('#period')?.value||state.period;state.bucket=$('#bucket')?.value||state.bucket;state.category=$('#category')?.value||state.category;state.amount=Number($('#amount')?.value||state.amount);state.unit=$('#unit')?.value||state.unit;state.start=$('#customStart')?.value||state.start;state.end=$('#customEnd')?.value||state.end;state.type=$('#aircraftType')?.value||'all';state.airline=$('#airline')?.value||'all';state.icao=($('#icao')?.value||'').trim().toLowerCase()||'all';persist()}
+function rangeMode(){return ['rolling','custom','all'].includes(state.period)?state.period:'rolling'}
+function initialDates(){
+ const now=new Date();const prev=new Date(now.getTime()-7*86400000);
+ return [ukDatetime(prev.toISOString()),ukDatetime(now.toISOString())];
+}
+function controls(extra=false){
+ const mode=rangeMode(),[fallbackStart,fallbackEnd]=initialDates();
+ return `<div class="control-card compact-controls">
+  <div class="metric-toolbar"><div class="metric-toolbar-left">${metrics()}</div></div>
+  <div class="range-layout">
+   <div class="range-picker" role="group" aria-label="Time period">
+    <button class="range-choice ${mode==='rolling'?'selected':''}" type="button" data-range-mode="rolling">Last</button>
+    <button class="range-choice ${mode==='custom'?'selected':''}" type="button" data-range-mode="custom">Dates</button>
+    <button class="range-choice ${mode==='all'?'selected':''}" type="button" data-range-mode="all">All time</button>
+   </div>
+   <input type="hidden" id="period" value="${esc(mode)}">
+   <div class="range-inputs ${mode==='rolling'?'':'hidden'}" id="rollingBox">
+    ${field('Duration',`<input type="number" inputmode="numeric" id="amount" min="1" max="100000" value="${esc(state.amount)}" aria-label="Number of units">`)}
+    ${field('Unit',`<select id="unit">${opts([['minutes','Minutes'],['hours','Hours'],['days','Days'],['weeks','Weeks'],['months','Months'],['years','Years']],state.unit)}</select>`)}
+   </div>
+   <div class="range-inputs date-inputs ${mode==='custom'?'':'hidden'}" id="customBox">
+    ${field('From · UK time',`<input type="datetime-local" id="customStart" value="${esc(state.start||fallbackStart)}">`)}
+    ${field('To · UK time',`<input type="datetime-local" id="customEnd" value="${esc(state.end||fallbackEnd)}">`)}
+   </div>
+   <div class="range-group">${field('Group by',`<select id="bucket">${opts(groups,state.bucket)}</select>`)}</div>
+   <button class="btn primary compact-apply" id="applyFilters" type="button">Show</button>
+  </div>
+  <details class="advanced-panel" id="advancedPanel" ${state.category!=='all'||state.type!=='all'||state.airline!=='all'||state.icao!=='all'?'open':''}><summary>${icon('layers',16)} Filters ${[state.category,state.type,state.airline,state.icao].filter(x=>x!=='all').length?'<span class="filter-dot">Active</span>':''}</summary><div class="advanced-grid">
+   ${field('Aviation',`<select id="category">${opts([['all','All aviation'],['commercial','Commercial'],['general_aviation','General aviation'],['military','Military'],['helicopter','Helicopters'],['unknown','Unknown']],state.category)}</select>`)}
+   ${field('Aircraft type',`<select id="aircraftType"><option value="all">All types</option></select>`)}
+   ${field('Airline / operator',`<select id="airline"><option value="all">All operators</option></select>`)}
+   ${field('ICAO address',`<input id="icao" placeholder="All aircraft" value="${esc(state.icao==='all'?'':state.icao)}" spellcheck="false" maxlength="12">`)}
+   <button class="btn" id="resetFilters" type="button">Clear filters</button>
+  </div></details>
+  ${extra?'<div class="compact-save"><button class="btn small" id="saveView" type="button">'+icon('bookmark',15)+' Save view</button></div>':''}
+ </div>`;
+}
+function collectControls(){
+ state.period=$('#period')?.value||state.period;
+ state.bucket=$('#bucket')?.value||state.bucket;
+ state.category=$('#category')?.value||state.category;
+ state.amount=Number($('#amount')?.value||state.amount);
+ state.unit=$('#unit')?.value||state.unit;
+ state.start=$('#customStart')?.value||state.start;
+ state.end=$('#customEnd')?.value||state.end;
+ state.type=$('#aircraftType')?.value||state.type;
+ state.airline=$('#airline')?.value||state.airline;
+ state.icao=($('#icao')?.value||'').trim().toLowerCase()||'all';
+ persist();
+}
 function initControls(refresh,extra=false){
  $$('[data-metric]').forEach(b=>b.onclick=()=>{collectControls();state.metric=b.dataset.metric;persist();refresh()});
- $$('[data-quick-period]').forEach(b=>b.onclick=()=>{collectControls();state.period=b.dataset.quickPeriod;state.bucket='auto';persist();refresh()});
- $('#period').onchange=()=>{const p=$('#period').value;$('#rollingBox').classList.toggle('hidden',p!=='rolling');$('#customBox').classList.toggle('hidden',p!=='custom');if(p!=='rolling'&&p!=='custom'){collectControls();persist();refresh()}};
- $('#bucket').onchange=()=>{collectControls();persist();refresh()};
+ $$('[data-range-mode]').forEach(b=>b.onclick=()=>{
+   collectControls();state.period=b.dataset.rangeMode;
+   const [start,end]=initialDates();
+   if(state.period==='custom'){state.start=state.start||start;state.end=state.end||end;}
+   persist();refresh();
+ });
+ $('#bucket').onchange=()=>{collectControls();refresh()};
+ $('#amount').onchange=()=>{collectControls();refresh()};
+ $('#unit').onchange=()=>{collectControls();refresh()};
+ $$('#customStart,#customEnd').forEach(x=>x.onchange=()=>{collectControls();if(state.start&&state.end)refresh()});
  $('#applyFilters').onclick=()=>{collectControls();refresh()};
- $('#resetFilters').onclick=()=>{const metric=state.metric;Object.assign(state,{...defaults,metric});zoomHistory.length=0;persist();refresh()};
+ $('#resetFilters').onclick=()=>{
+   const metric=state.metric,period=state.period,amount=state.amount,unit=state.unit,start=state.start,end=state.end,bucket=state.bucket;
+   Object.assign(state,{...defaults,metric,period,amount,unit,start,end,bucket});zoomHistory.length=0;persist();refresh()
+ };
  if(extra&&$('#saveView'))$('#saveView').onclick=()=>{
-  collectControls();const name=prompt('Name this saved view:');if(!name)return;
+  collectControls();const name=prompt('Name this view:');if(!name)return;
   let views=[];try{views=JSON.parse(localStorage.getItem(savedViewsKey))||[]}catch{}
   views=[...views.filter(v=>v.name!==name),{name:name.slice(0,50),query:queryArgs(),saved:Date.now()}].slice(-20);
-  localStorage.setItem(savedViewsKey,JSON.stringify(views));toast('View saved','Stored in this browser.');renderSavedViews();
+  localStorage.setItem(savedViewsKey,JSON.stringify(views));toast('View saved');renderSavedViews();
  };
 }
 let cachedGlobalFilters=null;
@@ -172,7 +224,7 @@ function renderSavedViews(){const place=$('#savedViews');if(!place)return;let vi
  $$('[data-view]',place).forEach(b=>b.onclick=()=>{Object.assign(state,views[+b.dataset.view].query);persist();renderExplore()});
 }
 function renderChart(series,kind='line',{height=315,mini=false,color='aqua'}={}){
- if(!series?.length||series.every(x=>!Number(x.value)))return `<div class="chart-empty">No observations in this period. Try another range.</div>`;
+ if(!series?.length||series.every(x=>x.value===null||x.value===undefined||!Number(x.value)))return `<div class="chart-empty">No observations in this period. Try another range.</div>`;
  const n=series.length;const width=Math.max(mini?630:730, Math.min(20000,(kind==='bar'?n*22:n*12)+80));
  const W=width,H=height,L=mini?45:56,R=18,T=18,B=mini?36:46;
  const plotW=W-L-R,plotH=H-T-B, max=Math.max(1,...series.map(x=>Number(x.value)||0));
@@ -184,12 +236,12 @@ function renderChart(series,kind='line',{height=315,mini=false,color='aqua'}={})
  let shape='';
  if(kind==='bar'){
    const barWidth=Math.max(3,Math.min(33,plotW/Math.max(1,n)*.72));
-   shape=series.map((s,i)=>`<rect class="chart-bar" data-index="${i}" x="${x(i)-barWidth/2}" y="${y(s.value)}" width="${barWidth}" height="${Math.max(0,T+plotH-y(s.value))}" rx="${Math.min(3,barWidth/4)}" style="fill:${stroke}"/>`).join('');
+   shape=series.map((s,i)=>s.value===null||s.value===undefined?'':`<rect class="chart-bar" data-index="${i}" x="${x(i)-barWidth/2}" y="${y(s.value)}" width="${barWidth}" height="${Math.max(0,T+plotH-y(s.value))}" rx="${Math.min(3,barWidth/4)}" style="fill:${stroke}"/>`).join('');
  }else{
-   const coords=series.map((s,i)=>[x(i),y(s.value)]);
-   const path=coords.map(([xx,yy],i)=>`${i===0?'M':'L'}${xx.toFixed(1)} ${yy.toFixed(1)}`).join(' ');
+   const coords=series.map((s,i)=>s.value===null||s.value===undefined?null:[x(i),y(s.value)]);
+   let inSegment=false;const path=coords.map(pt=>{if(!pt){inSegment=false;return ''}const command=inSegment?'L':'M';inSegment=true;return `${command}${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`}).join(' ');
    shape=`<path class="chart-area" d="${path} L${x(n-1)} ${T+plotH} L${x(0)} ${T+plotH} Z"/><path class="chart-line" d="${path}" style="stroke:${stroke}"/>`;
-   if(n<80)shape+=coords.map(([xx,yy],i)=>`<circle class="chart-point" data-index="${i}" cx="${xx}" cy="${yy}" r="3.5" style="fill:${stroke}"/>`).join('');
+   if(n<80)shape+=coords.map((pt,i)=>pt?`<circle class="chart-point"  data-index="${i}" cx="${pt[0]}" cy="${pt[1]}" r="3.5" style="fill:${stroke}"/>`:'').join('');
  }
  const labels=Math.min(n,mini?6:8),skip=Math.max(1,Math.ceil(n/labels));
  return `<div class="chart-shell"><div class="chart-scroll"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Interactive chart with ${n} time buckets">
@@ -203,7 +255,7 @@ function hookChart(container,series,group,drill=true){if(!container||!series)ret
  $$('.chart-hit',container).forEach(hit=>{
   const index=+hit.dataset.index;
   hit.addEventListener('pointermove',ev=>{
-    const s=series[index];tip.innerHTML=`${esc(s.label)}<strong>${fmt(s.value,2)}</strong>${s.samples?`<span class="muted">${s.samples} occurrences</span>`:''}`;
+    const s=series[index];tip.innerHTML=`${esc(s.label)}<strong>${s.value===null||s.value===undefined?'—':fmt(s.value,2)}</strong>${s.samples?`<span class="muted">${s.samples} occurrences</span>`:''}`;
     tip.classList.remove('hidden');const box=wrap.getBoundingClientRect();tip.style.left=Math.min(box.width-155,Math.max(0,ev.clientX-box.left+8))+'px';tip.style.top=Math.max(45,ev.clientY-box.top)+'px';
   });
   hit.addEventListener('pointerleave',()=>tip.classList.add('hidden'));
@@ -234,9 +286,9 @@ function breakdownList(items,field,color='aqua'){
  const top=items.slice(0,10),max=top[0].value||1;
  return `<div class="breakdown-list">${top.map(s=>`<div class="breakdown-row" title="Filter by ${esc(s.name)}" data-filter="${esc(field)}" data-value="${esc(s.name)}"><div><div class="breakdown-name">${esc(s.name)}</div><div class="bar-track"><div class="bar-fill ${color==='aqua'?'':color}" style="width:${Math.max(0,s.value/max*100)}%"></div></div></div><strong class="breakdown-value">${fmt(s.value)}</strong></div>`).join('')}</div>`;
 }
-function bindBreakdowns(){ $$('[data-filter]').forEach(el=>el.onclick=()=>{const f=el.dataset.filter,value=el.dataset.value;if(!['type','airline','category'].includes(f))return;state[f]=value;persist();renderExplore();toast('Filter applied',`${value} — click Reset to clear.`)}) }
+function bindBreakdowns(){ $$('[data-filter]').forEach(el=>el.onclick=()=>{const f=el.dataset.filter,value=el.dataset.value;if(!['type','airline','category'].includes(f))return;if(f==='airline'&&value.toLowerCase().startsWith('unknown'))return;state[f]=value;persist();renderExplore();toast('Filter applied',`${value} — click Reset to clear.`)}) }
 function summaryFor(a){const unit={flights:'estimated visits',aircraft:'unique aircraft',observations:'observation records'}[a.metric];
- return `<div class="summary-row"><div class="summary-item"><span>Period total</span><strong>${fmt(a.total)}</strong><div class="sub">${unit}</div></div><div class="summary-item"><span>${a.aggregation_label}</span><strong>${fmt(a.average,2)}</strong><div class="sub">Average per chart bucket</div></div><div class="summary-item"><span>Highest bucket</span><strong>${fmt(a.peak,2)}</strong><div class="sub">${esc(a.bucket.replaceAll('_',' '))}</div></div><div class="summary-item"><span>Distinct aircraft</span><strong>${fmt(a.unique_aircraft)}</strong><div class="sub">Across the selected period</div></div></div>`;
+ return `<div class="summary-row"><div class="summary-item"><span>Period total</span><strong>${fmt(a.total)}</strong></div><div class="summary-item"><span>${a.aggregation_label}</span><strong>${fmt(a.average,2)}</strong></div><div class="summary-item"><span>Highest bucket</span><strong>${fmt(a.peak,2)}</strong></div><div class="summary-item"><span>Distinct aircraft</span><strong>${fmt(a.unique_aircraft)}</strong></div></div>`;
 }
 async function renderExplore(){const rid=++renderId;currentAnalytics=null;
  $('#page').innerHTML=title('','Traffic')+
@@ -248,53 +300,60 @@ async function renderExplore(){const rid=++renderId;currentAnalytics=null;
  <div class="chart-foot"><span id="pointCount">—</span><span>Click a chart point to zoom into that period</span></div></section>
  <details class="foldout" id="breakdownDetails"><summary><span>${icon('layers',18)} Breakdowns <small>Category · aircraft type · operator</small></span>${icon('chevron',17)}</summary><div class="grid-three breakdown-grid"><div class="panel"><h3 class="panel-title">Aviation category</h3><div id="categoryDonut">${loading()}</div></div>
  <div class="panel"><div class="panel-top"><h3 class="panel-title">Aircraft types</h3><button class="btn small" id="typeVizSwitch" type="button">${state.typeViz==='pie'?'Bars':'Pie'}</button></div><div id="typeBars">${loading()}</div></div>
- <div class="panel"><div class="panel-top"><h3 class="panel-title">Airlines / operators</h3><button class="btn small" id="airlineVizSwitch" type="button">${state.airlineViz==='pie'?'Bars':'Pie'}</button></div><div id="airlineBars">${loading()}</div></div></div></details>
+ <div class="panel"><div class="panel-top"><select id="operatorScope" class="breakdown-scope" aria-label="Operator breakdown">${opts([['airline','Airlines · commercial'],['operator','Operators · all']],state.operatorScope||'airline')}</select><button class="btn small" id="airlineVizSwitch" type="button">${state.airlineViz==='pie'?'Bars':'Pie'}</button></div><div id="airlineBars">${loading()}</div></div></div></details>
  <details class="foldout secondary-fold"><summary><span>${icon('bookmark',17)} Saved views</span>${icon('chevron',17)}</summary><div id="savedViews" class="saved-content"></div></details>
- <details class="foldout secondary-fold"><summary><span>${icon('info',17)} Understanding these numbers</span>${icon('chevron',17)}</summary><p>Flight visits are estimates based on Aerodrome hourly records and can differ from actual journeys. Aircraft are unique ICAO identities; observations are stored polling samples, not raw radio messages. Missing hours should not be interpreted as zero traffic.</p><p>Coverage is estimated from Aerodrome minute samples, not a verified receiver uptime measurement. Times are Europe/London.</p></details>`;
+`;
  initControls(renderExplore,true);renderSavedViews();populateFilters();
  $('#lineSwitch').onclick=()=>{state.chart='line';persist();drawCurrentChart()};
  $('#barSwitch').onclick=()=>{state.chart='bar';persist();drawCurrentChart()};
  $('#zoomBack').onclick=()=>{const prev=zoomHistory.pop();if(prev){Object.assign(state,prev);persist();renderExplore()}};
- $('#zoomReset').onclick=()=>{zoomHistory.length=0;state.period='last_7d';state.bucket='auto';state.start='';state.end='';persist();renderExplore()};
+ $('#zoomReset').onclick=()=>{zoomHistory.length=0;state.period='rolling';state.amount=7;state.unit='days';state.bucket='auto';state.start='';state.end='';persist();renderExplore()};
  try{const a=await api('/api/analytics',queryArgs());if(rid!==renderId)return;
   currentAnalytics=a;fillFilterOptions(a);
   $('#exploreStats').innerHTML=`<div class="mini-stat"><span>Period total</span><strong>${fmt(a.total)}</strong></div><div class="mini-stat"><span>${esc(a.aggregation_label)}</span><strong>${fmt(a.average,2)}</strong></div><div class="mini-stat"><span>Peak interval</span><strong>${fmt(a.peak,2)}</strong></div><div class="mini-stat"><span>Unique aircraft</span><strong>${fmt(a.unique_aircraft)}</strong></div>`;
   $('#chartLabel').textContent={flights:'Estimated flight visits',aircraft:'Unique aircraft',observations:'Recorded observations'}[a.metric];
   $('#chartMeta').textContent=`${when(a.start)} – ${when(a.end)} · ${a.aggregation_label}`;
-  $('#pointCount').textContent=`${a.series.length} intervals · ${a.coverage?.sample_ratio??'—'}% sample coverage`;
+  $('#pointCount').textContent=`${a.series.length} intervals`;
   drawCurrentChart();
   $('#categoryDonut').innerHTML=donut(a.breakdowns.category);
   function showBreakdowns(){
    $('#typeBars').innerHTML=state.typeViz==='pie'?donut(a.breakdowns.type):breakdownList(a.breakdowns.type,'type','blue');
-   $('#airlineBars').innerHTML=state.airlineViz==='pie'?donut(a.breakdowns.airline):breakdownList(a.breakdowns.airline,'airline','pink');
+   const operatorBreakdown=a.breakdowns[state.operatorScope||'airline']||a.breakdowns.airline;
+   $('#airlineBars').innerHTML=state.airlineViz==='pie'?donut(operatorBreakdown):breakdownList(operatorBreakdown,'airline','pink');
    $('#typeVizSwitch').textContent=state.typeViz==='pie'?'Bars':'Pie';
    $('#airlineVizSwitch').textContent=state.airlineViz==='pie'?'Bars':'Pie';bindBreakdowns();
   }
   $('#typeVizSwitch').onclick=()=>{state.typeViz=state.typeViz==='pie'?'bars':'pie';persist();showBreakdowns()};
-  $('#airlineVizSwitch').onclick=()=>{state.airlineViz=state.airlineViz==='pie'?'bars':'pie';persist();showBreakdowns()};showBreakdowns();
+  $('#airlineVizSwitch').onclick=()=>{state.airlineViz=state.airlineViz==='pie'?'bars':'pie';persist();showBreakdowns()};
+  $('#operatorScope').onchange=()=>{state.operatorScope=$('#operatorScope').value;persist();showBreakdowns()};showBreakdowns();
  }catch(e){if(rid!==renderId)return;$('#exploreStats').innerHTML='';$('#exploreChart').innerHTML=safeError(e);['categoryDonut','typeBars','airlineBars'].forEach(id=>$('#'+id).innerHTML='<span class="muted">Not available</span>')}
 }
 function drawCurrentChart(){if(!currentAnalytics)return;$('#exploreChart').innerHTML=renderChart(currentAnalytics.series,state.chart||'line');hookChart($('#exploreChart'),currentAnalytics.series,currentAnalytics.bucket);}
 
 function renderWeekBars(series,shortLabels=false){if(!series?.length)return '<div class="empty">No data available.</div>';
- const max=Math.max(...series.map(x=>x.value),1);
- return `<div class="pattern-bars">${series.map((s,i)=>`<div class="pattern-col" title="${esc(s.label)}: ${fmt(s.value,2)} average from ${s.samples} occurrences"><strong class="tiny muted">${fmt(s.value,1)}</strong><div class="pattern-bar" style="height:${Math.max(2,150*s.value/max)}px"></div><small>${esc(shortLabels?String(s.label).slice(0,3):s.label)}</small></div>`).join('')}</div>`;
+ const observed=series.filter(x=>x.samples>0&&x.value!==null);
+ if(!observed.length)return '<div class="empty">No recorded days in this range.</div>';
+ const max=Math.max(...observed.map(x=>x.value),1);
+ return `<div class="pattern-bars">${series.map(s=>{
+  const has=s.samples>0&&s.value!==null;
+  return `<div class="pattern-col" title="${esc(s.label)}: ${has?fmt(s.value,2)+' average from '+s.samples+' recorded day(s)':'No recorded days'}"><strong class="tiny muted">${has?fmt(s.value,1):'—'}</strong><div class="pattern-bar ${has?'':'missing'}" style="height:${has?Math.max(2,150*s.value/max):2}px"></div><small>${esc(shortLabels?String(s.label).slice(0,3):s.label)}</small></div>`;
+ }).join('')}</div>`;
 }
 function renderHeatmap(cells){if(!cells?.length)return '<div class="empty">No hourly observations.</div>';
  const max=Math.max(1,...cells.map(x=>x.value)),colorScale=v=>{
-  if(!v)return 'var(--panel2)';const f=.12+.85*Math.pow(v/max,.65);return `rgba(49,223,193,${f.toFixed(3)})`;
+  if(v===null||v===undefined)return 'var(--panel2)';const f=.12+.85*Math.pow(v/max,.65);return `rgba(49,223,193,${f.toFixed(3)})`;
  };
  const cols=[...Array(24)].map((_,h)=>`<div class="heat-label">${h%3===0?String(h).padStart(2,'0'):''}</div>`).join('');
  const weekdays=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
- return `<div class="heat-outer"><div class="heatmap"><span></span>${cols}${weekdays.map((d,wd)=>`<span class="heat-day">${d}</span>${cells.filter(x=>x.weekday===wd).map(x=>`<div class="heat-cell" tabindex="0" title="${d} ${String(x.hour).padStart(2,'0')}:00 — avg ${fmt(x.value,2)}, ${x.samples} hours" style="background:${colorScale(x.value)}"></div>`).join('')}`).join('')}</div></div><div class="heat-legend"><span>Less busy</span>${[.08,.24,.43,.65,.85].map(x=>`<i style="background:rgba(49,223,193,${x})"></i>`).join('')}<span>More busy</span></div>`;
+ return `<div class="heat-outer"><div class="heatmap"><span></span>${cols}${weekdays.map((d,wd)=>`<span class="heat-day">${d}</span>${cells.filter(x=>x.weekday===wd).map(x=>`<div class="heat-cell" tabindex="0" title="${d} ${String(x.hour).padStart(2,'0')}:00 — ${x.samples?`avg ${fmt(x.value,2)}, ${x.samples} recorded hours`:'No samples'}" style="background:${colorScale(x.value)}"></div>`).join('')}`).join('')}</div></div><div class="heat-legend"><span>Less busy</span>${[.08,.24,.43,.65,.85].map(x=>`<i style="background:rgba(49,223,193,${x})"></i>`).join('')}<span>More busy</span></div>`;
 }
 async function renderPatterns(){const rid=++renderId;
  $('#page').innerHTML=title('','Patterns')+`<div class="analytics-tabs"><a href="#explore">Traffic</a><a class="selected" href="#patterns">Patterns</a><a href="#compare">Compare</a></div>`+
- controls(false)+`<div class="panel"><div class="panel-top"><div><h2 class="panel-title">Day × hour heatmap</h2><p class="panel-subtitle">Average activity for each weekday/hour combination across your chosen range</p></div><span class="chip aqua">UK local time</span></div><div id="heatmap">${loading()}</div></div>
- ${section('Recurring rhythms','Averages normalised by the number of eligible days or hours, not cumulative totals.')}
- <div class="pattern-subgrid"><div class="panel"><h3 class="panel-title">Average by weekday</h3><p class="panel-subtitle">Mean daily traffic, Monday through Sunday</p><div id="weekdayPattern">${loading()}</div></div>
- <div class="panel"><h3 class="panel-title">Average by hour</h3><p class="panel-subtitle">Mean hourly traffic across all matching dates</p><div id="hourPattern">${loading()}</div></div></div>
- <div class="notice"><strong>Interpretation:</strong> Only complete calendar periods with at least 70% of expected Aerodrome minute samples contribute to recurring averages. Missing history is not interpreted as zero traffic. A blank pattern needs more complete historical data.</div>`;
+ controls(false)+`<div class="panel"><div class="panel-top"><div><h2 class="panel-title">Day × hour heatmap</h2></div></div><div id="heatmap">${loading()}</div></div>
+ 
+ <div class="pattern-subgrid"><div class="panel"><h3 class="panel-title">Average by weekday</h3><div id="weekdayPattern">${loading()}</div></div>
+ <div class="panel"><h3 class="panel-title">Average by hour</h3><div id="hourPattern">${loading()}</div></div></div>
+`;
  initControls(renderPatterns);populateFilters();
  try{const a=await api('/api/patterns',queryArgs());if(rid!==renderId)return;
  $('#heatmap').innerHTML=renderHeatmap(a.heatmap);
@@ -304,7 +363,7 @@ async function renderPatterns(){const rid=++renderId;
 }
 function comparisonFields(){return `<div class="secondary-controls" style="margin:0 0 16px;border:none;padding:0">
  ${field('Compare against',`<select id="comparison">${opts([['previous','An earlier equivalent period'],['year_ago','Same dates last year'],['custom','Another custom date range']],state.comparison)}</select>`)}
- <label class="field" id="offsetField"><span>Periods back</span><select id="offset">${opts([['1','1 period earlier'],['2','2 periods earlier'],['3','3 periods earlier'],['4','4 periods earlier'],['7','7 periods earlier'],['12','12 periods earlier']],String(state.offset))}</select></label>
+ <label class="field" id="offsetField"><span>Periods back</span><input id="offset" type="number" min="1" max="100" step="1" value="${esc(state.offset)}"></label>
  </div><div class="custom-controls ${state.comparison==='custom'?'':'hidden'}" id="otherBox" style="margin-bottom:15px">
  ${field('Compare from (UK)',`<input type="datetime-local" id="otherStart" value="${esc(state.other_start)}">`)}
  ${field('Compare to (UK)',`<input type="datetime-local" id="otherEnd" value="${esc(state.other_end)}">`)}
@@ -325,7 +384,7 @@ function overlayChart(left,right){const A=left?.series||[],B=right?.series||[];
 async function renderCompare(){const rid=++renderId;
  $('#page').innerHTML=title('','Compare periods')+`<div class="analytics-tabs"><a href="#explore">Traffic</a><a href="#patterns">Patterns</a><a class="selected" href="#compare">Compare</a></div>`+
  controls(false)+`<div class="control-card">${comparisonFields()}<button class="btn primary" id="runComparison">${icon('compare')} Compare periods</button></div>
- <div id="compareResults">${loading()}</div><div class="notice"><strong>Fair comparisons:</strong> Today versus yesterday compares equivalent elapsed portions of the day. Calendar weeks/months/years are matched to the equivalent local calendar date where possible. Periods with missing receiver data can be misleading.</div>`;
+ <div id="compareResults">${loading()}</div>`;
  initControls(renderCompare);populateFilters();
  if(state.comparison==='year_ago')$('#offsetField').classList.add('hidden');
  $('#comparison').onchange=()=>{const c=$('#comparison').value;$('#offsetField').classList.toggle('hidden',c==='custom'||c==='year_ago');$('#otherBox').classList.toggle('hidden',c!=='custom')};
@@ -339,15 +398,14 @@ async function renderCompare(){const rid=++renderId;
      <div class="compare-period other"><span class="tiny muted"><i class="period-color"></i>Comparison period</span><div class="big">${fmt(d.right.total)}</div><div class="tiny muted">${when(d.right.start)} – ${when(d.right.end)}</div></div>
    </div><div class="panel" style="margin-top:16px"><div class="panel-top"><h3 class="panel-title">Difference</h3><span class="chip ${dir==='positive'?'aqua':dir==='negative'?'red':''}">${esc(txt)}</span></div><div class="delta ${dir}" style="font-size:24px;margin:0 0 14px">${d.difference>0?'+':''}${fmt(d.difference)} ${esc(state.metric)}</div>
    <div class="compare-tracks"><span class="muted">Selected</span><div class="compare-track"><div class="compare-fill" style="width:${d.left.total/mx*100}%"></div></div><span class="muted">Comparison</span><div class="compare-track"><div class="compare-fill other" style="width:${d.right.total/mx*100}%"></div></div></div></div>
-   ${section('How traffic changed','The lines are aligned by relative progress through each window, not by absolute date.')}
+   ${section('Traffic comparison')}
    <div class="panel">${overlayChart(d.left,d.right)}</div>
-   <div class="notice"><strong>Availability check:</strong> ${fmt(d.left.coverage.sample_ratio,1)}% minute samples in the selected period versus ${fmt(d.right.coverage.sample_ratio,1)}% in the comparison period. Treat low coverage as a possible data gap.</div>
-   ${section('Averages and extremes')}
+   ${section('Averages')}
    <div class="grid-two"><div class="panel"><h3 class="panel-title">Selected period</h3>${summaryFor(d.left)}</div><div class="panel"><h3 class="panel-title">Comparison period</h3>${summaryFor(d.right)}</div></div>`;
  }catch(e){if(rid===renderId)$('#compareResults').innerHTML=safeError(e)}
 }
 async function renderAircraft(){const rid=++renderId;
- $('#page').innerHTML=title('AIRCRAFT HISTORY','Every aircraft, a history','Search for a registration, callsign, ICAO hex, type or operator. View the exact observations stored by Aerodrome.')+
+ $('#page').innerHTML=title('','Aircraft')+
  `<div class="control-card"><div class="secondary-controls" style="border:0;padding:0;margin:0;align-items:center">${field('Search aircraft',`<input id="aircraftQuery" placeholder="e.g. A388, EZY, 4CA123" autocomplete="off" style="min-width:240px">`)}<button class="btn primary" id="aircraftGo">${icon('search')} Search</button></div></div>
  <div class="panel"><div class="panel-top"><div><h3 class="panel-title">Aircraft registry</h3><p class="panel-subtitle">Searches Aerodrome's previously detected aircraft</p></div><span class="chip aqua" id="aircraftCount">—</span></div><div id="aircraftList">${loading()}</div></div><div id="aircraftDetail"></div>`;
  let activeSearch=0;
@@ -364,20 +422,20 @@ async function showAircraft(icao){const target=$('#aircraftDetail');if(!target)r
  const x=d.aircraft;
  target.innerHTML=`${section('Aircraft '+esc(icao),'Historical metadata and latest retained observations.')}
  <div class="panel"><div class="detail-grid">${[['Registration',x.registration||'Unavailable'],['Type',x.aircraft_type||'Unknown'],['Description',x.aircraft_type_desc||'Unknown'],['Operator',x.operator||'Unknown'],['Category',x.category||'Unknown'],['Country',x.country||'Unknown'],['First detected',when(x.first_seen_at)],['Last detected',when(x.last_seen_at)],['Observations',fmt(x.sighting_count)]].map(([k,v])=>`<div class="detail-item"><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('')}</div></div>
- ${section('Recent raw sightings',`Latest ${d.sightings.length} observations. These are not separate flights.`)}
+ ${section('Recent sightings')}
  <div class="panel"><div class="table-wrap"><table><thead><tr><th>Recorded</th><th>Callsign</th><th>Latitude</th><th>Longitude</th><th>Altitude</th><th>Speed</th><th>Squawk</th></tr></thead><tbody>${d.sightings.map(s=>`<tr><td>${when(s.seen_at)}</td><td>${esc(s.callsign||'—')}</td><td>${esc(s.lat??'—')}</td><td>${esc(s.lon??'—')}</td><td>${esc(s.altitude??'—')}</td><td>${esc(s.speed??'—')}</td><td>${esc(s.squawk??'—')}</td></tr>`).join('')}</tbody></table></div></div>`;
  target.scrollIntoView({behavior:'smooth',block:'start'});
  }catch(e){target.innerHTML=safeError(e)}
 }
 let dbPage=1;
 async function renderDatabase(){const rid=++renderId;
- $('#page').innerHTML=title('READ-ONLY DATABASE','Explore the raw data','Inspect real Aerodrome records without changing, deleting or copying its database.',`<span class="chip aqua">${icon('shield',14)} Read-only</span>`)+
+ $('#page').innerHTML=title('','Database')+
  `<div class="control-card"><div class="secondary-controls" style="border:0;margin:0;padding:0">
  ${field('Database table',`<select id="dbTable"><option>Loading tables…</option></select>`)}
  ${field('Search ICAO / callsign / operator',`<input type="search" id="dbSearch" placeholder="Optional filter">`)}
  <button class="btn primary" id="dbApply">${icon('search')} Search</button><button class="btn" id="dbExport">${icon('download')} Export CSV</button>
- </div><div class="control-hint">CSV export is capped at 5,000 matching rows per request, to avoid overloading the receiver. Database tables are whitelisted; arbitrary SQL execution is disabled.</div></div>
- <div class="panel"><div class="panel-top"><div><h3 class="panel-title" id="dbTitle">Stored observations</h3><p class="panel-subtitle">Recent records first. Scroll horizontally for more columns.</p></div><span class="chip" id="dbPageInfo">—</span></div><div id="dbResults">${loading()}</div>
+ </div></div>
+ <div class="panel"><div class="panel-top"><div><h3 class="panel-title" id="dbTitle">Stored observations</h3></div><span class="chip" id="dbPageInfo">—</span></div><div id="dbResults">${loading()}</div>
  <div class="table-pager"><span class="muted tiny" id="dbCaption">Read-only query</span><div class="setting-actions"><button class="btn small" id="dbPrev">← Previous</button><button class="btn small" id="dbNext">Next →</button></div></div></div>`;
  try{const d=await api('/api/database/tables');if(rid!==renderId)return;
  $('#dbTable').innerHTML=opts(d.tables.map(x=>[x.name,x.name.replaceAll('_',' ')]),'all_sightings');
@@ -406,22 +464,26 @@ function collectSettingsLinks(){const original=getLinks();return $$('[data-linki
  if(url&&!/^https?:\/\//i.test(url))throw Error('URLs must begin with http:// or https://');
  return {...original[idx],name:$('.link-name',el).value.trim().slice(0,50)||'New link',sub:original[idx]?.sub||'Application shortcut',port,path,url,icon:original[idx]?.icon||'external'};
 })}
+function updaterToken(){
+ try{return localStorage.getItem(pairedUpdaterKey)||sessionStorage.getItem('airspace-token')||''}catch{return ''}
+}
 function updateBox(){return `<div class="auth-box">
-  <div class="status-row" style="margin-bottom:12px"><i class="dot" id="updateDot"></i><strong id="updateHeading">Checking installation…</strong></div>
-  <div class="tiny muted break-word" id="updateDetails">GitHub update status</div>
-  <div style="margin-top:15px;max-width:420px">${field('Update token (shown during initial installation)',`<input type="password" id="updateToken" autocomplete="off" placeholder="Paste update token" value="${esc(sessionStorage.getItem('airspace-token')||'')}">`)}</div>
-  <p class="token-note">The token is stored only for this browser tab, not saved to your permanent preferences. Never share it or expose the website directly to the public internet.</p>
-  <div class="setting-actions"><button class="btn" id="checkUpdates">${icon('refresh')} Check GitHub</button><button class="btn primary" id="applyUpdate">${icon('download')} Update now</button><button class="btn" id="rollbackUpdate">Restore previous</button></div>
-  <div class="tiny muted" id="updateProgress" style="margin-top:14px"></div>
+  <div class="status-row" style="margin-bottom:9px"><i class="dot" id="updateDot"></i><strong id="updateHeading">Checking GitHub…</strong></div>
+  <div class="tiny muted break-word" id="updateDetails"></div>
+  <div class="setting-actions"><button class="btn" id="checkUpdates">${icon('refresh')} Check GitHub</button><button class="btn primary" id="applyUpdate">Update now</button><button class="btn" id="rollbackUpdate">Restore previous</button></div>
+  <div class="tiny muted" id="updateProgress"></div>
+  <details class="advanced-panel updater-pair" id="updaterPairing"><summary>Connect updates on this browser</summary>
+   <div class="settings-entry">${field('Pairing code',`<input type="password" id="updateToken" autocomplete="off" placeholder="Only needed on a new browser">`)}
+   <button class="btn" type="button" id="saveUpdatePair">Connect</button></div></details>
  </div>`}
 async function renderSettings(){const rid=++renderId;
  $('#page').innerHTML=title('','Settings')+
  `<div class="panel">${settingsRow('Appearance','Choose a theme and your preferred default measurement.',
    `<div class="settings-entry">${field('Colour theme',`<select id="settingTheme">${opts([['dark','Dark / midnight'],['light','Light / cloud']],state.theme)}</select>`)}${field('Default measurement',`<select id="settingMetric">${opts([['flights','Estimated flights'],['aircraft','Unique aircraft'],['observations','Observations']],state.metric)}</select>`)}</div><button class="btn primary" id="saveAppearance" style="margin-top:13px">Save preferences</button>`)}
  ${settingsRow('Launcher links','The Analytics link always comes first. Add, remove and reorder the other links.',settingsLinks())}
- ${settingsRow('GitHub updates','One-click updates after the initial GitHub checkout and service installation.',updateBox())}
- ${settingsRow('Aerodrome database','Only read operations are allowed. This website does not change retention or feeder configuration.',`<div id="databaseInfo">${loading()}</div>`)}
- ${settingsRow('About this installation','Run as a private local-only website; use Tailscale for remote access.',`<div class="tiny muted">Airspace Analytics <span class="versionValue">v1.2.0</span> · Python stdlib web server · SVG charts · Europe/London.<br>Use GitHub for source-code updates. No cloud database or telemetry is required.</div>`)}
+ ${settingsRow('GitHub updates','',updateBox())}
+ ${settingsRow('Aerodrome database','',`<div id="databaseInfo">${loading()}</div>`)}
+
  </div>`;
  $('#saveAppearance').onclick=()=>{setTheme($('#settingTheme').value);state.metric=$('#settingMetric').value;persist();toast('Preferences saved')};
  function saveLinks(){try{putLinks(collectSettingsLinks());toast('Launcher links saved');return true}catch(e){toast('Invalid link',e.message,true);return false}}
@@ -430,19 +492,23 @@ async function renderSettings(){const rid=++renderId;
  $('#restoreLinks').onclick=()=>{putLinks(defaultLinks);toast('Default links restored');renderSettings()};
  $$('[data-remove]').forEach(b=>b.onclick=()=>{if(!saveLinks())return;const xs=getLinks();xs.splice(+b.dataset.remove,1);putLinks(xs);renderSettings()});
  $$('[data-reorder]').forEach(b=>b.onclick=()=>{if(!saveLinks())return;const xs=getLinks(),i=+b.dataset.pos,j=i+(b.dataset.reorder==='up'?-1:1);if(j<0||j>=xs.length)return;[xs[i],xs[j]]=[xs[j],xs[i]];putLinks(xs);renderSettings()});
- $('#updateToken').onchange=()=>sessionStorage.setItem('airspace-token',$('#updateToken').value.trim());
+ $('#saveUpdatePair').onclick=()=>{
+   const value=$('#updateToken').value.trim();if(!value)return;
+   localStorage.setItem(pairedUpdaterKey,value);sessionStorage.setItem('airspace-token',value);
+   $('#updateToken').value='';$('#updaterPairing').open=false;toast('Updater connected');
+ };
  $('#checkUpdates').onclick=async()=>{
   $('#updateDetails').textContent='Checking GitHub…';try{const d=await api('/api/update/check',{refresh:1});setUpdateInfo(d)}catch(e){$('#updateDetails').textContent=e.message}
  };
  $('#applyUpdate').onclick=()=>launchUpdate('apply');
  $('#rollbackUpdate').onclick=()=>launchUpdate('rollback');
  async function launchUpdate(mode){
-  const token=$('#updateToken').value.trim();sessionStorage.setItem('airspace-token',token);
-  if(!token){toast('Update token required','Paste your private update token to continue.',true);return}
+  const token=updaterToken();
+  if(!token){$('#updaterPairing').open=true;toast('Connect updates once','Use your existing pairing code for this browser.');return}
   if(!confirm(mode==='rollback'?'Restore the previous working website version and restart only this service?':'Download the latest code from your configured GitHub repository and restart only this website?'))return;
   $('#updateProgress').textContent='Starting the updater…';
   try{const res=await fetch('/api/update/'+mode,{method:'POST',headers:{'X-Update-Token':token,'Content-Type':'application/json'},body:'{}'});
-   const d=await res.json();if(!res.ok)throw Error(d.error||'Update request failed');
+   const d=await res.json();if(!res.ok){if(res.status===403)$('#updaterPairing').open=true;throw Error(d.error||'Update request failed');}
    toast(mode==='rollback'?'Rollback requested':'Update requested','The updater will restart only the Airspace Analytics service.');
    let attempts=0;
    const poll=async()=>{if(!$('#updateProgress'))return;attempts++;
@@ -457,15 +523,15 @@ async function renderSettings(){const rid=++renderId;
   $('#databaseInfo').innerHTML=`<div class="detail-grid">${[
    ['Database',d.db_path],['Current size',bytes(d.db_size_bytes)],['Oldest observation',when(d.first_sighting)],
    ['Most recent',when(d.last_sighting)],['Observations',fmt(d.raw_observations)],['Unique aircraft',fmt(d.total_aircraft)]
-  ].map(([k,v])=>`<div class="detail-item"><small>${esc(k)}</small><strong class="break-word">${esc(v)}</strong></div>`).join('')}</div><span class="chip ${d.fresh?'aqua':'warn'}">${d.fresh?'Source updating':'Source may be stale'}</span>`;
-  setUpdateInfo(u);$('#updateProgress').textContent=`Last updater result: ${s.state} — ${s.detail}`;
+  ].map(([k,v])=>`<div class="detail-item"><small>${esc(k)}</small><strong class="break-word">${esc(v)}</strong></div>`).join('')}</div>`;
+  setUpdateInfo(u);$('#updateProgress').textContent=s.state==='idle'?'':`${s.state}: ${s.detail}`;
  }catch(e){if(rid===renderId)$('#databaseInfo').innerHTML=safeError(e)}
 }
 function setUpdateInfo(d){if(!$('#updateDetails'))return;
- $('#updateHeading').textContent=d.available?'New version available':d.configured?'Repository is up to date':'GitHub not yet linked';
+ $('#updateHeading').textContent=d.available?'New version available':d.configured?'Repository is up to date':'GitHub unavailable';
  $('#updateDot').classList.toggle('good',d.configured&&!d.available);$('#updateDot').classList.toggle('bad',!!d.error);
- $('#updateDetails').innerHTML=`<div class="detail-grid">${[['Installed version',d.version],['Installed commit',d.local_sha||'—'],['Remote commit',d.remote_sha||'—']].map(([k,v])=>`<div class="detail-item"><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('')}</div>
- <span class="break-word tiny">${esc(d.repository||'Clone this project from your GitHub repository to enable in-app updates.')}</span>${d.error?`<p style="color:var(--orange)">${esc(d.error)}</p>`:''}`;
+ $('#updateDetails').innerHTML=`<div class="detail-grid">${[['Version',d.version],['Installed',d.local_sha||'—'],['GitHub',d.remote_sha||'—']].map(([k,v])=>`<div class="detail-item"><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('')}</div>
+ ${d.error?`<p style="color:var(--orange)">${esc(d.error)}</p>`:''}`;
 }
 async function loadPage(){const fallback=location.pathname==='/analytics'?'explore':'home';const hash=(location.hash||'#'+fallback).slice(1).split('?')[0];currentPage=names[hash]?hash:fallback;renderId++;document.body.classList.toggle('launcher-mode',currentPage==='home');document.title=(currentPage==='home'?'Airspace · Launcher':names[currentPage]+' · Airspace Analytics');
  $$('.nav-link,.mobile-tabbar a').forEach(el=>el.classList.toggle('active',el.dataset.page===currentPage));

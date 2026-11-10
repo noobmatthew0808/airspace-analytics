@@ -27,6 +27,56 @@ DB_DEFAULT = '/opt/aerodrome/aircraft_history.db'
 MAX_WINDOW_SECONDS = 12 * 366 * 86400
 MAX_ROWS = 5_000_000  # guardrail; raw observations are never loaded
 SESSION_GAP = 30 * 60
+# Carrier callsign prefixes observed on the receiver; inference is limited to
+# aircraft Aerodrome itself categorises as commercial. This is a conservative,
+# editable dictionary, never written back to Aerodrome.
+AIRLINE_PREFIXES = {
+    'EZY':'easyJet','EJU':'easyJet Europe','RYR':'Ryanair',
+    'BAW':'British Airways','EFW':'BA Euroflyer','EXS':'Jet2.com',
+    'AFR':'Air France','SWR':'Swiss','DLH':'Lufthansa',
+    'WUK':'Wizz Air UK','WZZ':'Wizz Air','TOM':'TUI Airways',
+    'THY':'Turkish Airlines','VLG':'Vueling','QTR':'Qatar Airways',
+    'UAL':'United Airlines','AAL':'American Airlines','DAL':'Delta Air Lines',
+    'KLM':'KLM','EIN':'Aer Lingus','IBE':'Iberia',
+    'VIR':'Virgin Atlantic','UAE':'Emirates','ETD':'Etihad Airways',
+    'TAP':'TAP Air Portugal','FIN':'Finnair','LOT':'LOT Polish Airlines',
+    'SAS':'SAS','ACA':'Air Canada',
+}
+
+
+def resolved_airline(category: str, operator: str | None, route_airline: str | None,
+                     callsign: str | None) -> str:
+    """Resolve a *commercial* airline from existing metadata, then callsign.
+
+    Never convert general aviation registrations into airline names. Missing
+    commercial metadata remains a visible Unknown instead of being hidden.
+    """
+    if category != 'commercial':
+        return ''
+    for value in (route_airline, operator):
+        if value and value.strip() and value.strip().lower() not in ('unknown','n/a','none','null'):
+            return value.strip()
+    call = (callsign or '').strip().upper()
+    match = re.fullmatch(r'([A-Z]{3})[0-9][A-Z0-9]{0,7}', call)
+    if match:
+        return AIRLINE_PREFIXES.get(match.group(1), 'Unknown airline')
+    return 'Unknown airline'
+
+
+def resolved_operator(category: str, operator: str | None, airline: str,
+                      route_airline: str | None) -> str:
+    # Keep GA / military unassigned operators separate; they are not airlines.
+    if operator and operator.strip() and operator.strip().lower() not in ('unknown','n/a','none','null'):
+        return operator.strip()
+    if category == 'commercial':
+        return airline
+    return {
+        'general_aviation':'Unknown GA operator',
+        'military':'Unknown military operator',
+        'helicopter':'Unknown helicopter operator',
+        'unknown':'Unknown category/operator',
+    }.get(category, 'Unknown operator')
+
 _DB_SEM = BoundedSemaphore(1)
 _CACHE: OrderedDict[tuple, tuple[float, dict]] = OrderedDict()
 _CACHE_LOCK = Lock()
@@ -84,7 +134,6 @@ def resolve_period(args: dict[str, str]) -> tuple[int, int, str]:
     local = now.astimezone(UK)
     choices = {
         'last_24h': 24 * 3600,
-        'last_46h': 46 * 3600,
         'last_7d': 7 * 86400,
         'last_30d': 30 * 86400,
         'last_90d': 90 * 86400,
@@ -115,16 +164,28 @@ def resolve_period(args: dict[str, str]) -> tuple[int, int, str]:
         end = min(end, now_ts + 3600)
     elif preset == 'rolling':
         try:
-            num = int(args.get('amount', '46'))
+            num = int(args.get('amount', '7'))
         except ValueError:
             raise DataError('Rolling duration must be a number')
         if not (1 <= num <= 100_000):
             raise DataError('Rolling duration outside supported range')
         unit = args.get('unit', 'hours')
-        secs = {'hours':3600, 'days':86400, 'weeks':604800}.get(unit)
-        if secs is None:
+        secs = {'minutes':60, 'hours':3600, 'days':86400, 'weeks':604800}.get(unit)
+        if unit in ('months', 'years'):
+            month_count = num * (12 if unit == 'years' else 1)
+            target = local.year * 12 + (local.month - 1) - month_count
+            year, month = divmod(target, 12)
+            if year < 1:
+                raise DataError('Rolling range is too long')
+            month += 1
+            from calendar import monthrange
+            earlier = local.replace(year=year, month=month,
+                                    day=min(local.day, monthrange(year, month)[1]))
+            start, end = int(earlier.timestamp()), now_ts
+        elif secs is not None:
+            start, end = now_ts - secs * num, now_ts
+        else:
             raise DataError('Invalid rolling unit')
-        start, end = now_ts - secs * num, now_ts
     else:
         raise DataError('Unknown time preset')
     if start >= end:
@@ -248,6 +309,28 @@ def coverage_eligible(key: str, unit: str, start: int, end: int,
     return found / expected >= 0.70
 
 
+def recorded_occurrence_eligible(key: str, unit: str, start: int, end: int,
+                                 samples: dict[int,int]) -> bool:
+    """Include observed partial days for early installations.
+
+    Aerodrome was activated in the evening, so insisting on 100% of a full
+    day makes the user's very first Monday/Tuesday misleadingly appear as 0.
+    Require actual minute records, not complete calendar dates. The resulting
+    mean is per *recorded* day, without scaling partial days to 24 hours.
+    """
+    if unit == 'month':
+        # A partial month is not a meaningful typical month: omit it.
+        return coverage_eligible(key, unit, start, end, samples)
+    if unit == 'hour':
+        ts = int(datetime.fromisoformat(key.replace('Z','+00:00')).timestamp())
+        return samples.get(ts, 0) >= 5
+    if unit == 'day':
+        begin = int(datetime.strptime(key, '%Y-%m-%d').replace(tzinfo=UK).timestamp())
+        finish = int((datetime.strptime(key, '%Y-%m-%d').replace(tzinfo=UK) + timedelta(days=1)).timestamp())
+        count = sum(n for hour,n in samples.items() if begin <= hour < finish)
+        return count >= 30
+    return False
+
 def _new_unit() -> dict:
     return {'observations':0, 'flights':0, 'aircraft':set()}
 
@@ -304,9 +387,8 @@ def _analyze_uncached(start: int, end: int, preset: str, metric: str, group: str
     if flt['type'] != 'all':
         where.append('UPPER(COALESCE(h.aircraft_type,a.aircraft_type,\'\')) = ?')
         values.append(flt['type'])
-    if flt['airline'] != 'all':
-        where.append("COALESCE(NULLIF(r.airline,''),NULLIF(a.operator,''),'Unknown') = ?")
-        values.append(flt['airline'])
+    # Airline/owner filters are evaluated against *resolved* values below,
+    # so inferred commercial callsign prefixes remain selectable.
     if flt['icao'] != 'all':
         where.append('h.icao = ?')
         values.append(flt['icao'])
@@ -320,7 +402,7 @@ def _analyze_uncached(start: int, end: int, preset: str, metric: str, group: str
     underlying = {'weekday':'day','hour_of_day':'hour','month_of_year':'month'}.get(group,group)
     buckets = defaultdict(_new_unit)
     total = _new_unit()
-    breakdowns: dict[str, dict[str, dict]] = {k:defaultdict(_new_unit) for k in ('category','type','airline')}
+    breakdowns: dict[str, dict[str, dict]] = {k:defaultdict(_new_unit) for k in ('category','type','airline','operator')}
     last_seen: dict[str, tuple[int,str]] = {}
     processed = 0
     first_data = None
@@ -352,15 +434,20 @@ def _analyze_uncached(start: int, end: int, preset: str, metric: str, group: str
                 n = int(row['sighting_count'] or 0)
                 category = (row['category'] or 'unknown').lower().strip() or 'unknown'
                 typ = (row['aircraft_type'] or 'Unknown').upper().strip() or 'Unknown'
-                airline = (row['airline'] or row['operator'] or 'Unknown').strip() or 'Unknown'
+                airline = resolved_airline(category,row['operator'],row['airline'],callsign)
+                operator = resolved_operator(category,row['operator'],airline,row['airline'])
+                if flt['airline'] != 'all' and flt['airline'] not in (airline,operator):
+                    continue
                 # Shared helper values; observed time is approximated to the containing hour.
                 unit = buckets[b]
                 unit['observations'] += n
                 unit['aircraft'].add(icao)
                 total['observations'] += n
                 total['aircraft'].add(icao)
-                vals = (category,typ,airline)
-                for label, name in zip(('category','type','airline'),vals):
+                vals = (category,typ,airline,operator)
+                for label, name in zip(('category','type','airline','operator'),vals):
+                    if label == 'airline' and category != 'commercial':
+                        continue
                     key_unit = breakdowns[label][name]
                     key_unit['observations'] += n
                     key_unit['aircraft'].add(icao)
@@ -369,7 +456,9 @@ def _analyze_uncached(start: int, end: int, preset: str, metric: str, group: str
                     flight_key = bucket_id(seen_start, underlying)
                     buckets[flight_key]['flights'] += 1
                     total['flights'] += 1
-                    for label,name in zip(('category','type','airline'),vals):
+                    for label,name in zip(('category','type','airline','operator'),vals):
+                        if label == 'airline' and category != 'commercial':
+                            continue
                         breakdowns[label][name]['flights'] += 1
         except sqlite3.OperationalError as exc:
             if 'interrupted' in str(exc).lower():
@@ -385,7 +474,7 @@ def _analyze_uncached(start: int, end: int, preset: str, metric: str, group: str
         coverage_hours = minute_samples_by_utc_hour(start, end)
         grouped: dict[str, list[dict]] = defaultdict(list)
         for key, unit in buckets.items():
-            if not coverage_eligible(key,underlying,start,end,coverage_hours):
+            if not recorded_occurrence_eligible(key,underlying,start,end,coverage_hours):
                 continue
             if group == 'weekday':
                 pk = str(datetime.strptime(key,'%Y-%m-%d').weekday())
@@ -406,9 +495,9 @@ def _analyze_uncached(start: int, end: int, preset: str, metric: str, group: str
         series = []
         for idx,name in zip(indexes,names):
             units = grouped.get(str(idx),[])
-            mean = sum(_metric(v,metric) for v in units)/len(units) if units else 0
-            series.append({'key':str(idx),'label':name,'value':round(mean,2),'samples':len(units)})
-        aggregation_label = 'Average per sufficiently recorded full occurrence'
+            mean = sum(_metric(v,metric) for v in units)/len(units) if units else None
+            series.append({'key':str(idx),'label':name,'value':round(mean,2) if mean is not None else None,'samples':len(units)})
+        aggregation_label = 'Average per recorded occurrence'
     else:
         series = [{'key':key,'label':display_bucket(key,group),'value':_metric(buckets[key],metric)} for key in sorted(buckets)]
         aggregation_label = 'Per time bucket'
@@ -421,7 +510,7 @@ def _analyze_uncached(start: int, end: int, preset: str, metric: str, group: str
         items = [{'name':name,'value':_metric(unit,metric)} for name,unit in collection.items()]
         items.sort(key=lambda item:item['value'],reverse=True)
         charts[label] = items[:35]
-    values_series = [float(i['value']) for i in series]
+    values_series = [float(i['value']) for i in series if i['value'] is not None]
     # concurrent_minute is a useful *proxy* for collection completeness. It
     # isn't a definitive proof of uptime (depending on Aerodrome version,
     # genuinely empty minutes may not generate a record).
@@ -449,7 +538,7 @@ def _analyze_uncached(start: int, end: int, preset: str, metric: str, group: str
           'Flights are estimated coverage visits, not verified end-to-end flights. Separate visits within one aircraft-hour may be merged.',
           'Unique aircraft counts in individual time buckets may sum to more than the period total.',
           'Hour summaries are approximate at exact start/end minute boundaries; a quiet hour may also reflect a receiver outage.',
-          'Recurring weekday/hour/month means include only complete periods with at least 70% minute-sample coverage. Missing history is not zero traffic.',
+          'Weekday and hour averages include recorded partial days. Unobserved periods are excluded.',
           'Aircraft/airline categories use Aerodrome enrichment, which can be missing or change over time.'
         ],
     }
@@ -651,12 +740,11 @@ def _patterns_uncached(start,end,metric,flt):
     if flt['type']!='all':
         w.append("UPPER(COALESCE(h.aircraft_type,a.aircraft_type,'')) = ?")
         v.append(flt['type'])
-    if flt['airline']!='all':
-        w.append("COALESCE(NULLIF(r.airline,''),NULLIF(a.operator,''),'Unknown') = ?")
-        v.append(flt['airline'])
+    # Resolve carrier callsigns in Python, in the same way as Traffic.
     if flt['icao']!='all':
         w.append('h.icao = ?');v.append(flt['icao'])
-    sql='''SELECT h.icao,h.hour_bucket,h.sighting_count,h.first_seen_at,h.last_seen_at,h.callsign
+    sql='''SELECT h.icao,h.hour_bucket,h.sighting_count,h.first_seen_at,h.last_seen_at,h.callsign,
+       a.category,a.operator,r.airline
        FROM sightings_hourly h LEFT JOIN seen_aircraft a ON a.icao=h.icao
        LEFT JOIN (SELECT callsign, MAX(airline) AS airline FROM route_cache GROUP BY callsign) r ON r.callsign=h.callsign
        WHERE '''+' AND '.join(w)+' ORDER BY h.hour_bucket,h.icao'
@@ -675,6 +763,11 @@ def _patterns_uncached(start,end,metric,flt):
                 first=int(row['first_seen_at'] or row['hour_bucket'])
                 last=int(row['last_seen_at'] or row['hour_bucket'])
                 call=(row['callsign'] or '').strip().upper()
+                cat=(row['category'] or 'unknown').lower()
+                air=resolved_airline(cat,row['operator'],row['airline'],call)
+                op=resolved_operator(cat,row['operator'],air,row['airline'])
+                if flt['airline']!='all' and flt['airline'] not in (air,op):
+                    continue
                 old=last_seen.get(icao)
                 new=not old or first-old[0]>SESSION_GAP or (old[1] and call and old[1]!=call)
                 last_seen[icao]=(max(last,old[0]) if old else last,call or (old[1] if old else ''))
@@ -700,22 +793,22 @@ def _patterns_uncached(start,end,metric,flt):
         d['flights']+=x['flights']
         d['aircraft'].update(x['aircraft'])
         wd=local.weekday(); hour=local.hour
-        if coverage_eligible(bucket_id(ts,'hour'),'hour',start,end,minute_hours):
+        if recorded_occurrence_eligible(bucket_id(ts,'hour'),'hour',start,end,minute_hours):
             cell[(wd,hour)].append(_metric(x,metric))
             hour_by[hour].append(_metric(x,metric))
     weekday_names=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
     by_wd=defaultdict(list)
     for date_string, unit in days.items():
-        if not coverage_eligible(date_string,'day',start,end,minute_hours):
+        if not recorded_occurrence_eligible(date_string,'day',start,end,minute_hours):
             continue
         wd=datetime.strptime(date_string,'%Y-%m-%d').weekday()
         by_wd[wd].append(_metric(unit,metric))
-    weekdays=[{'key':str(d),'label':weekday_names[d],'value':round(sum(by_wd[d])/len(by_wd[d]),2) if by_wd[d] else 0,'samples':len(by_wd[d])} for d in range(7)]
-    hourly=[{'key':str(h),'label':f'{h:02}:00','value':round(sum(hour_by[h])/len(hour_by[h]),2) if hour_by[h] else 0,'samples':len(hour_by[h])} for h in range(24)]
-    cells=[{'weekday':d,'hour':h,'value':round(sum(cell[(d,h)])/len(cell[(d,h)]),2) if cell[(d,h)] else 0,'samples':len(cell[(d,h)])} for d in range(7) for h in range(24)]
+    weekdays=[{'key':str(d),'label':weekday_names[d],'value':round(sum(by_wd[d])/len(by_wd[d]),2) if by_wd[d] else None,'samples':len(by_wd[d])} for d in range(7)]
+    hourly=[{'key':str(h),'label':f'{h:02}:00','value':round(sum(hour_by[h])/len(hour_by[h]),2) if hour_by[h] else None,'samples':len(hour_by[h])} for h in range(24)]
+    cells=[{'weekday':d,'hour':h,'value':round(sum(cell[(d,h)])/len(cell[(d,h)]),2) if cell[(d,h)] else None,'samples':len(cell[(d,h)])} for d in range(7) for h in range(24)]
     return {'start':start,'end':end,'metric':metric,'weekday':weekdays,'hourly':hourly,'heatmap':cells,
         'strongest_hour':max((x for x in cells if x['samples'] > 0),key=lambda x:x['value'],default=None),
-        'note':'Uses only complete calendar occurrences with at least 70% minute-sample coverage. Empty or unavailable periods are excluded; 0 with zero samples means insufficient data, not zero traffic.'}
+        'note':'Average per recorded day/hour. Partial days are included; unavailable periods are null.'}
 
 
 def filter_options() -> dict:
@@ -729,4 +822,4 @@ def filter_options() -> dict:
            GROUP BY TRIM(operator) ORDER BY COUNT(*) DESC LIMIT 1000''')]
         airlines=[r[0] for r in db.execute('''SELECT DISTINCT TRIM(airline) FROM route_cache
            WHERE airline IS NOT NULL AND TRIM(airline)!='' LIMIT 1000''')]
-    return {'types':aircraft_types,'airlines':list(dict.fromkeys(airlines+operators))}
+    return {'types':aircraft_types,'airlines':list(dict.fromkeys(airlines+operators+list(AIRLINE_PREFIXES.values())))}

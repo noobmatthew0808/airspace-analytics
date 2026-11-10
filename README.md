@@ -9,7 +9,7 @@ A private, responsive, self-hosted ADS-B analytics homepage and historical explo
 ## What it includes
 
 - **Home:** live-ish source status, today's unique aircraft, observations, peak concurrency, shortcuts to ADSB.im, Aerodrome, SkyStats, readsb map, receiver graphs, and optional Dozzle.
-- **Explore:** flights / unique aircraft / observations, flexible windows (today, last 46 hours, rolling X hours/days/weeks, custom dates, month/year/all time), hourly/daily/weekly/monthly/yearly charts, recurring weekday/hour/month averages, aircraft category/type/airline breakdowns, click-to-drill, line/bar switch, bookmarks saved in the browser.
+- **Explore:** flights / unique aircraft / observations, flexible windows (any rolling duration from minutes to years, exact custom start/end dates, or all recorded history), hourly/daily/weekly/monthly/yearly charts, recurring weekday/hour/month averages, aircraft category/type/airline breakdowns, click-to-drill, line/bar switch, bookmarks saved in the browser.
 - **Patterns:** 7 × 24 average-traffic heatmap, typical weekday and hour profiles, filtered by measurement, period and aircraft.
 - **Compare:** today vs yesterday, this week vs earlier weeks, custom intervals and proportional overlays. Calendar-aware comparisons use Europe/London wall-clock time.
 - **Aircraft:** search historical ICAO codes, callsigns, aircraft types or operators; inspect stored observations.
@@ -29,7 +29,7 @@ All UI assets are bundled locally; there are no CDNs or mandatory npm packages. 
    ```
 
 3. The installer checks that the Aerodrome database exists and the normal Ubuntu user can read it, creates three dedicated systemd units, and starts the website. It prints the device's IP address and a **private update token**. Keep the token private.
-4. Visit `http://192.168.1.187:8088` from the laptop or phone on the same network (adjust IP if changed). Visit **Settings → GitHub updates** and enter the update token once per browser tab. The website can then update or restore its previous version from the UI.
+4. Visit `http://192.168.1.187:8088` from the laptop or phone on the same network (adjust IP if changed). Visit **Settings → GitHub updates** and connect the update token once per browser if needed (previously paired browsers migrate automatically). The website can then update or restore its previous version from the UI.
 
 **No Python virtual environment, npm install, compilation, Docker installation, or database migration is required.** The installer does not stop, restart or reconfigure Aerodrome or any feeders.
 
@@ -39,7 +39,7 @@ The installer deliberately requires an existing Aerodrome DB at `/opt/aerodrome/
 
 1. Push new project source to your GitHub default branch. The repository needs to be under your control because updates execute its Python source as the website user.
 2. Go to **Settings → GitHub updates → Check GitHub**.
-3. Select **Update now**, supply the private token if prompted, and confirm.
+3. Select **Update now** and confirm. On browsers that are not yet paired, use the collapsed **Connect updates on this browser** setting once.
 4. The website signals `airspace-analytics-update.path` (systemd), which starts the unprivileged updater. It only performs a **fast-forward Git update** (local tracked edits or history rewrites block installation), checks the Python code and required assets, and restarts **only** `airspace-analytics.service`.
 5. If code validation fails, the updater tries to restore the old code. It does not automatically verify HTTP health after restarting; use the Restore previous action or CLI fallback if an update breaks startup. **Restore previous** in Settings resets to the prior working commit saved from the most recent successful update.
 
@@ -93,13 +93,13 @@ The website does **not** duplicate observations into another database. Small tra
 
 **Hourly rollups:** ideal for periods spanning months and years, but custom minute-level boundaries may include full partial hour summaries. Date bucketing uses `Europe/London`, including daylight saving.
 
-**Weekday/hour/month-of-year averages:** normalised per complete calendar occurrence that has at least 70% of expected Aerodrome minute samples; incomplete boundary periods are excluded. A value with 0 samples means unavailable history, not necessarily zero air traffic. For example, a partial first day is not counted as a complete Monday.
+**Weekday/hour/month-of-year averages:** the mean of recorded calendar days (with at least 30 recorded minute samples per day) or recorded hours (with at least 5 minute samples). Partial days are included as their observed daily total, **not scaled up to a 24-hour estimate**. A day with no samples is returned as unavailable (`null`/dash), not a traffic count of zero. Month-of-year means still require a sufficiently complete calendar month.
 
-**Airlines:** use `route_cache.airline` then `seen_aircraft.operator`, otherwise `Unknown`. An operator isn't always a scheduled airline; airline charts therefore describe the best available metadata, not a verified booking carrier.
+**Airlines:** the commercial-only airline chart uses `route_cache.airline`, `seen_aircraft.operator`, then a conservative known airline ICAO callsign prefix mapping. Unrecognised commercial traffic remains `Unknown airline`. The all-aviation **Operators** view retains GA/military owner/operator labels separately, including category-specific Unknown values; it never mislabels GA as an airline.
 
 **Commercial / general aviation / military / helicopter / unknown:** Aerodrome's current aircraft categories, which might be revised as metadata updates.
 
-**Sample coverage percentage:** the number of `concurrent_minute` records divided by expected minutes in the selected period, capped at 100%. This is a **proxy**, not a guaranteed uptime metric. Recurring averages require at least 70% minute-sample availability; the threshold is a quality rule, not a reliability guarantee. Aerodrome may omit some genuinely empty minutes. A quiet hour could also mean no aircraft in range.
+**Sample coverage percentage:** the number of `concurrent_minute` records divided by expected minutes in the selected period, capped at 100%. This is a **proxy**, not a guaranteed uptime metric. Month-of-year averages require 70% minute-sample availability; weekday and hour charts instead accept observed partial periods. Aerodrome may omit some genuinely empty minutes. A quiet hour could also mean no aircraft in range.
 
 **Retention:** the website obeys Aerodrome's configured retention and cannot recreate history that Aerodrome has already deleted. Make long-term backup/retention decisions separately. Periods before initial collection return no observations; they are not reconstructed from FR24/FlightAware.
 
@@ -136,7 +136,7 @@ This removes the three **Airspace Analytics** systemd units only. Aerodrome, ADS
 ## Security notes
 
 - **LAN/Tailscale only:** the UI uses HTTP without HTTPS by default. No router port forwarding; other LAN users may see your historical aircraft data. VPN/Tailscale is preferred for remote access.
-- The update token is created locally, stored in `.airspace-state/update-token` with permissions 0600, and transmitted only to the website when updating. The UI stores it in browser session storage only.
+- The update token is created locally, stored in `.airspace-state/update-token` with permissions 0600, and transmitted only to the website when updating. The UI migrates a previously entered token into this browser’s local storage, so normal updates require no repeated entry. A new browser can be paired separately if necessary.
 - The updater is triggered by a systemd path unit, *not* by giving a web request privileged command execution. Only the updater's fixed `systemctl restart airspace-analytics.service` post-action runs as root.
 - Future public-facing deployments would require HTTPS and full login protection for **all** data and settings endpoints.
 - Never commit your actual Aerodrome database, `config.yaml`, `.airspace-state/`, secrets, or update token to GitHub.
@@ -162,10 +162,18 @@ MIT — see `LICENSE`.
 
 The normal URL `http://<your-host>:8088/` is now a simple **application launcher**. Its first, fixed link is **Airspace Analytics**, which opens `http://<your-host>:8088/analytics#explore` on the same port. The other links can be edited, removed, added and reordered under **Settings → Launcher links**. The links live in each browser's storage, so changes made on a phone do not automatically appear on a PC.
 
-The Analytics workspace has three primary modes (Traffic, Patterns and Compare) plus aircraft, read-only database and settings tools. Traffic displays a single main chart, quick date ranges, metric selector (Visits, Aircraft, Samples), grouping, a click-to-drill zoom with a **Zoom out** button, and collapsible Filters and Breakdowns. No new aircraft collection process or writeable database is created.
+The Analytics workspace has three primary modes (Traffic, Patterns and Compare) plus aircraft, read-only database and settings tools. Traffic displays a single main chart, flexible duration/date controls, metric selector (Visits, Aircraft, Samples), grouping, a click-to-drill zoom with a **Zoom out** button, and collapsible Filters and Breakdowns. No new aircraft collection process or writeable database is created.
 
 To upgrade an already-installed Git checkout, **commit the changed files to that same GitHub repository's default branch**. Then, from the still-running v1.1 website, open **Settings → GitHub updates → Check GitHub → Update now**. The site's existing private update token remains valid. There is no need to rerun the installer or edit Aerodrome. The new interface takes effect after the existing updater restarts only Airspace Analytics.
 
 If GitHub's website is used to upload this release, extract the ZIP locally and replace project files in the **same repository**, not a new one. Do not upload this ZIP as a single file; upload its contents. Particularly important files are `VERSION`, `frontend/app.js`, `frontend/styles.css`, `frontend/index.html`, and `CHANGELOG.md`. The backend and installer have no functional changes in this release.
 
 The home screen intentionally contains no analytics charts; use the pinned Analytics button to open the workspace. On mobile, Analytics has compact bottom navigation; the Database section remains accessible from the menu in the upper-left.
+
+## v1.3 — streamlined personal interface
+
+Traffic, Patterns and Compare share a single date-range control: **Last** (input any number and select minutes, hours, days, weeks, months or years), **Dates** (custom UK start/end), or **All time**. No fixed 46-hour example or oversized preset strip. The Patterns screen now reports actual recorded-day averages even while Aerodrome is newly collecting, rather than displaying misleading zeros for incomplete calendar days.
+
+The **Commercial airlines** chart excludes general aviation and can identify familiar carriers from callsigns like `EZY123` when Aerodrome's operator field is empty. Choose **Operators · all** to include owners and non-airline operators. No source records are changed.
+
+The website no longer shows routine caveat boxes, the About Installation panel, or the Understanding These Numbers section. Update actions remain authenticated, but an already paired browser no longer displays or requests the token each time.
