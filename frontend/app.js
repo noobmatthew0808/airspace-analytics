@@ -356,8 +356,8 @@ async function renderExplore(){const rid=++renderId;currentAnalytics=null;
   persist();renderExplore();};
  $('#trafficReset').onclick=e=>{e.preventDefault();e.stopPropagation();resetTraffic()};
  if(state.filtersEnabled){initControls(()=>{zoomHistory.length=0;renderExplore()},false);populateFilters();}
- $('[data-heat-scale]').forEach(button=>button.onclick=()=>{state.heatmapScale=button.dataset.heatScale;persist();
-  $('.heatmap-choices button').forEach(b=>b.classList.toggle('selected',b===button));loadHeatmap(rid)});
+ $$('[data-heat-scale]').forEach(button=>button.onclick=()=>{state.heatmapScale=button.dataset.heatScale;persist();
+  $$('.heatmap-choices button').forEach(b=>b.classList.toggle('selected',b===button));loadHeatmap(rid)});
  $('#lineSwitch').onclick=()=>{state.chart='line';persist();drawCurrentChart()};
  $('#barSwitch').onclick=()=>{state.chart='bar';persist();drawCurrentChart()};
  $('#zoomBack').onclick=()=>{const prev=zoomHistory.pop();if(prev){Object.assign(state,prev);persist();renderExplore()}};

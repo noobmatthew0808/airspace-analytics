@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.6.1 — 10 November 2026
+- Fix two heatmap selector calls that crashed Traffic during initial load.
+- Add regression tests for element iteration.
+- No changes to Aerodrome or ADS-B feeder services.
+
 ## v1.6.0 — 10 November 2026
 - Unified Patterns and Traffic into one scrollable analytics page; removed the separate Patterns navigation.
 - Default yearly traffic view with click-to-drill through month, week, day and hour. Zoom out and All years remain.
