@@ -58,11 +58,11 @@ class TestLocalAPI(unittest.TestCase):
   with self.assertRaises(HTTPError) as cm:
    self.get('/api/database/rows?table=sqlite_master')
   self.assertEqual(cm.exception.code,400)
- def test_invalid_update_token_cannot_modify(self):
+ def test_update_requires_configured_repository(self):
   url=f'http://127.0.0.1:{self.port}/api/update/apply'
   req=Request(url, data=b'{}',method='POST', headers={'X-Update-Token':'not-the-secret','Content-Type':'application/json'})
   with self.assertRaises(HTTPError) as cm:
    urlopen(req,timeout=5)
-  self.assertIn(cm.exception.code,(403,503))
+  self.assertEqual(cm.exception.code,400)  # isolated test has no configured Git remote
 
 if __name__=='__main__':unittest.main()

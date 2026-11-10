@@ -20,6 +20,15 @@ class TestReadOnlyAnalytics(unittest.TestCase):
         os.environ.pop('AIRSPACE_DB',None)
         cls.tmp.cleanup()
 
+    def test_identify_extra_real_world_commercial_airlines(self):
+        expected={'FDX5201':'FedEx Express','RUK68CK':'Ryanair UK',
+                  'BCS2665':'European Air Transport (DHL)',
+                  'NPT3EA':'West Atlantic UK','WMT705':'Wizz Air Malta'}
+        for callsign, airline in expected.items():
+            self.assertEqual(data.resolved_airline('commercial',None,None,callsign),airline)
+        self.assertEqual(data.resolved_airline('commercial',None,None,''),'Unknown airline')
+        self.assertEqual(data.resolved_airline('general_aviation',None,None,'FDX5201'),'')
+
     def test_read_only_connection(self):
         with closing(data.connection()) as c:
             self.assertRaises(Exception,c.execute,"DELETE FROM seen_aircraft")

@@ -13,6 +13,7 @@ const safeError=e=>`<div class="notice error-note"><strong>Couldn't load this vi
 const key='airspace-analytics-prefs-v1';
 const defaults={metric:'flights',period:'rolling',bucket:'auto',category:'all',type:'all',airline:'all',icao:'all',amount:7,unit:'days',start:'',end:'',chart:'line',theme:'dark',comparison:'previous',offset:1,other_start:'',other_end:'',typeViz:'bars',airlineViz:'bars',operatorScope:'airline',filtersEnabled:false,heatmapScale:'year'};
 const state={...defaults,...readPrefs()};
+if(!['year','month'].includes(state.heatmapScale))state.heatmapScale='year';
 if(state.filtersEnabled!==true && !localStorage.getItem('airspace-analytics-v16-ready')){
  Object.assign(state,{metric:'flights',period:'all',bucket:'year',category:'all',type:'all',airline:'all',icao:'all',filtersEnabled:false,heatmapScale:'year'});
  try{localStorage.setItem('airspace-analytics-v16-ready','yes');localStorage.setItem(key,JSON.stringify(state))}catch{}
@@ -107,7 +108,7 @@ function shell(){
 }
 function nav([id,title,ic]){return `<a class="nav-link" href="#${id}" data-page="${id}">${icon(ic)}<span>${title}</span></a>`}
 function setMenu(open){$('#sidebar').classList.toggle('open',open);$('#overlay').classList.toggle('show',open)}
-function toast(title,msg='',bad=false){const x=document.createElement('div');x.className='toast'+(bad?' bad':'');x.innerHTML=`<strong>${esc(title)}</strong>${esc(msg)}`;$('#toasts').append(x);setTimeout(()=>x.remove(),5200)}
+function toast(){} // No pop-up notifications.
 function setStatus(h){healthInfo=h;const good=h?.fresh===true;const msg=good?'Aerodrome connected':h?.ok?'Data may be delayed':'Database unavailable';for(const id of ['sidebarDot','topDot']){$('#'+id).classList.toggle('good',good);$('#'+id).classList.toggle('bad',!!h&&!good)}$('#sidebarTitle').textContent=msg;$('#topStatus').textContent=good?'Data updating':'Check data';$('#sidebarDetail').textContent=h?.last_sighting?`Latest observation: ${when(h.last_sighting)}`:'Read-only historical data connection';}
 async function api(path,params={}){const url=new URL(path,location.origin);Object.entries(params).forEach(([k,v])=>{if(v!==null&&v!==undefined&&v!=='')url.searchParams.set(k,String(v))});const res=await fetch(url,{cache:'no-store'});let d;try{d=await res.json()}catch{throw Error('The local website is unavailable.')};if(!res.ok)throw Error(d.error||'Request failed');return d}
 const timerDate=(d)=>d?d:new Date().toISOString().slice(0,16);
@@ -235,12 +236,12 @@ function renderSavedViews(){const place=$('#savedViews');if(!place)return;let vi
  place.innerHTML=views.length?views.map((v,i)=>`<button class="chip aqua" data-view="${i}">${icon('bookmark',12)} ${esc(v.name)}</button>`).join(' '):'<span class="muted tiny">No saved views yet. Save your favourite filters and time groupings.</span>';
  $$('[data-view]',place).forEach(b=>b.onclick=()=>{Object.assign(state,views[+b.dataset.view].query);persist();renderExplore()});
 }
-function renderChart(series,kind='line',{height=305,mini=false,color='aqua',everyHour=false,displayGroup='auto'}={}){
+function renderChart(series,kind='line',{height=305,mini=false,color='aqua',everyHour=false,displayGroup='auto',alignStart=false}={}){
  if(!series?.length||series.every(s=>s.value===null||s.value===undefined))return `<div class="chart-empty">No observations in this period.</div>`;
  const n=series.length,W=720,H=height,L=55,R=14,T=19,B=49;
  const plotW=W-L-R,plotH=H-T-B;
  const max=Math.max(1,...series.map(s=>Number(s.value)||0));
- const slot=plotW/n;
+ const slot=plotW/(alignStart?Math.max(n,12):n);
  const x=i=>L+slot*(i+.5);
  const y=value=>T+plotH-(Math.max(0,Number(value)||0)/max)*(plotH-9);
  const stroke=({aqua:'var(--aqua)',blue:'var(--blue)',pink:'var(--pink)'})[color]||'var(--aqua)';
@@ -313,7 +314,7 @@ function drillInto(point,group){
  else if(group==='week'){from=key+'T00:00';const x=new Date(key+'T12:00:00Z');x.setUTCDate(x.getUTCDate()+7);to=x.toISOString().slice(0,10)+'T00:00';next='day'}
  else if(group==='day'){from=key+'T00:00';const x=new Date(key+'T12:00:00Z');x.setUTCDate(x.getUTCDate()+1);to=x.toISOString().slice(0,10)+'T00:00';next='hour'}
  else if(group==='hour'){from=ukDatetime(key);const x=new Date(Date.parse(key)+3600*1000);to=ukDatetime(x.toISOString());next='hour'}
- if(from&&to){zoomHistory.push({period:state.period,start:state.start,end:state.end,bucket:state.bucket,amount:state.amount,unit:state.unit,heatmapScale:state.heatmapScale});state.heatmapScale={year:'year',month:'month',week:'week',day:'day',hour:'day'}[group]||state.heatmapScale;state.period='custom';state.start=from;state.end=to;state.bucket=next;persist();location.hash='#explore';if(currentPage==='explore')renderExplore();toast('Drilled into '+point.label,'Click Reset to return to your normal time range.');}
+ if(from&&to){zoomHistory.push({period:state.period,start:state.start,end:state.end,bucket:state.bucket,amount:state.amount,unit:state.unit,heatmapScale:state.heatmapScale,heatmapMonthFocus:state.heatmapMonthFocus});state.heatmapScale={year:'year',month:'month',week:'month',day:'month',hour:'month'}[group]||state.heatmapScale;state.heatmapMonthFocus=group==='month'?point.key:'';state.period='custom';state.start=from;state.end=to;state.bucket=next;persist();location.hash='#explore';if(currentPage==='explore')renderExplore();toast('Drilled into '+point.label,'Click Reset to return to your normal time range.');}
 }
 function donut(items){if(!items?.length)return `<div class="empty">No breakdown available.</div>`;
  const top=items.slice(0,5),total=items.reduce((a,x)=>a+Number(x.value),0);
@@ -344,7 +345,7 @@ async function renderExplore(){const rid=++renderId;currentAnalytics=null;
  <div class="panel"><div class="panel-top"><h3 class="panel-title">Aircraft types</h3></div><div id="typeBars">${loading()}</div></div>
  <div class="panel"><div class="panel-top"><select id="operatorScope" class="breakdown-scope" aria-label="Operator breakdown">${opts([['airline','Airlines · commercial'],['operator','Operators · all']],state.operatorScope||'airline')}</select></div><div id="airlineBars">${loading()}</div></div></div></details>
 <section class="panel traffic-heat-section"><div class="panel-top"><h2 class="panel-title">Activity heatmap</h2>
-<div class="heatmap-choices" role="group" aria-label="Heatmap period">${['year','month','week','day'].map(k=>`<button type="button" class="btn small ${state.heatmapScale===k?'selected':''}" data-heat-scale="${k}">${k[0].toUpperCase()+k.slice(1)}</button>`).join('')}</div></div>
+<div class="heatmap-choices" role="group" aria-label="Heatmap period">${['year','month'].map(k=>`<button type="button" class="btn small ${state.heatmapScale===k?'selected':''}" data-heat-scale="${k}">${k[0].toUpperCase()+k.slice(1)}</button>`).join('')}</div></div>
 <div id="heatmapPeriod" class="muted tiny"></div><div id="heatmap">${loading()}</div></section>
 <div class="pattern-subgrid traffic-averages"><section class="panel"><h2 class="panel-title">Average by weekday <small>· All time</small></h2><div id="weekdayPattern">${loading()}</div></section>
 <section class="panel"><h2 class="panel-title">Average by hour <small>· All time</small></h2><div id="hourPattern">${loading()}</div></section></div>
@@ -356,12 +357,12 @@ async function renderExplore(){const rid=++renderId;currentAnalytics=null;
   persist();renderExplore();};
  $('#trafficReset').onclick=e=>{e.preventDefault();e.stopPropagation();resetTraffic()};
  if(state.filtersEnabled){initControls(()=>{zoomHistory.length=0;renderExplore()},false);populateFilters();}
- $$('[data-heat-scale]').forEach(button=>button.onclick=()=>{state.heatmapScale=button.dataset.heatScale;persist();
+ $$('[data-heat-scale]').forEach(button=>button.onclick=()=>{state.heatmapScale=button.dataset.heatScale;if(state.heatmapScale==='year')state.heatmapMonthFocus='';persist();
   $$('.heatmap-choices button').forEach(b=>b.classList.toggle('selected',b===button));loadHeatmap(rid)});
  $('#lineSwitch').onclick=()=>{state.chart='line';persist();drawCurrentChart()};
  $('#barSwitch').onclick=()=>{state.chart='bar';persist();drawCurrentChart()};
  $('#zoomBack').onclick=()=>{const prev=zoomHistory.pop();if(prev){Object.assign(state,prev);persist();renderExplore()}};
- $('#zoomReset').onclick=()=>{state.period='all';state.bucket='year';state.heatmapScale='year';state.start='';state.end='';zoomHistory.length=0;persist();renderExplore()};
+ $('#zoomReset').onclick=()=>{state.period='all';state.bucket='year';state.heatmapScale='year';state.heatmapMonthFocus='';state.start='';state.end='';zoomHistory.length=0;persist();renderExplore()};
  try{const a=await api('/api/analytics',queryArgs());if(rid!==renderId)return;
   currentAnalytics=a;if(state.filtersEnabled)fillFilterOptions(a);
   $('#exploreStats').innerHTML=`<div class="mini-stat"><span>Period total</span><strong>${fmt(a.total)}</strong></div><div class="mini-stat"><span>${esc(a.aggregation_label)}</span><strong>${fmt(a.average,2)}</strong></div><div class="mini-stat"><span>Peak interval</span><strong>${fmt(a.peak,2)}</strong></div><div class="mini-stat"><span>Unique aircraft</span><strong>${fmt(a.unique_aircraft)}</strong></div>`;
@@ -386,7 +387,7 @@ async function renderExplore(){const rid=++renderId;currentAnalytics=null;
 }
 function drawCurrentChart(){if(!currentAnalytics)return;
  const selected=visibleSeries(currentAnalytics);
- $('#exploreChart').innerHTML=renderChart(selected,state.chart||'line',{everyHour:currentAnalytics.bucket==='hour',displayGroup:currentAnalytics.bucket});
+ $('#exploreChart').innerHTML=renderChart(selected,state.chart||'line',{everyHour:currentAnalytics.bucket==='hour',displayGroup:currentAnalytics.bucket,alignStart:true});
  hookChart($('#exploreChart'),selected,currentAnalytics.bucket);
  $('#lineSwitch').classList.toggle('selected',state.chart!=='bar');$('#barSwitch').classList.toggle('selected',state.chart==='bar');
 }
@@ -418,26 +419,32 @@ function visibleSeries(a){
 function heatmapWindow(){
  const a=currentAnalytics;if(!a)return null;
  const at=a.bucket==='year'&&state.period==='all'?new Date(a.end*1000-1000):new Date(a.start*1000);
- const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(at);
- const get=name=>+parts.find(x=>x.type===name).value;
- const y=get('year'),m=get('month'),d=get('day'),level=state.heatmapScale||'year';
- const iso=(yy,mm,dd)=>`${yy}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}T00:00`;
- let from,to;
- if(level==='year'){from=iso(y,1,1);to=iso(y+1,1,1)}
- else if(level==='month'){from=iso(y,m,1);to=m===12?iso(y+1,1,1):iso(y,m+1,1)}
- else if(level==='week'){const dt=new Date(Date.UTC(y,m-1,d,12));dt.setUTCDate(dt.getUTCDate()-(dt.getUTCDay()+6)%7);from=iso(dt.getUTCFullYear(),dt.getUTCMonth()+1,dt.getUTCDate());dt.setUTCDate(dt.getUTCDate()+7);to=iso(dt.getUTCFullYear(),dt.getUTCMonth()+1,dt.getUTCDate())}
- else{from=iso(y,m,d);const dt=new Date(Date.UTC(y,m-1,d+1,12));to=iso(dt.getUTCFullYear(),dt.getUTCMonth()+1,dt.getUTCDate())}
- return {from,to,level};
+ const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(at);
+ const get=k=>+parts.find(p=>p.type===k).value;
+ let year=get('year'),month=get('month');
+ const level=state.heatmapScale==='month'?'month':'year';
+ if(level==='month' && /^\d{4}-\d{2}$/.test(state.heatmapMonthFocus||'')){[year,month]=state.heatmapMonthFocus.split('-').map(Number)}
+ const iso=(y,m)=>`${y}-${String(m).padStart(2,'0')}-01T00:00`;
+ const from=level==='year'?iso(year,1):iso(year,month);
+ const to=level==='year'?iso(year+1,1):month===12?iso(year+1,1):iso(year,month+1);
+ return {from,to,level,year,month};
 }
 let heatmapRequestId=0;
-async function loadHeatmap(rid){const node=$('#heatmap'),win=heatmapWindow();if(!node||!win)return;
+async function loadHeatmap(rid){
+ const node=$('#heatmap'),win=heatmapWindow();if(!node||!win)return;
  const ticket=++heatmapRequestId;node.innerHTML=loading();
  if(Date.parse(win.from)>Date.now()){node.innerHTML='<div class="empty">No history yet.</div>';return}
- $('#heatmapPeriod').textContent=win.from.slice(0,10)+' – '+win.to.slice(0,10);
- try{const a=await api('/api/patterns',{period:'custom',start:win.from,end:win.to,metric:state.metric,
-  ...(state.filtersEnabled?{category:state.category,type:state.type,airline:state.airline,icao:state.icao}:{})});
+ $('#heatmapPeriod').textContent=win.level==='year'?String(win.year):new Date(Date.UTC(win.year,win.month-1,15)).toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+ try{
+  const a=await api('/api/analytics',{period:'custom',bucket:'day',start:win.from,end:win.to,metric:state.metric,
+    ...(state.filtersEnabled?{category:state.category,type:state.type,airline:state.airline,icao:state.icao}:{})});
   if(rid!==renderId||ticket!==heatmapRequestId)return;
-  node.innerHTML=renderHeatmap(a.heatmap,win.level==='day'?new Date(win.from+'Z').getUTCDay():null);
+  node.innerHTML=window.AirspaceCalendar.render(a.series,{level:win.level,year:win.year,month:win.month,metric:state.metric});
+  $$('#heatmap [data-heat-month]').forEach(btn=>btn.onclick=()=>{
+    state.heatmapScale='month';state.heatmapMonthFocus=btn.dataset.heatMonth;persist();
+    $$('[data-heat-scale]').forEach(b=>b.classList.toggle('selected',b.dataset.heatScale==='month'));
+    loadHeatmap(rid);
+  });
  }catch(e){if(rid===renderId&&ticket===heatmapRequestId)node.innerHTML=safeError(e)}
 }
 async function loadAverages(rid){
@@ -586,13 +593,10 @@ function updaterToken(){
  try{return localStorage.getItem(pairedUpdaterKey)||sessionStorage.getItem('airspace-token')||''}catch{return ''}
 }
 function updateBox(){return `<div class="auth-box">
-  <div class="status-row" style="margin-bottom:9px"><i class="dot" id="updateDot"></i><strong id="updateHeading">Checking GitHub…</strong></div>
-  <div class="tiny muted break-word" id="updateDetails"></div>
-  <div class="setting-actions"><button class="btn" id="checkUpdates">${icon('refresh')} Check GitHub</button><button class="btn primary" id="applyUpdate">Update now</button><button class="btn" id="rollbackUpdate">Restore previous</button></div>
-  <div class="tiny muted" id="updateProgress"></div>
-  <details class="advanced-panel updater-pair" id="updaterPairing"><summary>Connect updates on this browser</summary>
-   <div class="settings-entry">${field('Pairing code',`<input type="password" id="updateToken" autocomplete="off" placeholder="Only needed on a new browser">`)}
-   <button class="btn" type="button" id="saveUpdatePair">Connect</button></div></details>
+ <div class="status-row" style="margin-bottom:9px"><i class="dot" id="updateDot"></i><strong id="updateHeading">Checking GitHub…</strong></div>
+ <div class="tiny muted break-word" id="updateDetails"></div>
+ <div class="setting-actions"><button class="btn" id="checkUpdates">${icon('refresh')} Check GitHub</button><button class="btn primary" id="applyUpdate">Update now</button><button class="btn" id="rollbackUpdate">Restore previous</button></div>
+ <div class="tiny muted" id="updateProgress"></div>
  </div>`}
 async function renderSettings(){const rid=++renderId;
  $('#page').innerHTML=title('','Settings')+
@@ -610,23 +614,17 @@ async function renderSettings(){const rid=++renderId;
  $('#restoreLinks').onclick=()=>{putLinks(defaultLinks);toast('Default links restored');renderSettings()};
  $$('[data-remove]').forEach(b=>b.onclick=()=>{if(!saveLinks())return;const xs=getLinks();xs.splice(+b.dataset.remove,1);putLinks(xs);renderSettings()});
  $$('[data-reorder]').forEach(b=>b.onclick=()=>{if(!saveLinks())return;const xs=getLinks(),i=+b.dataset.pos,j=i+(b.dataset.reorder==='up'?-1:1);if(j<0||j>=xs.length)return;[xs[i],xs[j]]=[xs[j],xs[i]];putLinks(xs);renderSettings()});
- $('#saveUpdatePair').onclick=()=>{
-   const value=$('#updateToken').value.trim();if(!value)return;
-   localStorage.setItem(pairedUpdaterKey,value);sessionStorage.setItem('airspace-token',value);
-   $('#updateToken').value='';$('#updaterPairing').open=false;toast('Updater connected');
- };
+
  $('#checkUpdates').onclick=async()=>{
   $('#updateDetails').textContent='Checking GitHub…';try{const d=await api('/api/update/check',{refresh:1});setUpdateInfo(d)}catch(e){$('#updateDetails').textContent=e.message}
  };
  $('#applyUpdate').onclick=()=>launchUpdate('apply');
  $('#rollbackUpdate').onclick=()=>launchUpdate('rollback');
  async function launchUpdate(mode){
-  const token=updaterToken();
-  if(!token){$('#updaterPairing').open=true;toast('Connect updates once','Use your existing pairing code for this browser.');return}
   if(!confirm(mode==='rollback'?'Restore the previous working website version and restart only this service?':'Download the latest code from your configured GitHub repository and restart only this website?'))return;
   $('#updateProgress').textContent='Starting the updater…';
-  try{const res=await fetch('/api/update/'+mode,{method:'POST',headers:{'X-Update-Token':token,'Content-Type':'application/json'},body:'{}'});
-   const d=await res.json();if(!res.ok){if(res.status===403)$('#updaterPairing').open=true;throw Error(d.error||'Update request failed');}
+  try{const res=await fetch('/api/update/'+mode,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+   const d=await res.json();if(!res.ok){throw Error(d.error||'Update request failed');}
    toast(mode==='rollback'?'Rollback requested':'Update requested','The updater will restart only the Airspace Analytics service.');
    let attempts=0;
    const poll=async()=>{if(!$('#updateProgress'))return;attempts++;

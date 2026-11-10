@@ -9,6 +9,7 @@ from threading import Lock, Thread
 from urllib.parse import parse_qs, unquote, urlsplit
 import csv
 import hmac
+import ipaddress
 import io
 import json
 import mimetypes
@@ -128,7 +129,7 @@ class App(BaseHTTPRequestHandler):
             return self.static(path)
         if path=='/api/config':
             return self.send_json({'version':VERSION,'timezone':'Europe/London',
-                'name':'Airspace Analytics','update_token_required':True})
+                'name':'Airspace Analytics','update_token_required':False})
         if path=='/api/health': return self.send_json(data.health())
         if path=='/api/overview': return self.send_json(data.overview())
         if path=='/api/filters': return self.send_json(data.filter_options())
@@ -183,19 +184,22 @@ class App(BaseHTTPRequestHandler):
         path, _=self.get_query()
         if path not in ('/api/update/apply','/api/update/rollback'):
             return self.send_json({'error':'Unknown endpoint'},404)
-        # Even on a private LAN, never allow an unauthenticated web page to
-        # initiate Git operations. Cross-origin browser requests are rejected.
+        # Only home-LAN, localhost or Tailscale clients can update this app.
         origin=self.headers.get('Origin','')
         host=self.headers.get('Host','')
-        if origin and origin not in ('http://'+host, 'https://'+host):
+        fetch_site=self.headers.get('Sec-Fetch-Site','')
+        if (origin and origin not in ('http://'+host,'https://'+host)) or fetch_site not in ('','same-origin','none'):
             return self.send_json({'error':'Cross-origin update request blocked'},403)
-        token=self.headers.get('X-Update-Token','')
         try:
-            expected=(STATE/'update-token').read_text().strip()
-        except FileNotFoundError:
-            return self.send_json({'error':'Updater not installed yet. Run the initial installer.'},503)
-        if not hmac.compare_digest(token,expected):
-            return self.send_json({'error':'Incorrect update token'},403)
+            remote=ipaddress.ip_address(self.client_address[0])
+            trusted_ranges=(
+                '127.0.0.0/8','10.0.0.0/8','172.16.0.0/12',
+                '192.168.0.0/16','100.64.0.0/10','::1/128','fc00::/7',
+            )
+            if not any(remote in ipaddress.ip_network(c) for c in trusted_ranges):
+                return self.send_json({'error':'Updates are available from the local network only'},403)
+        except ValueError:
+            return self.send_json({'error':'Invalid client address'},403)
         if update_status().get('state') in ('running','queued'):
             status=update_status()
             if time.time()-status.get('at',0) < 300:

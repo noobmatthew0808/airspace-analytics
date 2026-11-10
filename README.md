@@ -1,5 +1,7 @@
 # Airspace Analytics
 
+**v1.7.0:** Sparse charts now start at the left; activity heatmaps display full calendar years/months and allow month selection. Expanded ICAO-prefix airline matching. No popup toasts. On trusted local/Tailscale networks, GitHub updates no longer request a pairing code. Do not expose the website directly to the public internet: local-network visitors can now initiate website updates.
+
 **v1.6.0: One Traffic page, with years → months → weeks → days → hours.** The collapsed Traffic filters have On/Off and Reset controls. The breakdowns, heatmap and all-time weekday/hour averages are all on Traffic. Heatmap Year/Month/Week/Day selection follows the chart and can be changed manually. The top navigation is Home, Traffic and Settings; Database is accessed through Settings. The existing Aerodrome database and updater are unchanged.
 
 **v1.5.0 uses the original v1.3 zoom controls and chart drill-down**, with simplified top navigation.

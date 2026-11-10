@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.7.0 — 10 November 2026
+- Left-align sparse years, months, and weeks on Traffic charts.
+- Add daily year and month calendar heatmaps with clickable month headings.
+- Remove bottom-left notifications and update pairing form.
+- Improve commercial operator recognition using verified ICAO callsign prefixes.
+- Allow one-click updates only from local and Tailscale addresses, with cross-origin restrictions.
+- No modifications to Aerodrome or ADS-B feeders.
+
 ## v1.6.1 — 10 November 2026
 - Fix two heatmap selector calls that crashed Traffic during initial load.
 - Add regression tests for element iteration.

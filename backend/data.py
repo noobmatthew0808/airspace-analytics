@@ -41,6 +41,18 @@ AIRLINE_PREFIXES = {
     'VIR':'Virgin Atlantic','UAE':'Emirates','ETD':'Etihad Airways',
     'TAP':'TAP Air Portugal','FIN':'Finnair','LOT':'LOT Polish Airlines',
     'SAS':'SAS','ACA':'Air Canada',
+    # Airline and commercial operator designators observed in local receiver export.
+    'RUK':'Ryanair UK','FDX':'FedEx Express','NPT':'West Atlantic UK',
+    'WMT':'Wizz Air Malta','AEE':'Aegean Airlines',
+    'TAY':'ASL Airlines Belgium','FPO':'ASL Airlines France',
+    'AHY':'Azerbaijan Airlines','AMX':'Aeromexico',
+    'ABV':'ASL Airlines UK','BCS':'European Air Transport (DHL)',
+    'LHX':'Lufthansa City Airlines','MSR':'Egyptair',
+    'CPA':'Cathay Pacific','EVA':'EVA Air','MAS':'Malaysia Airlines',
+    'THA':'Thai Airways','GFA':'Gulf Air','AIC':'Air India',
+    'MNB':'MNG Airlines','TAM':'LATAM Airlines Brasil',
+    'AOJ':'Avcon Jet','MUK':'Maersk Air Cargo UK',
+    'FJO':'Flexjet Operations Malta',
 }
 
 
