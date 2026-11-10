@@ -1,12 +1,16 @@
 # Changelog
 
-## v1.1.0 — 10 November 2026
-- Source data remains strictly read-only from Aerodrome (no duplicate collector).
-- Exclude incomplete or insufficiently sampled periods from recurring calendar averages using the existing minute-concurrency data.
-- Add same-calendar-date-last-year comparison and suppress misleading percent changes when comparison coverage is insufficient.
-- Enforce short read deadlines for raw database browsing and harden CSV export against spreadsheet formula injection.
-- Retain standalone Python / vanilla JS architecture, mobile dashboard, presets, breakdowns, aircraft history, secure Git update button and rollback.
-- Synthetic minute-coverage fixture and additional regression tests.
+## 1.2.0 — Compact redesign
 
-## v1.0.0 — 10 November 2026
-- Initial read-only analytics website, installer, updater and tests.
+- Separate application launcher at `/`, with Airspace Analytics pinned as the first link. No duplicated statistics, large hero, or promotional copy.
+- Analytics workspace available at `/analytics` on the **same port**, retaining the existing Aerodrome read-only data APIs.
+- Reduced analytics navigation to Traffic, Patterns, Compare, Aircraft, Database and Settings.
+- Simplified Traffic view: single primary graph, metric toggle, quick date choices, automatic grouping, click-to-drill, Zoom out/Reset, and line/bar modes.
+- Moved aviation breakdowns, deeper filters, explanations and saved views into collapsible sections.
+- Launcher links now support Add, Remove, Move up/down, Reset defaults and editable full URLs/ports; the pinned Analytics link cannot be accidentally deleted.
+- Retained the existing in-app authenticated GitHub updater and prior `sessionStorage` update token.
+- Mobile interface and typography redesigned for density and clarity.
+
+## 1.1.0
+
+Original release with Aerodrome read-only reporting, update controls, and historical analysis.

@@ -24,7 +24,7 @@ const defaultLinks=[
   {name:'Receiver graphs',sub:'Signal & coverage',port:'1094',path:'/',color:'orange',icon:'activity'},
   {name:'Dozzle',sub:'Container logs',port:'',path:'/',color:'blue',icon:'terminal'}
 ];
-function getLinks(){try{const x=JSON.parse(localStorage.getItem('airspace-analytics-links'));return Array.isArray(x)&&x.length?x:defaultLinks}catch{return defaultLinks}}
+function getLinks(){try{const x=JSON.parse(localStorage.getItem('airspace-analytics-links'));return Array.isArray(x)?x:defaultLinks}catch{return defaultLinks}}
 function putLinks(links){localStorage.setItem('airspace-analytics-links',JSON.stringify(links))}
 function icon(name,size=18){
  const paths={
@@ -60,24 +60,25 @@ function icon(name,size=18){
  };
  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]||paths.grid}</svg>`;
 }
-const pages=[['home','Overview','grid'],['explore','Explore data','chart'],['patterns','Patterns','activity'],['compare','Compare periods','compare'],['aircraft','Aircraft','plane'],['database','Raw database','database'],['settings','Settings & updates','settings']];
-const names=Object.fromEntries(pages.map(x=>[x[0],x[1]]));
+const pages=[['explore','Explore','chart'],['patterns','Patterns','activity'],['compare','Compare','compare'],['aircraft','Aircraft','plane'],['database','Database','database'],['settings','Settings','settings']];
+const names={home:'Launcher',...Object.fromEntries(pages.map(x=>[x[0],x[1]]))};
 let currentPage='home',currentChart='line',currentAnalytics=null,latestOverview=null,healthInfo=null,activeTimer=null,renderId=0;
+const zoomHistory=[];
 function setTheme(theme){document.documentElement.dataset.theme=theme||'dark';state.theme=theme;persist()}
 setTheme(state.theme);
 
 function shell(){
  $('#app').innerHTML=`<div class="overlay" id="overlay"></div><div class="layout">
    <aside class="sidebar" id="sidebar">
-     <a class="brand" href="#home" aria-label="Airspace Analytics homepage"><span class="logo">${icon('radar',24)}</span><span><strong>Airspace</strong><small>Analytics</small></span></a>
-     <div class="nav-caption">Workspace</div><nav class="nav-list">${pages.slice(0,5).map(nav).join('')}</nav>
-     <div class="nav-section"><div class="nav-caption">Tools</div><nav class="nav-list">${pages.slice(5).map(nav).join('')}</nav></div>
-     <div class="sidebar-bottom"><div class="sidebar-status"><div class="status-row"><i class="dot" id="sidebarDot"></i><strong class="status-label" id="sidebarTitle">Checking data source</strong></div><p id="sidebarDetail">Connecting to Aerodrome…</p></div><div class="version">Local dashboard · <span class="versionValue">v1.1.0</span></div></div>
+     <a class="brand" href="/" aria-label="Open launcher"><span class="logo">${icon('radar',21)}</span><span><strong>Airspace</strong><small>Analytics</small></span></a>
+     <nav class="nav-list" aria-label="Analytics sections">${pages.slice(0,3).map(nav).join('')}</nav>
+     <div class="nav-section"><div class="nav-caption">More</div><nav class="nav-list">${pages.slice(3).map(nav).join('')}</nav></div>
+     <div class="sidebar-bottom"><div class="sidebar-status"><div class="status-row"><i class="dot" id="sidebarDot"></i><strong class="status-label" id="sidebarTitle">Checking data source</strong></div><p id="sidebarDetail">Aerodrome</p></div><div class="version"><span class="versionValue">v1.2.0</span> · Local database</div></div>
    </aside>
-   <div class="workspace"><header class="topbar"><div style="display:flex;align-items:center;gap:12px"><button class="icon-button mobile-menu" id="mobileMenu" aria-label="Open menu">${icon('menu')}</button><div class="breadcrumbs"><span>Workspace</span><span class="divider">/</span><strong id="topTitle">Overview</strong></div></div><div class="top-actions"><span class="top-live"><i class="dot" id="topDot"></i><span id="topStatus">Connecting</span></span><button class="icon-button" id="themeButton" title="Toggle dark/light mode">${icon('sun')}</button></div></header>
+   <div class="workspace"><header class="topbar"><div class="topbar-left"><button class="icon-button mobile-menu" id="mobileMenu" aria-label="Open menu">${icon('menu')}</button><a class="top-back" href="/">${icon('grid',16)} <span>Launcher</span></a><span class="top-separator">/</span><strong id="topTitle">Explore</strong></div><div class="top-actions"><span class="top-live"><i class="dot" id="topDot"></i><span id="topStatus">Connecting</span></span><button class="icon-button" id="themeButton" title="Toggle dark/light mode" aria-label="Toggle theme">${icon('sun')}</button></div></header>
    <main class="content" id="page" aria-live="polite"></main></div>
  </div>
- <nav class="mobile-tabbar" id="mobileTabs">${[['home','Home','grid'],['explore','Explore','chart'],['patterns','Patterns','activity'],['compare','Compare','compare'],['settings','More','menu']].map(([id,title,ic])=>`<a href="#${id}" data-page="${id}">${icon(ic,20)}<span>${title}</span></a>`).join('')}</nav>
+ <nav class="mobile-tabbar" id="mobileTabs">${[['explore','Explore','chart'],['patterns','Patterns','activity'],['compare','Compare','compare'],['aircraft','Aircraft','plane'],['settings','Settings','settings']].map(([id,title,ic])=>`<a href="#${id}" data-page="${id}">${icon(ic,20)}<span>${title}</span></a>`).join('')}</nav>
  <div class="toast-wrap" id="toasts" role="status" aria-live="polite"></div>`;
  $('#mobileMenu').onclick=()=>setMenu(true);
  $('#overlay').onclick=()=>setMenu(false);
@@ -89,33 +90,21 @@ function toast(title,msg='',bad=false){const x=document.createElement('div');x.c
 function setStatus(h){healthInfo=h;const good=h?.fresh===true;const msg=good?'Aerodrome connected':h?.ok?'Data may be delayed':'Database unavailable';for(const id of ['sidebarDot','topDot']){$('#'+id).classList.toggle('good',good);$('#'+id).classList.toggle('bad',!!h&&!good)}$('#sidebarTitle').textContent=msg;$('#topStatus').textContent=good?'Data updating':'Check data';$('#sidebarDetail').textContent=h?.last_sighting?`Latest observation: ${when(h.last_sighting)}`:'Read-only historical data connection';}
 async function api(path,params={}){const url=new URL(path,location.origin);Object.entries(params).forEach(([k,v])=>{if(v!==null&&v!==undefined&&v!=='')url.searchParams.set(k,String(v))});const res=await fetch(url,{cache:'no-store'});let d;try{d=await res.json()}catch{throw Error('The local website is unavailable.')};if(!res.ok)throw Error(d.error||'Request failed');return d}
 const timerDate=(d)=>d?d:new Date().toISOString().slice(0,16);
-function title(eyebrow,heading,subtitle,accessory=''){return `<div class="page-heading"><div><div class="page-eyebrow">${esc(eyebrow)}</div><h1 class="page-title">${esc(heading)}</h1><p class="page-subtitle">${subtitle}</p></div>${accessory}</div>`}
+function title(eyebrow,heading,subtitle='',accessory=''){return `<div class="page-heading"><div><h1 class="page-title">${esc(heading)}</h1>${subtitle&&currentPage!=='explore'?`<p class="page-subtitle">${subtitle}</p>`:''}</div>${accessory}</div>`}
 function stat(label,value,meta,ic='chart'){return `<article class="stat-card"><div class="stat-label"><span>${esc(label)}</span><span class="stat-icon">${icon(ic)}</span></div><div class="stat-value">${value}</div><div class="stat-meta">${meta}</div></article>`}
 function section(h,sub='',right=''){return `<div class="section-heading"><div><h2>${h}</h2>${sub?`<p>${sub}</p>`:''}</div>${right}</div>`}
-function links(){return getLinks().map((it,i)=>{const destination=it.port===null?null:hrefFor(it);return `<${destination?'a':'div'} class="launch-card" ${destination?`href="${esc(destination)}" target="_blank" rel="noopener noreferrer"`:''}>
-  <span class="launch-icon">${icon(it.icon||'external')}</span><span style="min-width:0"><strong>${esc(it.name)}</strong><small>${esc(destination?it.sub:'Set address in Settings')}</small></span><span class="arrow">${destination?'↗':'·'}</span></${destination?'a':'div'}>`}).join('')}
+function links(){return getLinks().map((it,i)=>{const destination=hrefFor(it);return `<${destination?'a':'div'} class="launcher-link ${destination?'':'disabled'}" ${destination?`href="${esc(destination)}" target="_blank" rel="noopener noreferrer"`:''}>
+  <span class="launcher-link-icon">${icon(it.icon||'external',19)}</span><span class="launcher-link-text"><strong>${esc(it.name)}</strong><small>${esc(destination?it.sub||'Open application':'Set a port or URL in Settings')}</small></span><span class="launcher-link-arrow">${destination?icon('external',16):'—'}</span></${destination?'a':'div'}>`}).join('')}
 function hrefFor(link){const host=location.hostname;const proto=location.protocol==='https:'?'https:':'http:';const path=String(link.path||'/');if(link.url){try{const u=new URL(link.url);if(!['http:','https:'].includes(u.protocol))return null;return u.href}catch{return null}}
  if(link.port===''||link.port===null)return null;
  const port=link.port?':'+link.port:'';
  return `${proto}//${host}${port}${path.startsWith('/')?path:'/'+path}`;
 }
-async function renderHome(){const rid=renderId;$('#page').innerHTML=title('YOUR PRIVATE AIRSPACE','Your airspace, in focus.','One place for your receiver, your history and the patterns hidden inside it.',`<button class="btn" id="reloadHome">${icon('refresh')} Refresh</button>`)+`
- <section class="hero"><div class="hero-content"><span class="eyebrow">YOUR RECEIVER · LIVE INSIGHT</span><h2>Every aircraft tells<br>part of the story.</h2><p>Explore your own ADS-B observations, see changing traffic patterns and open your existing tools in one click.</p><a href="#explore" class="btn">Explore your data ${icon('chevron')}</a></div><div class="hero-stat"><div class="hero-number" id="heroLive">—</div><small>Last sampled count</small></div></section>
- <div class="stat-grid" id="homeStats">${[1,2,3,4].map(()=>stat('Loading','—','Reading database')).join('')}</div>
- ${section('Your applications','All shortcuts use this device’s current hostname, including Tailscale addresses.',`<a class="section-link" href="#settings">Edit shortcuts →</a>`)}
- <div class="launch-grid">${links()}</div>
- ${section('A closer look','Your recent observation pattern and the latest collection status.',`<a class="section-link" href="#explore">Open explorer →</a>`)}
- <div class="grid-two"><div class="panel"><div class="panel-top"><div><h3 class="panel-title">Last 24 hours</h3><p class="panel-subtitle">Hourly observations recorded</p></div><span class="chip aqua">Aerodrome</span></div><div id="homeChart">${loading()}</div></div><div class="panel"><div class="panel-top"><div><h3 class="panel-title">Collection health</h3><p class="panel-subtitle">Read-only database status</p></div>${icon('shield')}</div><div id="homeHealth">${loading()}</div></div></div>
- <div class="foot"><span>Private by design · Data sourced from your own Aerodrome database</span><span>Europe/London time</span></div>`;
- $('#reloadHome').onclick=()=>renderHome();
- try{
-   const d=await api('/api/overview');if(rid!==renderId)return;latestOverview=d;setStatus(d);
-   $('#heroLive').textContent=d.live_count===null?'—':fmt(d.live_count);
-   $('#homeStats').innerHTML=stat('Aircraft today',fmt(d.unique_today),'Unique ICAO identifiers','plane')+stat('Observations today',fmt(d.observations_today),'10-second polling records (approx.)','activity')+stat('Peak concurrent',fmt(d.peak_today),'Highest minute sample today','bars')+stat('Aircraft all time',fmt(d.total_aircraft),'Since monitoring began','radar');
-   const projected=d.age_seconds>180?'Receiving may be delayed':'Receiving normally';
-   $('#homeHealth').innerHTML=`<div class="summary-row"><div class="summary-item"><span>Last observation</span><strong style="font-size:14px">${esc(when(d.last_sighting))}</strong></div><div class="summary-item"><span>Database size</span><strong>${bytes(d.db_size_bytes)}</strong></div></div><div class="detail-grid" style="grid-template-columns:1fr 1fr"><div class="detail-item"><small>First observation</small><strong>${esc(when(d.first_sighting,{year:undefined}))}</strong></div><div class="detail-item"><small>Observations stored</small><strong>${fmt(d.raw_observations)}</strong></div></div><div class="notice ${d.fresh?'success-note':''}"><strong>${d.fresh?'Data is current':'Possible delay'}.</strong> ${esc(projected)}. A missing observation does not necessarily mean the receiver was offline.</div><a href="#database" class="btn small">${icon('database')} Inspect database</a>`;
- }catch(e){if(rid!==renderId)return;$('#homeStats').innerHTML=safeError(e);$('#homeHealth').innerHTML=safeError(e)}
- try{const a=await api('/api/analytics',{period:'last_24h',metric:'observations',bucket:'hour'});if(rid!==renderId)return;$('#homeChart').innerHTML=renderChart(a.series,'line',{height:255,mini:true});hookChart($('#homeChart'),a.series,'hour');}catch(e){if(rid===renderId)$('#homeChart').innerHTML=safeError(e)}
+async function renderHome(){
+ $('#page').innerHTML=`<div class="launcher-screen"><header class="launcher-header"><div class="launcher-brand"><span class="launcher-brand-icon">${icon('radar',24)}</span><div><h1>Airspace</h1><span>Application launcher</span></div></div><a class="launcher-settings" href="/analytics#settings" title="Edit links in Settings" aria-label="Settings">${icon('settings',19)}</a></header>
+ <div class="launcher-list"><a class="launcher-link launcher-primary" href="/analytics#explore"><span class="launcher-link-icon">${icon('chart',20)}</span><span class="launcher-link-text"><strong>Airspace Analytics</strong><small>Traffic, trends and comparisons</small></span><span class="launcher-link-arrow">${icon('chevron',18)}</span></a>${links()}</div>
+ <footer class="launcher-footer"><span><i class="dot" id="launcherDot"></i><span id="launcherStatus">Checking Aerodrome</span></span><a href="/analytics#settings">Manage shortcuts</a></footer></div>`;
+ try{const h=await api('/api/health');if(currentPage!=='home')return;const dot=$('#launcherDot');if(dot)dot.classList.toggle('good',h.fresh===true);$('#launcherStatus').textContent=h.fresh?'Aerodrome connected':h.ok?'Aerodrome history available':'Database unavailable';setStatus(h)}catch{if($('#launcherStatus'))$('#launcherStatus').textContent='Status unavailable'}
 }
 function queryArgs(groupOverride){return {period:state.period,metric:state.metric,bucket:groupOverride||state.bucket,
  category:state.category,type:state.type,airline:state.airline,icao:state.icao,
@@ -124,38 +113,43 @@ function field(label,element){return `<label class="field"><span>${esc(label)}</
 const presets=[['last_24h','Last 24 hours'],['last_46h','Last 46 hours'],['last_7d','Last 7 days'],['last_30d','Last 30 days'],['last_90d','Last 90 days'],['last_365d','Last 365 days'],['today','Today'],['yesterday','Yesterday'],['this_week','This week'],['this_month','This month'],['this_year','This year'],['all','All recorded time'],['rolling','Rolling duration…'],['custom','Custom range…']];
 const groups=[['auto','Automatic'],['hour','Per hour'],['day','Per day'],['week','Per week'],['month','Per month'],['year','Per year'],['weekday','Average weekday'],['hour_of_day','Average hour of day'],['month_of_year','Average month of year']];
 const opts=(options,chosen)=>options.map(([val,text])=>`<option value="${esc(val)}" ${chosen===val?'selected':''}>${esc(text)}</option>`).join('');
-function metrics(){return `<div class="segmented" role="group" aria-label="Measurement">${[['flights','Flights'],['aircraft','Aircraft'],['observations','Observations']].map(([k,v])=>`<button data-metric="${k}" class="${state.metric===k?'on':''}" type="button">${v}</button>`).join('')}</div>`}
-function controls(extra=false){return `<div class="control-card"><div class="control-grid">
- ${field('Measurement',metrics())}
- ${field('Time period',`<select id="period">${opts(presets,state.period)}</select>`)}
- ${field('Group by',`<select id="bucket">${opts(groups,state.bucket)}</select>`)}
- ${field('Aviation',`<select id="category">${opts([['all','All aviation'],['commercial','Commercial'],['general_aviation','General aviation'],['military','Military'],['helicopter','Helicopters'],['unknown','Unknown']],state.category)}</select>`)}
- ${field('Aircraft ICAO (optional)',`<input id="icao" placeholder="All aircraft" value="${esc(state.icao==='all'?'':state.icao)}" spellcheck="false" maxlength="12">`)}
- </div><div class="custom-controls ${state.period==='rolling'?'':'hidden'}" id="rollingBox">
+function metrics(){return `<div class="segmented" role="group" aria-label="Measurement">${[['flights','Visits'],['aircraft','Aircraft'],['observations','Samples']].map(([k,v])=>`<button data-metric="${k}" class="${state.metric===k?'on':''}" type="button">${v}</button>`).join('')}</div>`}
+const quickPeriods=[['last_24h','24h'],['last_7d','7 days'],['last_30d','30 days'],['this_year','This year'],['all','All time']];
+function controls(extra=false){return `<div class="control-card compact-controls">
+ <div class="metric-toolbar"><div class="metric-toolbar-left">${metrics()}</div><div class="quick-periods" role="group" aria-label="Quick time periods">${quickPeriods.map(([k,v])=>`<button type="button" class="period-chip ${state.period===k?'selected':''}" data-quick-period="${k}">${v}</button>`).join('')}</div></div>
+ <div class="control-grid compact-grid">
+ ${field('Time range',`<select id="period">${opts(presets,state.period)}</select>`)}
+ ${field('Show',`<select id="bucket">${opts(groups,state.bucket)}</select>`)}
+ <button class="btn primary compact-apply" id="applyFilters" type="button">${icon('refresh',15)} Apply</button>
+ </div>
+ <div class="custom-controls ${state.period==='rolling'?'':'hidden'}" id="rollingBox">
  ${field('Last',`<input type="number" id="amount" min="1" max="100000" value="${esc(state.amount)}">`)}
  ${field('Unit',`<select id="unit">${opts([['hours','Hours'],['days','Days'],['weeks','Weeks']],state.unit)}</select>`)}
  </div><div class="custom-controls ${state.period==='custom'?'':'hidden'}" id="customBox">
- ${field('From (UK time)',`<input type="datetime-local" id="customStart" value="${esc(state.start)}">`)}
- ${field('To (UK time)',`<input type="datetime-local" id="customEnd" value="${esc(state.end)}">`)}
- </div><div class="secondary-controls">
- ${field('Aircraft type',`<select id="aircraftType"><option value="all">All aircraft types</option></select>`)}
- ${field('Airline / operator',`<select id="airline"><option value="all">All airlines</option></select>`)}
- <button class="btn primary" id="applyFilters">${icon('chart')} Analyse</button>
- <button class="btn" id="resetFilters">Reset</button>
- ${extra?`<button class="btn" id="saveView">${icon('bookmark')} Save view</button>`:''}
- </div><div class="control-hint">${icon('info',13)} Exact times are recorded in UK local time. Historical analysis uses Aerodrome's hourly summaries.</div></div>`;
-}
+ ${field('From · UK time',`<input type="datetime-local" id="customStart" value="${esc(state.start)}">`)}
+ ${field('To · UK time',`<input type="datetime-local" id="customEnd" value="${esc(state.end)}">`)}
+ </div>
+ <details class="advanced-panel" id="advancedPanel" ${state.category!=='all'||state.type!=='all'||state.airline!=='all'||state.icao!=='all'?'open':''}><summary>${icon('layers',16)} Filters ${[state.category,state.type,state.airline,state.icao].filter(x=>x!=='all').length?'<span class="filter-dot">Active</span>':''}</summary><div class="advanced-grid">
+ ${field('Aviation',`<select id="category">${opts([['all','All aviation'],['commercial','Commercial'],['general_aviation','General aviation'],['military','Military'],['helicopter','Helicopters'],['unknown','Unknown']],state.category)}</select>`)}
+ ${field('Aircraft type',`<select id="aircraftType"><option value="all">All types</option></select>`)}
+ ${field('Airline / operator',`<select id="airline"><option value="all">All operators</option></select>`)}
+ ${field('ICAO address',`<input id="icao" placeholder="All aircraft" value="${esc(state.icao==='all'?'':state.icao)}" spellcheck="false" maxlength="12">`)}
+ <button class="btn" id="resetFilters" type="button">Clear filters</button></div></details>
+ ${extra?'<div class="compact-save"><button class="btn small" id="saveView" type="button">'+icon('bookmark',15)+' Save view</button></div>':''}
+ </div>`;}
 function collectControls(){state.period=$('#period')?.value||state.period;state.bucket=$('#bucket')?.value||state.bucket;state.category=$('#category')?.value||state.category;state.amount=Number($('#amount')?.value||state.amount);state.unit=$('#unit')?.value||state.unit;state.start=$('#customStart')?.value||state.start;state.end=$('#customEnd')?.value||state.end;state.type=$('#aircraftType')?.value||'all';state.airline=$('#airline')?.value||'all';state.icao=($('#icao')?.value||'').trim().toLowerCase()||'all';persist()}
 function initControls(refresh,extra=false){
  $$('[data-metric]').forEach(b=>b.onclick=()=>{collectControls();state.metric=b.dataset.metric;persist();refresh()});
- $('#period').onchange=()=>{const p=$('#period').value;$('#rollingBox').classList.toggle('hidden',p!=='rolling');$('#customBox').classList.toggle('hidden',p!=='custom');};
+ $$('[data-quick-period]').forEach(b=>b.onclick=()=>{collectControls();state.period=b.dataset.quickPeriod;state.bucket='auto';persist();refresh()});
+ $('#period').onchange=()=>{const p=$('#period').value;$('#rollingBox').classList.toggle('hidden',p!=='rolling');$('#customBox').classList.toggle('hidden',p!=='custom');if(p!=='rolling'&&p!=='custom'){collectControls();persist();refresh()}};
+ $('#bucket').onchange=()=>{collectControls();persist();refresh()};
  $('#applyFilters').onclick=()=>{collectControls();refresh()};
- $('#resetFilters').onclick=()=>{const metric=state.metric;Object.assign(state,{...defaults,metric});persist();refresh()};
+ $('#resetFilters').onclick=()=>{const metric=state.metric;Object.assign(state,{...defaults,metric});zoomHistory.length=0;persist();refresh()};
  if(extra&&$('#saveView'))$('#saveView').onclick=()=>{
-  collectControls();const name=prompt('Name this saved analysis view:');if(!name)return;
+  collectControls();const name=prompt('Name this saved view:');if(!name)return;
   let views=[];try{views=JSON.parse(localStorage.getItem(savedViewsKey))||[]}catch{}
   views=[...views.filter(v=>v.name!==name),{name:name.slice(0,50),query:queryArgs(),saved:Date.now()}].slice(-20);
-  localStorage.setItem(savedViewsKey,JSON.stringify(views));toast('View saved', 'Saved in this browser.');renderSavedViews();
+  localStorage.setItem(savedViewsKey,JSON.stringify(views));toast('View saved','Stored in this browser.');renderSavedViews();
  };
 }
 let cachedGlobalFilters=null;
@@ -224,7 +218,7 @@ function drillInto(point,group){
  else if(group==='week'){from=key+'T00:00';const x=new Date(key+'T12:00:00Z');x.setUTCDate(x.getUTCDate()+7);to=x.toISOString().slice(0,10)+'T00:00';next='day'}
  else if(group==='day'){from=key+'T00:00';const x=new Date(key+'T12:00:00Z');x.setUTCDate(x.getUTCDate()+1);to=x.toISOString().slice(0,10)+'T00:00';next='hour'}
  else if(group==='hour'){from=ukDatetime(key);const x=new Date(Date.parse(key)+3600*1000);to=ukDatetime(x.toISOString());next='hour'}
- if(from&&to){state.period='custom';state.start=from;state.end=to;state.bucket=next;persist();location.hash='#explore';if(currentPage==='explore')renderExplore();toast('Drilled into '+point.label,'Click Reset to return to your normal time range.');}
+ if(from&&to){zoomHistory.push({period:state.period,start:state.start,end:state.end,bucket:state.bucket,amount:state.amount,unit:state.unit});state.period='custom';state.start=from;state.end=to;state.bucket=next;persist();location.hash='#explore';if(currentPage==='explore')renderExplore();toast('Drilled into '+point.label,'Click Reset to return to your normal time range.');}
 }
 function donut(items){if(!items?.length)return `<div class="empty">No breakdown available.</div>`;
  const top=items.slice(0,5),total=items.reduce((a,x)=>a+Number(x.value),0);
@@ -245,45 +239,40 @@ function summaryFor(a){const unit={flights:'estimated visits',aircraft:'unique a
  return `<div class="summary-row"><div class="summary-item"><span>Period total</span><strong>${fmt(a.total)}</strong><div class="sub">${unit}</div></div><div class="summary-item"><span>${a.aggregation_label}</span><strong>${fmt(a.average,2)}</strong><div class="sub">Average per chart bucket</div></div><div class="summary-item"><span>Highest bucket</span><strong>${fmt(a.peak,2)}</strong><div class="sub">${esc(a.bucket.replaceAll('_',' '))}</div></div><div class="summary-item"><span>Distinct aircraft</span><strong>${fmt(a.unique_aircraft)}</strong><div class="sub">Across the selected period</div></div></div>`;
 }
 async function renderExplore(){const rid=++renderId;currentAnalytics=null;
- $('#page').innerHTML=title('DEEP ANALYSIS','Explore your data','Choose a measurement, a date range and a grouping. Every chart and breakdown responds to your filters.')+
- controls(true)+`<div id="savedViews" style="display:flex;flex-wrap:wrap;gap:7px;margin:-2px 0 18px"></div><div class="stat-grid" id="exploreStats"></div>
- ${section('Traffic over time','Click a data point to zoom into that year, month, week or day.',`<div class="chart-actions"><button class="btn small" id="lineSwitch">${icon('chart')} Line</button><button class="btn small" id="barSwitch">${icon('bars')} Bars</button></div>`)}
- <div class="panel"><div class="panel-top"><div><h3 class="panel-title" id="chartLabel">Aircraft activity</h3><p class="panel-subtitle" id="chartMeta">Europe/London · Aerodrome hourly rollups</p></div><span class="chip aqua" id="pointCount">—</span></div><div id="exploreChart">${loading()}</div><div class="chart-footer"><span>Hover to inspect · click a point to drill down</span><span>All results reflect your receiver only</span></div></div>
- ${section('What makes up your airspace?','These distributions update with your time period, measurement and filters.')}
- <div class="grid-three"><div class="panel"><div class="panel-top"><div><h3 class="panel-title">Type of aviation</h3><p class="panel-subtitle">Commercial / GA / military / other</p></div></div><div id="categoryDonut">${loading()}</div></div>
- <div class="panel"><div class="panel-top"><div><h3 class="panel-title">Aircraft types</h3><p class="panel-subtitle">Filter by type in bars mode</p></div><button class="btn small" id="typeVizSwitch" type="button">${state.typeViz==='pie'?'Show bars':'Show pie'}</button></div><div id="typeBars">${loading()}</div></div>
- <div class="panel"><div class="panel-top"><div><h3 class="panel-title">Airline / operator</h3><p class="panel-subtitle">Filter by operator in bars mode</p></div><button class="btn small" id="airlineVizSwitch" type="button">${state.airlineViz==='pie'?'Show bars':'Show pie'}</button></div><div id="airlineBars">${loading()}</div></div></div>
- <div class="notice"><strong>Sample coverage:</strong> Your results may be biased if Aerodrome was not running throughout the selected period. Open the chart to see the percentage of expected minute samples. It is an estimate of data availability, not proven receiver uptime.</div>
- <div class="notice"><strong>How numbers are calculated:</strong> “Flights” means estimated separate receiver visits (30-minute gap or callsign change). Hourly rollups can merge short repeat visits; observation counts may include partial boundary hours. “Aircraft” means distinct ICAO identifiers, not flight journeys. Unknown airline/category data is never silently guessed.</div>
- <div class="foot"><span>Analytics drawn from Aerodrome · No duplicated observations</span><span>Times shown in Europe/London</span></div>`;
+ $('#page').innerHTML=title('','Traffic')+
+ `<div class="analytics-tabs" role="navigation" aria-label="Analytics modes"><a class="selected" href="#explore">Traffic</a><a href="#patterns">Patterns</a><a href="#compare">Compare</a></div>
+ ${controls(true)}
+ <section class="main-chart-panel"><div class="main-chart-head"><div><h2 id="chartLabel">Traffic over time</h2><div id="chartMeta" class="muted tiny">Loading…</div></div><div class="chart-tools"><button class="btn small ${zoomHistory.length?'':'hidden'}" id="zoomBack" type="button" title="Previous zoom">${icon('chevron',13)} Zoom out</button><button class="btn small" id="zoomReset" type="button">Reset zoom</button><span class="chart-toggle"><button class="btn small" id="lineSwitch" type="button">Line</button><button class="btn small" id="barSwitch" type="button">Bars</button></span></div></div>
+ <div id="exploreStats" class="compact-stats">${loading()}</div>
+ <div id="exploreChart" class="chart-frame">${loading()}</div>
+ <div class="chart-foot"><span id="pointCount">—</span><span>Click a chart point to zoom into that period</span></div></section>
+ <details class="foldout" id="breakdownDetails"><summary><span>${icon('layers',18)} Breakdowns <small>Category · aircraft type · operator</small></span>${icon('chevron',17)}</summary><div class="grid-three breakdown-grid"><div class="panel"><h3 class="panel-title">Aviation category</h3><div id="categoryDonut">${loading()}</div></div>
+ <div class="panel"><div class="panel-top"><h3 class="panel-title">Aircraft types</h3><button class="btn small" id="typeVizSwitch" type="button">${state.typeViz==='pie'?'Bars':'Pie'}</button></div><div id="typeBars">${loading()}</div></div>
+ <div class="panel"><div class="panel-top"><h3 class="panel-title">Airlines / operators</h3><button class="btn small" id="airlineVizSwitch" type="button">${state.airlineViz==='pie'?'Bars':'Pie'}</button></div><div id="airlineBars">${loading()}</div></div></div></details>
+ <details class="foldout secondary-fold"><summary><span>${icon('bookmark',17)} Saved views</span>${icon('chevron',17)}</summary><div id="savedViews" class="saved-content"></div></details>
+ <details class="foldout secondary-fold"><summary><span>${icon('info',17)} Understanding these numbers</span>${icon('chevron',17)}</summary><p>Flight visits are estimates based on Aerodrome hourly records and can differ from actual journeys. Aircraft are unique ICAO identities; observations are stored polling samples, not raw radio messages. Missing hours should not be interpreted as zero traffic.</p><p>Coverage is estimated from Aerodrome minute samples, not a verified receiver uptime measurement. Times are Europe/London.</p></details>`;
  initControls(renderExplore,true);renderSavedViews();populateFilters();
- $('#lineSwitch').onclick=()=>{state.chart='line';persist();if(currentAnalytics)drawCurrentChart()};
- $('#barSwitch').onclick=()=>{state.chart='bar';persist();if(currentAnalytics)drawCurrentChart()};
- $('#exploreStats').innerHTML=Array.from({length:4},()=>stat('Loading','—','Working from hourly data')).join('');
- try{
-  const a=await api('/api/analytics',queryArgs());if(rid!==renderId)return;
+ $('#lineSwitch').onclick=()=>{state.chart='line';persist();drawCurrentChart()};
+ $('#barSwitch').onclick=()=>{state.chart='bar';persist();drawCurrentChart()};
+ $('#zoomBack').onclick=()=>{const prev=zoomHistory.pop();if(prev){Object.assign(state,prev);persist();renderExplore()}};
+ $('#zoomReset').onclick=()=>{zoomHistory.length=0;state.period='last_7d';state.bucket='auto';state.start='';state.end='';persist();renderExplore()};
+ try{const a=await api('/api/analytics',queryArgs());if(rid!==renderId)return;
   currentAnalytics=a;fillFilterOptions(a);
-  $('#exploreStats').innerHTML=stat('Selected total',fmt(a.total),a.metric==='flights'?'Estimated flight visits':a.metric==='aircraft'?'Unique ICAO identifiers':'Observation records','plane')+
-   stat('Average per bucket',fmt(a.average,2),a.aggregation_label,'activity')+
-   stat('Busiest bucket',fmt(a.peak,2),`Grouped by ${a.bucket.replaceAll('_',' ')}`,'bars')+
-   stat('Unique aircraft',fmt(a.unique_aircraft),'Seen during selection','radar');
+  $('#exploreStats').innerHTML=`<div class="mini-stat"><span>Period total</span><strong>${fmt(a.total)}</strong></div><div class="mini-stat"><span>${esc(a.aggregation_label)}</span><strong>${fmt(a.average,2)}</strong></div><div class="mini-stat"><span>Peak interval</span><strong>${fmt(a.peak,2)}</strong></div><div class="mini-stat"><span>Unique aircraft</span><strong>${fmt(a.unique_aircraft)}</strong></div>`;
   $('#chartLabel').textContent={flights:'Estimated flight visits',aircraft:'Unique aircraft',observations:'Recorded observations'}[a.metric];
   $('#chartMeta').textContent=`${when(a.start)} – ${when(a.end)} · ${a.aggregation_label}`;
-  $('#pointCount').textContent=`${a.series.length} points`;
-  if(a.coverage){$('#chartMeta').textContent+=` · ${a.coverage.sample_ratio}% minute sample coverage (proxy)`;}
+  $('#pointCount').textContent=`${a.series.length} intervals · ${a.coverage?.sample_ratio??'—'}% sample coverage`;
   drawCurrentChart();
   $('#categoryDonut').innerHTML=donut(a.breakdowns.category);
   function showBreakdowns(){
    $('#typeBars').innerHTML=state.typeViz==='pie'?donut(a.breakdowns.type):breakdownList(a.breakdowns.type,'type','blue');
    $('#airlineBars').innerHTML=state.airlineViz==='pie'?donut(a.breakdowns.airline):breakdownList(a.breakdowns.airline,'airline','pink');
-   $('#typeVizSwitch').textContent=state.typeViz==='pie'?'Show bars':'Show pie';
-   $('#airlineVizSwitch').textContent=state.airlineViz==='pie'?'Show bars':'Show pie';
-   bindBreakdowns();
+   $('#typeVizSwitch').textContent=state.typeViz==='pie'?'Bars':'Pie';
+   $('#airlineVizSwitch').textContent=state.airlineViz==='pie'?'Bars':'Pie';bindBreakdowns();
   }
   $('#typeVizSwitch').onclick=()=>{state.typeViz=state.typeViz==='pie'?'bars':'pie';persist();showBreakdowns()};
-  $('#airlineVizSwitch').onclick=()=>{state.airlineViz=state.airlineViz==='pie'?'bars':'pie';persist();showBreakdowns()};
-  showBreakdowns();
- }catch(e){if(rid!==renderId)return;$('#exploreStats').innerHTML='';$('#exploreChart').innerHTML=safeError(e);['categoryDonut','typeBars','airlineBars'].forEach(id=>$('#'+id).innerHTML='<p class="muted">Not available.</p>')}
+  $('#airlineVizSwitch').onclick=()=>{state.airlineViz=state.airlineViz==='pie'?'bars':'pie';persist();showBreakdowns()};showBreakdowns();
+ }catch(e){if(rid!==renderId)return;$('#exploreStats').innerHTML='';$('#exploreChart').innerHTML=safeError(e);['categoryDonut','typeBars','airlineBars'].forEach(id=>$('#'+id).innerHTML='<span class="muted">Not available</span>')}
 }
 function drawCurrentChart(){if(!currentAnalytics)return;$('#exploreChart').innerHTML=renderChart(currentAnalytics.series,state.chart||'line');hookChart($('#exploreChart'),currentAnalytics.series,currentAnalytics.bucket);}
 
@@ -300,7 +289,7 @@ function renderHeatmap(cells){if(!cells?.length)return '<div class="empty">No ho
  return `<div class="heat-outer"><div class="heatmap"><span></span>${cols}${weekdays.map((d,wd)=>`<span class="heat-day">${d}</span>${cells.filter(x=>x.weekday===wd).map(x=>`<div class="heat-cell" tabindex="0" title="${d} ${String(x.hour).padStart(2,'0')}:00 — avg ${fmt(x.value,2)}, ${x.samples} hours" style="background:${colorScale(x.value)}"></div>`).join('')}`).join('')}</div></div><div class="heat-legend"><span>Less busy</span>${[.08,.24,.43,.65,.85].map(x=>`<i style="background:rgba(49,223,193,${x})"></i>`).join('')}<span>More busy</span></div>`;
 }
 async function renderPatterns(){const rid=++renderId;
- $('#page').innerHTML=title('ACTIVITY PATTERNS','Find your busiest moments','Go beyond total counts. Discover which weekdays and hours consistently bring the most traffic.')+
+ $('#page').innerHTML=title('','Patterns')+`<div class="analytics-tabs"><a href="#explore">Traffic</a><a class="selected" href="#patterns">Patterns</a><a href="#compare">Compare</a></div>`+
  controls(false)+`<div class="panel"><div class="panel-top"><div><h2 class="panel-title">Day × hour heatmap</h2><p class="panel-subtitle">Average activity for each weekday/hour combination across your chosen range</p></div><span class="chip aqua">UK local time</span></div><div id="heatmap">${loading()}</div></div>
  ${section('Recurring rhythms','Averages normalised by the number of eligible days or hours, not cumulative totals.')}
  <div class="pattern-subgrid"><div class="panel"><h3 class="panel-title">Average by weekday</h3><p class="panel-subtitle">Mean daily traffic, Monday through Sunday</p><div id="weekdayPattern">${loading()}</div></div>
@@ -334,7 +323,7 @@ function overlayChart(left,right){const A=left?.series||[],B=right?.series||[];
  </svg></div></div><div class="chart-footer"><span><i class="legend-swatch" style="background:var(--aqua)"></i>Selected period</span><span><i class="legend-swatch" style="background:var(--blue)"></i>Comparison period</span><span>Horizontal axis = progress through each period</span></div>`;
 }
 async function renderCompare(){const rid=++renderId;
- $('#page').innerHTML=title('PERIOD COMPARISON','Compare any two periods','Measure changes fairly across days, weeks, months or any two custom time windows.')+
+ $('#page').innerHTML=title('','Compare periods')+`<div class="analytics-tabs"><a href="#explore">Traffic</a><a href="#patterns">Patterns</a><a class="selected" href="#compare">Compare</a></div>`+
  controls(false)+`<div class="control-card">${comparisonFields()}<button class="btn primary" id="runComparison">${icon('compare')} Compare periods</button></div>
  <div id="compareResults">${loading()}</div><div class="notice"><strong>Fair comparisons:</strong> Today versus yesterday compares equivalent elapsed portions of the day. Calendar weeks/months/years are matched to the equivalent local calendar date where possible. Periods with missing receiver data can be misleading.</div>`;
  initControls(renderCompare);populateFilters();
@@ -408,12 +397,15 @@ async function renderDatabase(){const rid=++renderId;
  }catch(e){if(rid===renderId)$('#dbResults').innerHTML=safeError(e)}
 }
 function settingsRow(title,desc,body){return `<div class="settings-group"><div><h3>${title}</h3><p>${desc}</p></div><div>${body}</div></div>`}
-function settingsLinks(){return getLinks().map((it,i)=>`<div class="settings-entry" data-linkindex="${i}" style="margin:0 0 12px;padding-bottom:12px;border-bottom:1px solid var(--line)">
-  ${field('Shortcut name',`<input class="link-name" value="${esc(it.name)}" maxlength="50">`)}
-  ${field('Port (leave blank to disable)',`<input class="link-port" value="${esc(it.port??'')}" placeholder="e.g. 5173" inputmode="numeric">`)}
-  ${field('Path',`<input class="link-path" value="${esc(it.path||'/')}" placeholder="/">`)}
-  ${field('Optional full URL',`<input class="link-url" value="${esc(it.url||'')}" placeholder="Leave blank to use this device">`)}
- </div>`).join('')}
+function settingsLinks(){return `<div class="shortcut-list" id="shortcutList">${getLinks().map((it,i)=>`<div class="shortcut-edit-row" data-linkindex="${i}"><div class="shortcut-edit-main">${field('Name',`<input class="link-name" value="${esc(it.name)}" maxlength="50">`)}${field('Port',`<input class="link-port" value="${esc(it.port??'')}" placeholder="e.g. 5173" inputmode="numeric">`)}${field('Full URL (optional)',`<input class="link-url" value="${esc(it.url||'')}" placeholder="http://…">`)}${field('Path',`<input class="link-path" value="${esc(it.path||'/')}" placeholder="/">`)}</div><div class="shortcut-edit-actions"><button class="btn small" data-reorder="up" data-pos="${i}" title="Move up" ${i===0?'disabled':''}>↑</button><button class="btn small" data-reorder="down" data-pos="${i}" title="Move down" ${i===getLinks().length-1?'disabled':''}>↓</button><button class="btn small danger" data-remove="${i}" title="Remove shortcut">Remove</button></div></div>`).join('')}</div>
+ <div class="setting-actions shortcut-actions"><button class="btn" id="addLink" type="button">${icon('plus',15)} Add link</button><button class="btn primary" id="saveLinks" type="button">Save links</button><button class="btn" id="restoreLinks" type="button">Restore defaults</button></div>`}
+function collectSettingsLinks(){const original=getLinks();return $$('[data-linkindex]').map(el=>{
+ const idx=Number(el.dataset.linkindex),port=$('.link-port',el).value.trim(),path=$('.link-path',el).value.trim()||'/',url=$('.link-url',el).value.trim();
+ if(port&&!/^\d{1,5}$/.test(port))throw Error('Ports must be numeric');
+ if(port&&(Number(port)<1||Number(port)>65535))throw Error('Port must be 1–65535');
+ if(url&&!/^https?:\/\//i.test(url))throw Error('URLs must begin with http:// or https://');
+ return {...original[idx],name:$('.link-name',el).value.trim().slice(0,50)||'New link',sub:original[idx]?.sub||'Application shortcut',port,path,url,icon:original[idx]?.icon||'external'};
+})}
 function updateBox(){return `<div class="auth-box">
   <div class="status-row" style="margin-bottom:12px"><i class="dot" id="updateDot"></i><strong id="updateHeading">Checking installation…</strong></div>
   <div class="tiny muted break-word" id="updateDetails">GitHub update status</div>
@@ -423,26 +415,21 @@ function updateBox(){return `<div class="auth-box">
   <div class="tiny muted" id="updateProgress" style="margin-top:14px"></div>
  </div>`}
 async function renderSettings(){const rid=++renderId;
- $('#page').innerHTML=title('PREFERENCES & SYSTEM','Settings & updates','Manage your homepage, appearance, saved views and safe GitHub updates—all from the website.')+
+ $('#page').innerHTML=title('','Settings')+
  `<div class="panel">${settingsRow('Appearance','Choose a theme and your preferred default measurement.',
    `<div class="settings-entry">${field('Colour theme',`<select id="settingTheme">${opts([['dark','Dark / midnight'],['light','Light / cloud']],state.theme)}</select>`)}${field('Default measurement',`<select id="settingMetric">${opts([['flights','Estimated flights'],['aircraft','Unique aircraft'],['observations','Observations']],state.metric)}</select>`)}</div><button class="btn primary" id="saveAppearance" style="margin-top:13px">Save preferences</button>`)}
- ${settingsRow('Your application shortcuts','These shortcuts open your local ADS-B tools using your current device hostname, including Tailscale.',
-   `${settingsLinks()}<button class="btn primary" id="saveLinks">Save shortcuts</button><button class="btn" id="restoreLinks" style="margin-left:9px">Restore defaults</button>`)}
+ ${settingsRow('Launcher links','The Analytics link always comes first. Add, remove and reorder the other links.',settingsLinks())}
  ${settingsRow('GitHub updates','One-click updates after the initial GitHub checkout and service installation.',updateBox())}
  ${settingsRow('Aerodrome database','Only read operations are allowed. This website does not change retention or feeder configuration.',`<div id="databaseInfo">${loading()}</div>`)}
- ${settingsRow('About this installation','Run as a private local-only website; use Tailscale for remote access.',`<div class="tiny muted">Airspace Analytics <span class="versionValue">v1.1.0</span> · Python stdlib web server · SVG charts · Europe/London.<br>Use GitHub for source-code updates. No cloud database or telemetry is required.</div>`)}
+ ${settingsRow('About this installation','Run as a private local-only website; use Tailscale for remote access.',`<div class="tiny muted">Airspace Analytics <span class="versionValue">v1.2.0</span> · Python stdlib web server · SVG charts · Europe/London.<br>Use GitHub for source-code updates. No cloud database or telemetry is required.</div>`)}
  </div>`;
  $('#saveAppearance').onclick=()=>{setTheme($('#settingTheme').value);state.metric=$('#settingMetric').value;persist();toast('Preferences saved')};
- $('#saveLinks').onclick=()=>{try{let links=getLinks();const vals=$$('[data-linkindex]').map(el=>{
-  const idx=+el.dataset.linkindex,port=$('.link-port',el).value.trim();const path=$('.link-path',el).value.trim()||'/';const url=$('.link-url',el).value.trim();
-  if(port&&!/^\d{1,5}$/.test(port))throw Error('Ports must be numeric');
-  if(port&&(Number(port)<1||Number(port)>65535))throw Error('Port must be 1–65535');
-  if(url&&!/^https?:\/\//i.test(url))throw Error('Custom URLs must start with http:// or https://');
-  return {...links[idx],name:$('.link-name',el).value.trim().slice(0,50)||links[idx].name,port,path,url};
- });
- putLinks(vals);toast('Shortcuts updated','Your homepage links are ready.')}catch(e){toast('Invalid shortcut',e.message,true)}
- };
- $('#restoreLinks').onclick=()=>{putLinks(defaultLinks);toast('Default shortcuts restored');renderSettings()};
+ function saveLinks(){try{putLinks(collectSettingsLinks());toast('Launcher links saved');return true}catch(e){toast('Invalid link',e.message,true);return false}}
+ $('#saveLinks').onclick=()=>saveLinks();
+ $('#addLink').onclick=()=>{if(!saveLinks())return;const xs=getLinks();xs.push({name:'New link',sub:'Application shortcut',port:'',path:'/',url:'',icon:'external'});putLinks(xs);renderSettings()};
+ $('#restoreLinks').onclick=()=>{putLinks(defaultLinks);toast('Default links restored');renderSettings()};
+ $$('[data-remove]').forEach(b=>b.onclick=()=>{if(!saveLinks())return;const xs=getLinks();xs.splice(+b.dataset.remove,1);putLinks(xs);renderSettings()});
+ $$('[data-reorder]').forEach(b=>b.onclick=()=>{if(!saveLinks())return;const xs=getLinks(),i=+b.dataset.pos,j=i+(b.dataset.reorder==='up'?-1:1);if(j<0||j>=xs.length)return;[xs[i],xs[j]]=[xs[j],xs[i]];putLinks(xs);renderSettings()});
  $('#updateToken').onchange=()=>sessionStorage.setItem('airspace-token',$('#updateToken').value.trim());
  $('#checkUpdates').onclick=async()=>{
   $('#updateDetails').textContent='Checking GitHub…';try{const d=await api('/api/update/check',{refresh:1});setUpdateInfo(d)}catch(e){$('#updateDetails').textContent=e.message}
@@ -480,7 +467,7 @@ function setUpdateInfo(d){if(!$('#updateDetails'))return;
  $('#updateDetails').innerHTML=`<div class="detail-grid">${[['Installed version',d.version],['Installed commit',d.local_sha||'—'],['Remote commit',d.remote_sha||'—']].map(([k,v])=>`<div class="detail-item"><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('')}</div>
  <span class="break-word tiny">${esc(d.repository||'Clone this project from your GitHub repository to enable in-app updates.')}</span>${d.error?`<p style="color:var(--orange)">${esc(d.error)}</p>`:''}`;
 }
-async function loadPage(){const hash=(location.hash||'#home').slice(1).split('?')[0];currentPage=names[hash]?hash:'home';renderId++;
+async function loadPage(){const fallback=location.pathname==='/analytics'?'explore':'home';const hash=(location.hash||'#'+fallback).slice(1).split('?')[0];currentPage=names[hash]?hash:fallback;renderId++;document.body.classList.toggle('launcher-mode',currentPage==='home');document.title=(currentPage==='home'?'Airspace · Launcher':names[currentPage]+' · Airspace Analytics');
  $$('.nav-link,.mobile-tabbar a').forEach(el=>el.classList.toggle('active',el.dataset.page===currentPage));
  $('#topTitle').textContent=names[currentPage];setMenu(false);
  window.scrollTo({top:0,behavior:'instant'});

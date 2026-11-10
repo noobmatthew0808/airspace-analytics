@@ -157,3 +157,15 @@ VERSION            Site version
 ## License
 
 MIT — see `LICENSE`.
+
+## v1.2 compact redesign and update from v1.1
+
+The normal URL `http://<your-host>:8088/` is now a simple **application launcher**. Its first, fixed link is **Airspace Analytics**, which opens `http://<your-host>:8088/analytics#explore` on the same port. The other links can be edited, removed, added and reordered under **Settings → Launcher links**. The links live in each browser's storage, so changes made on a phone do not automatically appear on a PC.
+
+The Analytics workspace has three primary modes (Traffic, Patterns and Compare) plus aircraft, read-only database and settings tools. Traffic displays a single main chart, quick date ranges, metric selector (Visits, Aircraft, Samples), grouping, a click-to-drill zoom with a **Zoom out** button, and collapsible Filters and Breakdowns. No new aircraft collection process or writeable database is created.
+
+To upgrade an already-installed Git checkout, **commit the changed files to that same GitHub repository's default branch**. Then, from the still-running v1.1 website, open **Settings → GitHub updates → Check GitHub → Update now**. The site's existing private update token remains valid. There is no need to rerun the installer or edit Aerodrome. The new interface takes effect after the existing updater restarts only Airspace Analytics.
+
+If GitHub's website is used to upload this release, extract the ZIP locally and replace project files in the **same repository**, not a new one. Do not upload this ZIP as a single file; upload its contents. Particularly important files are `VERSION`, `frontend/app.js`, `frontend/styles.css`, `frontend/index.html`, and `CHANGELOG.md`. The backend and installer have no functional changes in this release.
+
+The home screen intentionally contains no analytics charts; use the pinned Analytics button to open the workspace. On mobile, Analytics has compact bottom navigation; the Database section remains accessible from the menu in the upper-left.
