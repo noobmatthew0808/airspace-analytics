@@ -1,28 +1,15 @@
 # Changelog
 
 ## v1.7.0 — 10 November 2026
-- Left-align sparse years, months, and weeks on Traffic charts.
-- Add daily year and month calendar heatmaps with clickable month headings.
-- Remove bottom-left notifications and update pairing form.
-- Improve commercial operator recognition using verified ICAO callsign prefixes.
-- Allow one-click updates only from local and Tailscale addresses, with cross-origin restrictions.
-- No modifications to Aerodrome or ADS-B feeders.
+- Sparse traffic charts place year/month/week bars at the left, retaining full-width time scale.
+- No transient corner notifications.
+- Year heatmap is a full 12-month calendar of daily traffic; select a month for its month calendar.
+- Removed Week and Day heatmap controls.
+- GitHub updates are one-click from trusted local/Tailscale clients, with same-origin checks but no update token required.
+- Estimated commercial visits first marked Unknown are attributed to a recognised airline if a callsign appears later within the same continuous visit.
+- Added tests for sparse chart layout, calendar drilldown and airline late identification.
 
-## v1.6.1 — 10 November 2026
-- Fix two heatmap selector calls that crashed Traffic during initial load.
-- Add regression tests for element iteration.
-- No changes to Aerodrome or ADS-B feeder services.
-
-## v1.6.0 — 10 November 2026
-- Unified Patterns and Traffic into one scrollable analytics page; removed the separate Patterns navigation.
-- Default yearly traffic view with click-to-drill through month, week, day and hour. Zoom out and All years remain.
-- Collapsible Traffic filter panel with On/Off and Reset; when off, the normal unfiltered drill-down is used.
-- Compact x-axis labels that show month names, week beginnings, dates or individual hours; the selected period appears above the graph.
-- One Bars/Smooth line control; eased cubic Bezier curves for line graphs.
-- Existing aviation, type and operator breakdowns kept underneath the main chart.
-- Higher-contrast heatmap with linked Year/Month/Week/Day selector.
-- Average by weekday and average by hour now use all recorded data, independently of the selected drill-down time range.
-- Aerodrome remains read-only; ADS-B feeders and authenticated website updater remain unchanged.
+# Changelog
 
 ## v1.5.0 — 10 November 2026
 - Restored v1.3 traffic chart zoom behaviour, rather than v1.4 fixed year-to-hour navigation.

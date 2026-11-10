@@ -1,27 +1,52 @@
-/* Compact UK calendar for aircraft-traffic analytics. */
-(function(){
- const months=['January','February','March','April','May','June','July','August','September','October','November','December'],days=['M','T','W','T','F','S','S'];
- const p=n=>String(n).padStart(2,'0'),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
- function monthGrid(y,m,records,max,mode){
-  const mini=mode==='year',offset=(new Date(Date.UTC(y,m-1,1)).getUTCDay()+6)%7,numDays=new Date(Date.UTC(y,m,0)).getUTCDate();
-  const head=mini?`<button class="calendar-month-link" type="button" data-heat-month="${y}-${p(m)}" aria-label="Open ${months[m-1]} ${y}">${months[m-1]} <span>›</span></button>`:`<h4 class="calendar-month-title">${months[m-1]} ${y}</h4>`;
-  let cells=Array(offset).fill('<span class="calendar-blank" aria-hidden="true"></span>');
-  for(let d=1;d<=numDays;d++){
-   const k=`${y}-${p(m)}-${p(d)}`,row=records.get(k),has=row&&row.value!=null,value=has?Number(row.value):0;
-   const f=has?Math.max(.12,Math.sqrt(Math.max(0,value)/Math.max(1,max))):0;
-   const bg=has?`background-color:hsl(172 74% ${Math.round(22+36*f)}%);color:${f>.5?'#072c2a':'#e7fbf7'}`:'';
-   const label=`${d} ${months[m-1]} ${y}: ${has?value.toLocaleString('en-GB')+' recorded':'no recorded data'}`;
-   cells.push(`<span class="calendar-date ${has?'has-data':'missing'}" title="${esc(label)}" aria-label="${esc(label)}" style="${bg}">${d}</span>`);
+/* Compact calendar heatmap for Airspace Analytics.
+   Dates are UK-local calendar days supplied by the analytics API. */
+(function () {
+  'use strict';
+  const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const WEEKDAYS=['M','T','W','T','F','S','S'];
+  const pad=n=>String(n).padStart(2,'0');
+  const escapeHtml=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const dateKey=(y,m,d)=>`${y}-${pad(m)}-${pad(d)}`;
+
+  function monthGrid(year,month,points,max,mode){
+    const isYear=mode==='year';
+    const start=new Date(Date.UTC(year,month-1,1));
+    const blanks=(start.getUTCDay()+6)%7;
+    const totalDays=new Date(Date.UTC(year,month,0)).getUTCDate();
+    const head=isYear?`<button class="calendar-month-link" data-heat-month="${year}-${pad(month)}" type="button" aria-label="Open ${MONTHS[month-1]} ${year} calendar">${MONTHS[month-1]} <span aria-hidden="true">›</span></button>`:
+      `<h4 class="calendar-month-title">${MONTHS[month-1]} ${year}</h4>`;
+    const days=[];
+    for(let i=0;i<blanks;i++)days.push('<span class="calendar-blank" aria-hidden="true"></span>');
+    for(let d=1;d<=totalDays;d++){
+      const key=dateKey(year,month,d);
+      const row=points.get(key);
+      const observed=row&&row.value!==null&&row.value!==undefined;
+      const value=observed?Number(row.value):null;
+      // Missing calendar days stay dark, instead of being mistaken for 0 traffic.
+      const strength=observed?Math.max(0.12,Math.sqrt(Math.max(0,value)/Math.max(1,max))):0;
+      const noun=mode==='year'?'daily traffic':'daily traffic';
+      const label=`${d} ${MONTHS[month-1]} ${year}: ${observed?`${Math.round(value*100)/100} ${noun}`:'No recorded traffic data'}`;
+      const base=observed?`background-color:hsl(172 74% ${Math.round(22+36*strength)}%);color:${strength>.5?'#072c2a':'#e7fbf7'}`:'';
+      days.push(`<span class="calendar-date ${observed?'has-data':'missing'}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}" style="${base}">${d}</span>`);
+    }
+    return `<section class="calendar-month ${isYear?'calendar-mini':'calendar-large'}">${head}<div class="calendar-grid">${WEEKDAYS.map(w=>`<span class="calendar-weekday" aria-hidden="true">${w}</span>`).join('')}${days.join('')}</div></section>`;
   }
-  return `<section class="calendar-month ${mini?'calendar-mini':'calendar-large'}">${head}<div class="calendar-grid">${days.map(d=>`<span class="calendar-weekday" aria-hidden="true">${d}</span>`).join('')}${cells.join('')}</div></section>`;
- }
- function render(series,{level='year',year,month,metric='flights'}={}){
-  const y=Number(year),m=Number(month||1);if(!Number.isInteger(y)||y<1970||y>2100||!Number.isInteger(m)||m<1||m>12)throw Error('Invalid calendar period');
-  const records=new Map((series||[]).filter(i=>/^\d{4}-\d{2}-\d{2}$/.test(i.key||'')).map(i=>[i.key,i]));
-  const max=Math.max(1,...[...records.values()].map(x=>Number(x.value)||0));
-  const selected=level==='month'?[m]:Array.from({length:12},(_,i)=>i+1);
-  const heading=level==='month'?months[m-1]+' '+y:String(y),unit={flights:'estimated visits',aircraft:'unique aircraft',observations:'observations'}[metric]||metric;
-  return `<div class="calendar-heatmap" aria-label="${esc(heading)} traffic calendar"><div class="calendar-headline"><strong>${esc(heading)}</strong><span>Daily ${esc(unit)}</span></div><div class="calendar-months ${level==='month'?'single-month':'year-months'}">${selected.map(n=>monthGrid(y,n,records,max,level)).join('')}</div><div class="calendar-legend"><span>Less</span>${[.15,.3,.5,.7,1].map(f=>`<i style="background-color:hsl(172 74% ${Math.round(22+36*f)}%)"></i>`).join('')}<span>More</span><span class="calendar-no-data">No data</span></div></div>`;
- }
- window.AirspaceCalendar={render};
+  function render(series,{level='year',year,month,metric='flights'}={}){
+    const y=Number(year),m=Number(month||1);
+    if(!Number.isInteger(y)||y<1970||y>2100||!Number.isInteger(m)||m<1||m>12)throw Error('Invalid calendar period');
+    const points=new Map();
+    for(const item of series||[]){
+      if(/^\d{4}-\d{2}-\d{2}$/.test(item.key||''))points.set(item.key,item);
+    }
+    const max=Math.max(1,...[...points.values()].map(v=>Number(v.value)||0));
+    const months=level==='month'?[m]:Array.from({length:12},(_,i)=>i+1);
+    const heading=level==='month'?MONTHS[m-1]+' '+y:String(y);
+    const keys={flights:'estimated visits',aircraft:'unique aircraft',observations:'observations'};
+    return `<div class="calendar-heatmap" role="group" aria-label="${escapeHtml(heading)} traffic calendar">
+      <div class="calendar-headline"><strong>${escapeHtml(heading)}</strong><span>Daily ${escapeHtml(keys[metric]||metric)}</span></div>
+      <div class="calendar-months ${level==='month'?'single-month':'year-months'}">${months.map(mon=>monthGrid(y,mon,points,max,level)).join('')}</div>
+      <div class="calendar-legend"><span>Less</span>${[0.15,.3,.5,.7,1].map(v=>`<i style="background-color:hsl(172 74% ${Math.round(22+36*v)}%)"></i>`).join('')}<span>More</span><span class="calendar-no-data">No data</span></div>
+    </div>`;
+  }
+  window.AirspaceCalendar={render};
 })();

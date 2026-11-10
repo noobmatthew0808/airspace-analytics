@@ -11,13 +11,8 @@ const short=(t,n=35)=>String(t??'—').length>n?String(t).slice(0,n-1)+'…':Str
 const loading=(label='Analysing your receiver history…')=>`<div class="loading"><span class="spinner"></span>${esc(label)}</div>`;
 const safeError=e=>`<div class="notice error-note"><strong>Couldn't load this view.</strong> ${esc(e.message||e)} <a class="btn small" href="#home">Return home</a></div>`;
 const key='airspace-analytics-prefs-v1';
-const defaults={metric:'flights',period:'rolling',bucket:'auto',category:'all',type:'all',airline:'all',icao:'all',amount:7,unit:'days',start:'',end:'',chart:'line',theme:'dark',comparison:'previous',offset:1,other_start:'',other_end:'',typeViz:'bars',airlineViz:'bars',operatorScope:'airline',filtersEnabled:false,heatmapScale:'year'};
+const defaults={metric:'flights',period:'rolling',bucket:'auto',category:'all',type:'all',airline:'all',icao:'all',amount:7,unit:'days',start:'',end:'',chart:'line',theme:'dark',comparison:'previous',offset:1,other_start:'',other_end:'',typeViz:'bars',airlineViz:'bars',operatorScope:'airline'};
 const state={...defaults,...readPrefs()};
-if(!['year','month'].includes(state.heatmapScale))state.heatmapScale='year';
-if(state.filtersEnabled!==true && !localStorage.getItem('airspace-analytics-v16-ready')){
- Object.assign(state,{metric:'flights',period:'all',bucket:'year',category:'all',type:'all',airline:'all',icao:'all',filtersEnabled:false,heatmapScale:'year'});
- try{localStorage.setItem('airspace-analytics-v16-ready','yes');localStorage.setItem(key,JSON.stringify(state))}catch{}
-}
 // Convert old preset preferences to the new single duration picker. A preset
 // never reappears as a confusing legacy dropdown after an update.
 if(!['rolling','custom','all'].includes(state.period)){
@@ -32,12 +27,6 @@ function persist(){localStorage.setItem(key,JSON.stringify(state))}
 const savedViewsKey='airspace-analytics-views-v1';
 // A previously paired browser stays paired across reloads without showing a
 // password box each time. The updater's server-side token check remains active.
-const pairedUpdaterKey='airspace-updater-pairing';
-try {
- const old=sessionStorage.getItem('airspace-token');
- if(old&&!localStorage.getItem(pairedUpdaterKey))localStorage.setItem(pairedUpdaterKey,old);
-} catch {}
-
 const defaultLinks=[
   {name:'ADSB.im',sub:'Receiver controls',path:'/',color:'aqua',icon:'radar'},
   {name:'Aerodrome',sub:'History & records',port:'8000',path:'/',color:'blue',icon:'plane'},
@@ -86,6 +75,14 @@ const pages=[['explore','Traffic','chart'],['database','Database','database'],['
 const names={home:'Launcher',...Object.fromEntries(pages.map(x=>[x[0],x[1]]))};
 let currentPage='home',currentChart='line',currentAnalytics=null,latestOverview=null,healthInfo=null,activeTimer=null,renderId=0;
 const zoomHistory=[];
+// One-time migration: old v1.5 range preferences should not replace the new yearly entry point.
+if(!localStorage.getItem('airspace-v16-started')){
+ Object.assign(state,{period:'all',bucket:'year',metric:'flights',type:'all',airline:'all',category:'all',icao:'all',chart:'bar',filtersEnabled:false,heatScope:'follow'});
+ localStorage.setItem('airspace-v16-started','1');persist();
+}
+if(state.filtersEnabled===undefined)state.filtersEnabled=false;
+if(!['year','month'].includes(state.heatScope))state.heatScope='year';
+
 function setTheme(theme){document.documentElement.dataset.theme=theme||'dark';state.theme=theme;persist()}
 setTheme(state.theme);
 
@@ -108,7 +105,7 @@ function shell(){
 }
 function nav([id,title,ic]){return `<a class="nav-link" href="#${id}" data-page="${id}">${icon(ic)}<span>${title}</span></a>`}
 function setMenu(open){$('#sidebar').classList.toggle('open',open);$('#overlay').classList.toggle('show',open)}
-function toast(){} // No pop-up notifications.
+function toast(){/* Quiet personal dashboard: no transient notification overlays. */}
 function setStatus(h){healthInfo=h;const good=h?.fresh===true;const msg=good?'Aerodrome connected':h?.ok?'Data may be delayed':'Database unavailable';for(const id of ['sidebarDot','topDot']){$('#'+id).classList.toggle('good',good);$('#'+id).classList.toggle('bad',!!h&&!good)}$('#sidebarTitle').textContent=msg;$('#topStatus').textContent=good?'Data updating':'Check data';$('#sidebarDetail').textContent=h?.last_sighting?`Latest observation: ${when(h.last_sighting)}`:'Read-only historical data connection';}
 async function api(path,params={}){const url=new URL(path,location.origin);Object.entries(params).forEach(([k,v])=>{if(v!==null&&v!==undefined&&v!=='')url.searchParams.set(k,String(v))});const res=await fetch(url,{cache:'no-store'});let d;try{d=await res.json()}catch{throw Error('The local website is unavailable.')};if(!res.ok)throw Error(d.error||'Request failed');return d}
 const timerDate=(d)=>d?d:new Date().toISOString().slice(0,16);
@@ -172,14 +169,6 @@ function controls(extra=false){
   ${extra?'<div class="compact-save"><button class="btn small" id="saveView" type="button">'+icon('bookmark',15)+' Save view</button></div>':''}
  </div>`;
 }
-function resetTraffic(){
- Object.assign(state,{metric:'flights',period:'all',bucket:'year',category:'all',type:'all',airline:'all',icao:'all',amount:7,unit:'days',start:'',end:'',filtersEnabled:false,heatmapScale:'year'});
- zoomHistory.length=0;persist();renderExplore();
-}
-function trafficFilterPanel(){return `<details class="traffic-filter-fold" id="trafficFilterFold" ${state.filtersEnabled?'open':''}>
- <summary><span>${icon('layers',16)} Traffic filters <small>${state.filtersEnabled?'Enabled':'Default view'}</small></span><span class="filter-controls"><label class="filter-switch" title="Enable custom filters"><input type="checkbox" id="filterEnabled" ${state.filtersEnabled?'checked':''}> On</label><button class="btn small" id="trafficReset" type="button">Reset</button></span></summary>
- <div class="traffic-filter-body ${state.filtersEnabled?'':'hidden'}">${controls(false)}</div>
- </details>`}
 function collectControls(){
  state.period=$('#period')?.value||state.period;
  state.bucket=$('#bucket')?.value||state.bucket;
@@ -236,12 +225,15 @@ function renderSavedViews(){const place=$('#savedViews');if(!place)return;let vi
  place.innerHTML=views.length?views.map((v,i)=>`<button class="chip aqua" data-view="${i}">${icon('bookmark',12)} ${esc(v.name)}</button>`).join(' '):'<span class="muted tiny">No saved views yet. Save your favourite filters and time groupings.</span>';
  $$('[data-view]',place).forEach(b=>b.onclick=()=>{Object.assign(state,views[+b.dataset.view].query);persist();renderExplore()});
 }
-function renderChart(series,kind='line',{height=305,mini=false,color='aqua',everyHour=false,displayGroup='auto',alignStart=false}={}){
+function renderChart(series,kind='line',{height=305,mini=false,color='aqua',everyHour=false,axisGroup=''}={}){
  if(!series?.length||series.every(s=>s.value===null||s.value===undefined))return `<div class="chart-empty">No observations in this period.</div>`;
  const n=series.length,W=720,H=height,L=55,R=14,T=19,B=49;
  const plotW=W-L-R,plotH=H-T-B;
  const max=Math.max(1,...series.map(s=>Number(s.value)||0));
- const slot=plotW/(alignStart?Math.max(n,12):n);
+ // Keep sparse series anchored at the LEFT of the timeline rather than
+ // centring a lone year/month as if it filled the whole calendar.
+ const guideSlots={year:8,month:12,week:6,day:7,hour:24,hour_of_day:24};
+ const slot=plotW/Math.max(n,guideSlots[axisGroup]||n);
  const x=i=>L+slot*(i+.5);
  const y=value=>T+plotH-(Math.max(0,Number(value)||0)/max)*(plotH-9);
  const stroke=({aqua:'var(--aqua)',blue:'var(--blue)',pink:'var(--pink)'})[color]||'var(--aqua)';
@@ -252,14 +244,12 @@ function renderChart(series,kind='line',{height=305,mini=false,color='aqua',ever
    shape=series.map((s,i)=>s.value==null?'':`<rect class="chart-bar" data-index="${i}" x="${x(i)-bw/2}" y="${y(s.value)}" width="${bw}" height="${Math.max(0,T+plotH-y(s.value))}" rx="${Math.min(2.8,bw/4)}" style="fill:${stroke}"/>`).join('');
  }else{
    const coords=series.map((s,i)=>s.value==null?null:[x(i),y(s.value)]);
-   let running=false;
-   let prev=null;
-   const path=coords.map(pt=>{
-     if(!pt){running=false;prev=null;return ''}
-     if(!running){running=true;prev=pt;return `M${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`}
-     const mid=(prev[0]+pt[0])/2;
-     const pathPart=`C${mid.toFixed(1)} ${prev[1].toFixed(1)},${mid.toFixed(1)} ${pt[1].toFixed(1)},${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`;
-     prev=pt;return pathPart;
+   // Gentle, monotone-in-x cubic joins keep peaks truthful without jagged corners.
+   let previous=null;
+   const path=coords.map(pt=>{if(!pt){previous=null;return ''}if(!previous){previous=pt;return `M${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`;}
+    const m=(previous[0]+pt[0])/2;
+    const segment=`C${m.toFixed(1)} ${previous[1].toFixed(1)} ${m.toFixed(1)} ${pt[1].toFixed(1)} ${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`;
+    previous=pt;return segment;
    }).join(' ');
    shape=`<path class="chart-line" d="${path}" style="stroke:${stroke}"/>`;
    if(n<=80)shape+=coords.map((pt,i)=>pt?`<circle class="chart-point" data-index="${i}" cx="${pt[0]}" cy="${pt[1]}" r="3.3" style="fill:${stroke}"/>`:'').join('');
@@ -269,15 +259,7 @@ function renderChart(series,kind='line',{height=305,mini=false,color='aqua',ever
  const labels=Math.min(n,mini?10:14),skip=everyTick?1:Math.max(1,Math.ceil(n/labels));
  const axis=series.map((s,i)=>{
    if(i%skip!==0&&i!==n-1)return '';
-   const formatAxis=()=>{
-     if(everyHour)return hourTick(s);
-     const k=String(s.key||'');
-     if(displayGroup==='month' && /^\d{4}-\d{2}$/.test(k))return new Date(`${k}-15T12:00:00Z`).toLocaleDateString('en-GB',{month:'short'});
-     if(displayGroup==='week' && /^\d{4}-\d{2}-\d{2}$/.test(k))return new Date(`${k}T12:00:00Z`).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
-     if(displayGroup==='day' && /^\d{4}-\d{2}-\d{2}$/.test(k))return new Date(`${k}T12:00:00Z`).toLocaleDateString('en-GB',{weekday:'short',day:'numeric'});
-     return short(s.label,11);
-   };
-   const text=formatAxis();
+   const text=everyHour?hourTick(s):axisGroup==='month'?new Date(s.key+'-01T12:00:00Z').toLocaleDateString('en-GB',{month:'short'}):axisGroup==='week'?new Date(s.key+'T12:00:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'short'}):axisGroup==='day'?new Date(s.key+'T12:00:00Z').toLocaleDateString('en-GB',{weekday:'short',day:'numeric'}):short(s.label,11);
    return `<text class="chart-axis ${everyHour?'hour-axis':''}" text-anchor="middle" x="${x(i)}" y="${H-15}">${esc(text)}</text>`;
  }).join('');
  return `<div class="chart-shell"><div class="chart-scroll"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Interactive traffic chart with ${n} intervals, scaled to screen width" preserveAspectRatio="xMidYMid meet">
@@ -311,10 +293,10 @@ function drillInto(point,group){
  const key=point.key;let from,to,next;
  if(group==='year'){from=`${key}-01-01T00:00`;to=`${(+key+1)}-01-01T00:00`;next='month'}
  else if(group==='month'){const [y,m]=key.split('-').map(Number);from=`${key}-01T00:00`;to=m===12?`${y+1}-01-01T00:00`:`${y}-${String(m+1).padStart(2,'0')}-01T00:00`;next='week'}
- else if(group==='week'){from=key+'T00:00';const x=new Date(key+'T12:00:00Z');x.setUTCDate(x.getUTCDate()+7);to=x.toISOString().slice(0,10)+'T00:00';next='day'}
+ else if(group==='week'){from=key+'T00:00';const x=new Date(key+'T12:00:00Z');x.setUTCDate(x.getUTCDate()+7);to=x.toISOString().slice(0,10)+'T00:00';if(state.period==='custom'){if(from<state.start)from=state.start;if(to>state.end)to=state.end;}next='day'}
  else if(group==='day'){from=key+'T00:00';const x=new Date(key+'T12:00:00Z');x.setUTCDate(x.getUTCDate()+1);to=x.toISOString().slice(0,10)+'T00:00';next='hour'}
  else if(group==='hour'){from=ukDatetime(key);const x=new Date(Date.parse(key)+3600*1000);to=ukDatetime(x.toISOString());next='hour'}
- if(from&&to){zoomHistory.push({period:state.period,start:state.start,end:state.end,bucket:state.bucket,amount:state.amount,unit:state.unit,heatmapScale:state.heatmapScale,heatmapMonthFocus:state.heatmapMonthFocus});state.heatmapScale={year:'year',month:'month',week:'month',day:'month',hour:'month'}[group]||state.heatmapScale;state.heatmapMonthFocus=group==='month'?point.key:'';state.period='custom';state.start=from;state.end=to;state.bucket=next;persist();location.hash='#explore';if(currentPage==='explore')renderExplore();toast('Drilled into '+point.label,'Click Reset to return to your normal time range.');}
+ if(from&&to){delete state.heatYear;delete state.heatMonth;zoomHistory.push({period:state.period,start:state.start,end:state.end,bucket:state.bucket,amount:state.amount,unit:state.unit});state.period='custom';state.start=from;state.end=to;state.bucket=next;persist();location.hash='#explore';if(currentPage==='explore')renderExplore();}
 }
 function donut(items){if(!items?.length)return `<div class="empty">No breakdown available.</div>`;
  const top=items.slice(0,5),total=items.reduce((a,x)=>a+Number(x.value),0);
@@ -330,129 +312,137 @@ function breakdownList(items,field,color='aqua'){
  const top=items.slice(0,10),max=top[0].value||1;
  return `<div class="breakdown-list">${top.map(s=>`<div class="breakdown-row" title="Filter by ${esc(s.name)}" data-filter="${esc(field)}" data-value="${esc(s.name)}"><div><div class="breakdown-name">${esc(s.name)}</div><div class="bar-track"><div class="bar-fill ${color==='aqua'?'':color}" style="width:${Math.max(0,s.value/max*100)}%"></div></div></div><strong class="breakdown-value">${fmt(s.value)}</strong></div>`).join('')}</div>`;
 }
-function bindBreakdowns(){ $$('[data-filter]').forEach(el=>el.onclick=()=>{const f=el.dataset.filter,value=el.dataset.value;if(!['type','airline','category'].includes(f))return;if(f==='airline'&&value.toLowerCase().startsWith('unknown'))return;state[f]=value;persist();renderExplore();toast('Filter applied',`${value} — click Reset to clear.`)}) }
+function bindBreakdowns(){ $$('[data-filter]').forEach(el=>el.onclick=()=>{const f=el.dataset.filter,value=el.dataset.value;if(!['type','airline','category'].includes(f))return;if(f==='airline'&&value.toLowerCase().startsWith('unknown'))return;state.filtersEnabled=true;state[f]=value;persist();renderExplore();toast('Filter applied',`${value} — click Reset to clear.`)}) }
 function summaryFor(a){const unit={flights:'estimated visits',aircraft:'unique aircraft',observations:'observation records'}[a.metric];
  return `<div class="summary-row"><div class="summary-item"><span>Period total</span><strong>${fmt(a.total)}</strong></div><div class="summary-item"><span>${a.aggregation_label}</span><strong>${fmt(a.average,2)}</strong></div><div class="summary-item"><span>Highest bucket</span><strong>${fmt(a.peak,2)}</strong></div><div class="summary-item"><span>Distinct aircraft</span><strong>${fmt(a.unique_aircraft)}</strong></div></div>`;
 }
-async function renderExplore(){const rid=++renderId;currentAnalytics=null;
- $('#page').innerHTML=title('','Traffic')+
- `${trafficFilterPanel()}
- <section class="main-chart-panel"><div class="main-chart-head"><div><div id="chartPeriod" class="chart-period">Loading period…</div><h2 id="chartLabel">Traffic over time</h2><div id="chartMeta" class="muted tiny">Loading…</div></div><div class="chart-tools"><button class="btn small ${zoomHistory.length?'':'hidden'}" id="zoomBack" type="button" title="Previous zoom">${icon('chevron',13)} Zoom out</button><button class="btn small" id="zoomReset" type="button">All years</button><span class="chart-toggle"><button class="btn small" id="lineSwitch" type="button">Smooth line</button><button class="btn small" id="barSwitch" type="button">Bars</button></span></div></div>
+// Simple progressive timeline: all years → months → weeks → days → hours.
+function resetTimeline(){delete state.heatYear;delete state.heatMonth;zoomHistory.length=0;Object.assign(state,{period:'all',bucket:'year',start:'',end:'',amount:7,unit:'days',metric:'flights',category:'all',type:'all',airline:'all',icao:'all'});persist();}
+function periodHeading(data){
+ const localDate=d=>new Date(String(d).slice(0,10)+'T12:00:00Z');
+ const locale=(d,o)=>localDate(d).toLocaleDateString('en-GB',o);
+ const sd=state.start||new Date(data.start*1000).toISOString().slice(0,10);
+ if(!state.filtersEnabled&&state.period==='all')return 'All recorded years';
+ if(state.bucket==='month')return locale(sd,{year:'numeric'});
+ if(state.bucket==='week')return locale(sd,{month:'long',year:'numeric'});
+ if(state.bucket==='day')return `Week of ${locale(sd,{day:'numeric',month:'long',year:'numeric'})}`;
+ if(state.bucket==='hour')return locale(sd,{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+ if(state.period==='all')return 'All recorded years';
+ const end=new Date((data.end-1)*1000).toLocaleDateString('en-GB',{timeZone:'Europe/London',day:'numeric',month:'short',year:'numeric'});
+ const from=new Date(data.start*1000).toLocaleDateString('en-GB',{timeZone:'Europe/London',day:'numeric',month:'short',year:'numeric'});
+ return from===end?from:`${from} – ${end}`;
+}
+function applyFilterState(){
+ if(!state.filtersEnabled)Object.assign(state,{metric:'flights',category:'all',type:'all',airline:'all',icao:'all'});
+}
+function drawCurrentChart(){
+ if(!currentAnalytics)return;
+ $('#exploreChart').innerHTML=renderChart(currentAnalytics.series,state.chart||'bar',{everyHour:currentAnalytics.bucket==='hour',axisGroup:currentAnalytics.bucket});
+ hookChart($('#exploreChart'),currentAnalytics.series,currentAnalytics.bucket);
+ $$('#lineSwitch,#barSwitch').forEach(b=>b.classList.toggle('selected',b.id===(state.chart==='line'?'lineSwitch':'barSwitch')));
+}
+function latestSelection(a,scope){
+ // Construct UK calendar windows; local time strings are interpreted by the backend.
+ const dt=new Date((a.end-1)*1000).toLocaleString('sv-SE',{timeZone:'Europe/London'}).slice(0,10);
+ const [yr,mo,day]=dt.split('-').map(Number);
+ const pad=n=>String(n).padStart(2,'0');
+ const date=(y,m,d)=>`${y}-${pad(m)}-${pad(d)}`;
+ let start,end;
+ if(scope==='year'){start=`${yr}-01-01`;end=`${yr+1}-01-01`;}
+ else if(scope==='month'){start=date(yr,mo,1);end=mo===12?date(yr+1,1,1):date(yr,mo+1,1);}
+ else if(scope==='week'){
+  const noon=new Date(dt+'T12:00:00Z');const dow=(noon.getUTCDay()+6)%7;
+  noon.setUTCDate(noon.getUTCDate()-dow);start=noon.toISOString().slice(0,10);
+  noon.setUTCDate(noon.getUTCDate()+7);end=noon.toISOString().slice(0,10);
+ }else{
+  start=dt;const noon=new Date(dt+'T12:00:00Z');noon.setUTCDate(noon.getUTCDate()+1);end=noon.toISOString().slice(0,10);
+ }
+ return {period:'custom',start:start+'T00:00',end:end+'T00:00'};
+}
+let patternsRequestId=0;
+async function fillPatterns(rid,a){
+ const run=++patternsRequestId;
+ const metric=state.filtersEnabled?state.metric:'flights';
+ const filters={metric,category:state.filtersEnabled?state.category:'all',type:state.filtersEnabled?state.type:'all',airline:state.filtersEnabled?state.airline:'all',icao:state.filtersEnabled?state.icao:'all'};
+ const renderStats=async()=>{
+   const all=await api('/api/patterns',{...filters,period:'all'});
+   if(rid!==renderId||run!==patternsRequestId)return;
+   $('#weekdayPattern').innerHTML=renderWeekBars(all.weekday,true);
+   $('#hourPattern').innerHTML=renderChart(all.hourly,'bar',{height:230,everyHour:true,axisGroup:'hour_of_day'});
+   hookChart($('#hourPattern'),all.hourly,'hour_of_day',false);
+ };
+ const renderCalendar=async()=>{
+   // When the timeline is zoomed to a calendar year/month, follow that selection.
+   // Otherwise default to the most recent recorded year, never an empty future year.
+   const tail=new Date((Math.max(a.start,a.end-1))*1000).toLocaleDateString('sv-SE',{timeZone:'Europe/London'});
+   const selected=(state.period==='custom'&&state.start?state.start.slice(0,7):tail.slice(0,7));
+   const year=state.heatYear||Number(selected.slice(0,4));
+   const month=state.heatMonth||Number(selected.slice(5,7));
+   const mode=state.heatScope==='month'?'month':'year';
+   const pad=n=>String(n).padStart(2,'0');
+   const from=mode==='year'?`${year}-01-01T00:00`:`${year}-${pad(month)}-01T00:00`;
+   const to=mode==='year'?`${year+1}-01-01T00:00`:(month===12?`${year+1}-01-01T00:00`:`${year}-${pad(month+1)}-01T00:00`);
+   const response=await api('/api/analytics',{...filters,period:'custom',start:from,end:to,bucket:'day'});
+   if(rid!==renderId||run!==patternsRequestId)return;
+   $('#heatmap').innerHTML=window.AirspaceCalendar.render(response.series,{level:mode,year,month,metric});
+   $('#heatmapRange').textContent='';
+   $$('[data-heat-month]',$('#heatmap')).forEach(button=>button.onclick=()=>{
+     const [y,m]=button.dataset.heatMonth.split('-').map(Number);
+     state.heatYear=y;state.heatMonth=m;state.heatScope='month';persist();
+     $('#heatScope').value='month';$('#heatmap').innerHTML=loading();
+     renderCalendar().catch(e=>$('#heatmap').innerHTML=safeError(e));
+   });
+ };
+ try{await renderStats();await renderCalendar();}
+ catch(e){if(rid!==renderId||run!==patternsRequestId)return;
+  for(const id of ['weekdayPattern','hourPattern','heatmap']){const el=$('#'+id);if(el&&el.innerHTML.includes('spinner'))el.innerHTML=`<div class="empty">${esc(e.message)}</div>`;}
+ }
+}
+
+async function renderExplore(){const rid=++renderId;currentAnalytics=null;applyFilterState();
+ $('#page').innerHTML=title('','Traffic')+`
+ <details class="foldout traffic-filter-panel" id="trafficFilterPanel"><summary><span>${icon('layers',17)} Traffic filters <small id="filterModeLabel">${state.filtersEnabled?'On':'Off'}</small></span>${icon('chevron',17)}</summary>
+  <div class="traffic-filter-actions"><button class="btn small ${state.filtersEnabled?'primary':''}" id="filtersToggle" type="button">Filters ${state.filtersEnabled?'on':'off'}</button><button class="btn small" id="filtersReset" type="button">Reset</button></div>
+  <div class="${state.filtersEnabled?'':'filters-disabled'}" id="filtersBody">${controls(false)}</div>
+ </details>
+ <section class="main-chart-panel"><div class="main-chart-head"><div><div id="chartPeriod" class="chart-period">Loading period…</div><h2 id="chartLabel">Estimated flight visits</h2><div id="chartMeta" class="muted tiny">Loading…</div></div>
+ <div class="chart-tools"><button class="btn small ${zoomHistory.length?'':'hidden'}" id="zoomBack" type="button">${icon('chevron',13)} Zoom out</button><button class="btn small" id="zoomReset" type="button">All years</button><span class="chart-toggle"><button class="btn small" id="barSwitch" type="button">Bars</button><button class="btn small" id="lineSwitch" type="button">Line</button></span></div></div>
  <div id="exploreStats" class="compact-stats">${loading()}</div>
  <div id="exploreChart" class="chart-frame">${loading()}</div>
-</section>
- <details class="foldout" id="breakdownDetails" open><summary><span>${icon('layers',18)} Breakdowns <small>Category · aircraft type · operator</small></span>${icon('chevron',17)}</summary><div class="breakdown-head"><button class="btn small" id="breakdownVizSwitch" type="button">${state.typeViz==='pie'?'Show bars':'Show pies'}</button></div><div class="grid-three breakdown-grid"><div class="panel"><h3 class="panel-title">Aviation category</h3><div id="categoryDonut">${loading()}</div></div>
- <div class="panel"><div class="panel-top"><h3 class="panel-title">Aircraft types</h3></div><div id="typeBars">${loading()}</div></div>
- <div class="panel"><div class="panel-top"><select id="operatorScope" class="breakdown-scope" aria-label="Operator breakdown">${opts([['airline','Airlines · commercial'],['operator','Operators · all']],state.operatorScope||'airline')}</select></div><div id="airlineBars">${loading()}</div></div></div></details>
-<section class="panel traffic-heat-section"><div class="panel-top"><h2 class="panel-title">Activity heatmap</h2>
-<div class="heatmap-choices" role="group" aria-label="Heatmap period">${['year','month'].map(k=>`<button type="button" class="btn small ${state.heatmapScale===k?'selected':''}" data-heat-scale="${k}">${k[0].toUpperCase()+k.slice(1)}</button>`).join('')}</div></div>
-<div id="heatmapPeriod" class="muted tiny"></div><div id="heatmap">${loading()}</div></section>
-<div class="pattern-subgrid traffic-averages"><section class="panel"><h2 class="panel-title">Average by weekday <small>· All time</small></h2><div id="weekdayPattern">${loading()}</div></section>
-<section class="panel"><h2 class="panel-title">Average by hour <small>· All time</small></h2><div id="hourPattern">${loading()}</div></section></div>
-`;
- const toggle=$('#filterEnabled');
- toggle.onclick=e=>e.stopPropagation();
- toggle.onchange=()=>{state.filtersEnabled=toggle.checked;
-  if(!toggle.checked){resetTraffic();return}
-  persist();renderExplore();};
- $('#trafficReset').onclick=e=>{e.preventDefault();e.stopPropagation();resetTraffic()};
- if(state.filtersEnabled){initControls(()=>{zoomHistory.length=0;renderExplore()},false);populateFilters();}
- $$('[data-heat-scale]').forEach(button=>button.onclick=()=>{state.heatmapScale=button.dataset.heatScale;if(state.heatmapScale==='year')state.heatmapMonthFocus='';persist();
-  $$('.heatmap-choices button').forEach(b=>b.classList.toggle('selected',b===button));loadHeatmap(rid)});
+ <div class="chart-foot"><span id="pointCount">—</span><span>Tap a bar or point to see the next level</span></div></section>
+ <details class="foldout" id="breakdownDetails" open><summary><span>${icon('layers',18)} Breakdowns <small>Category · aircraft type · operator</small></span>${icon('chevron',17)}</summary><div class="breakdown-head"><button class="btn small" id="breakdownVizSwitch" type="button">${state.typeViz==='pie'?'Show bars':'Show pies'}</button></div>
+ <div class="grid-three breakdown-grid"><div class="panel"><h3 class="panel-title">Aviation category</h3><div id="categoryDonut">${loading()}</div></div><div class="panel"><h3 class="panel-title">Aircraft types</h3><div id="typeBars">${loading()}</div></div><div class="panel"><select id="operatorScope" class="breakdown-scope" aria-label="Operator breakdown">${opts([['airline','Airlines · commercial'],['operator','Operators · all']],state.operatorScope||'airline')}</select><div id="airlineBars">${loading()}</div></div></div></details>
+ <div class="panel pattern-section"><div class="panel-top"><h3 class="panel-title">Activity calendar</h3><div class="heat-control">${field('View',`<select id="heatScope">${opts([['year','Year'],['month','Month']],state.heatScope)}</select>`)}</div></div><div id="heatmapRange" class="muted tiny"></div><div id="heatmap">${loading()}</div></div>
+ <div class="pattern-subgrid"><div class="panel"><h3 class="panel-title">Average by weekday <small class="muted">· all time</small></h3><div id="weekdayPattern">${loading()}</div></div><div class="panel"><h3 class="panel-title">Average by hour <small class="muted">· all time</small></h3><div id="hourPattern">${loading()}</div></div></div>`;
+ initControls(()=>{if(state.filtersEnabled){zoomHistory.length=0;renderExplore()}},false);populateFilters();
+ $('#filtersToggle').onclick=()=>{state.filtersEnabled=!state.filtersEnabled;if(!state.filtersEnabled)resetTimeline();persist();renderExplore();};
+ $('#filtersReset').onclick=()=>{state.filtersEnabled=false;resetTimeline();renderExplore()};
  $('#lineSwitch').onclick=()=>{state.chart='line';persist();drawCurrentChart()};
  $('#barSwitch').onclick=()=>{state.chart='bar';persist();drawCurrentChart()};
  $('#zoomBack').onclick=()=>{const prev=zoomHistory.pop();if(prev){Object.assign(state,prev);persist();renderExplore()}};
- $('#zoomReset').onclick=()=>{state.period='all';state.bucket='year';state.heatmapScale='year';state.heatmapMonthFocus='';state.start='';state.end='';zoomHistory.length=0;persist();renderExplore()};
- try{const a=await api('/api/analytics',queryArgs());if(rid!==renderId)return;
-  currentAnalytics=a;if(state.filtersEnabled)fillFilterOptions(a);
+ $('#zoomReset').onclick=()=>{resetTimeline();renderExplore()};
+ $('#heatScope').onchange=()=>{state.heatScope=$('#heatScope').value;delete state.heatYear;delete state.heatMonth;persist();if(currentAnalytics){$('#heatmap').innerHTML=loading();fillPatterns(rid,currentAnalytics)}};
+ try{
+  const a=await api('/api/analytics',queryArgs());if(rid!==renderId)return;
+  currentAnalytics=a;fillFilterOptions(a);
   $('#exploreStats').innerHTML=`<div class="mini-stat"><span>Period total</span><strong>${fmt(a.total)}</strong></div><div class="mini-stat"><span>${esc(a.aggregation_label)}</span><strong>${fmt(a.average,2)}</strong></div><div class="mini-stat"><span>Peak interval</span><strong>${fmt(a.peak,2)}</strong></div><div class="mini-stat"><span>Unique aircraft</span><strong>${fmt(a.unique_aircraft)}</strong></div>`;
   $('#chartLabel').textContent={flights:'Estimated flight visits',aircraft:'Unique aircraft',observations:'Recorded observations'}[a.metric];
   $('#chartPeriod').textContent=periodHeading(a);
-  $('#chartMeta').textContent={year:'Yearly',month:'Monthly',week:'Weekly',day:'Daily',hour:'Hourly'}[a.bucket]||a.aggregation_label;
+  $('#chartMeta').textContent=`Grouped by ${a.bucket==='hour'?'hour':a.bucket==='day'?'day':a.bucket==='week'?'week':a.bucket==='month'?'month':'year'}`;
+  $('#pointCount').textContent=`${a.series.length} intervals`;
   drawCurrentChart();
-
   function showBreakdowns(){
    const pie=state.typeViz==='pie';
    $('#categoryDonut').innerHTML=pie?donut(a.breakdowns.category):breakdownList(a.breakdowns.category,'category','aqua');
    $('#typeBars').innerHTML=pie?donut(a.breakdowns.type):breakdownList(a.breakdowns.type,'type','blue');
-   const operatorBreakdown=a.breakdowns[state.operatorScope||'airline']||a.breakdowns.airline;
-   $('#airlineBars').innerHTML=pie?donut(operatorBreakdown):breakdownList(operatorBreakdown,'airline','pink');
-   $('#breakdownVizSwitch').textContent=pie?'Show bars':'Show pies';
-   bindBreakdowns();
+   const op=a.breakdowns[state.operatorScope||'airline']||a.breakdowns.airline;
+   $('#airlineBars').innerHTML=pie?donut(op):breakdownList(op,'airline','pink');
+   $('#breakdownVizSwitch').textContent=pie?'Show bars':'Show pies';bindBreakdowns();
   }
   $('#breakdownVizSwitch').onclick=()=>{state.typeViz=state.typeViz==='pie'?'bars':'pie';persist();showBreakdowns()};
   $('#operatorScope').onchange=()=>{state.operatorScope=$('#operatorScope').value;persist();showBreakdowns()};showBreakdowns();
-  await loadHeatmap(rid);await loadAverages(rid);
- }catch(e){if(rid!==renderId)return;$('#exploreStats').innerHTML='';$('#exploreChart').innerHTML=safeError(e);['categoryDonut','typeBars','airlineBars','heatmap','weekdayPattern','hourPattern'].forEach(id=>{if($('#'+id))$('#'+id).innerHTML='<span class="muted">Unavailable</span>'})}
-}
-function drawCurrentChart(){if(!currentAnalytics)return;
- const selected=visibleSeries(currentAnalytics);
- $('#exploreChart').innerHTML=renderChart(selected,state.chart||'line',{everyHour:currentAnalytics.bucket==='hour',displayGroup:currentAnalytics.bucket,alignStart:true});
- hookChart($('#exploreChart'),selected,currentAnalytics.bucket);
- $('#lineSwitch').classList.toggle('selected',state.chart!=='bar');$('#barSwitch').classList.toggle('selected',state.chart==='bar');
-}
-
-
-function periodHeading(a){
- const start=new Date(a.start*1000),end=new Date((a.end-1)*1000);
- const fmtDate=(d,opt)=>d.toLocaleDateString('en-GB',{timeZone:'Europe/London',...opt});
- const left=fmtDate(start,{day:'numeric',month:'short',year:'numeric'}),right=fmtDate(end,{day:'numeric',month:'short',year:'numeric'});
- if(a.bucket==='year'&&state.period==='all')return 'All recorded years';
- if(a.bucket==='month'&&start.getUTCFullYear()===end.getUTCFullYear())return String(start.getUTCFullYear());
- if(a.bucket==='week'&&fmtDate(start,{month:'long',year:'numeric'})===fmtDate(end,{month:'long',year:'numeric'}))return fmtDate(start,{month:'long',year:'numeric'});
- if(a.bucket==='hour'&&left===right)return fmtDate(start,{weekday:'long',day:'numeric',month:'long',year:'numeric'});
- return left===right?left:`${left} – ${right}`;
-}
-function visibleSeries(a){
- const first=a.coverage?.first;
- if(!first||!['year','month','week','day','hour'].includes(a.bucket))return a.series;
- const group=a.bucket;
- const endOfBucket=key=>{
-  if(group==='year')return Date.UTC(+key+1,0,1);
-  if(group==='month'){const [y,m]=key.split('-').map(Number);return Date.UTC(y,m,1)}
-  if(group==='hour')return Date.parse(key)+3600000;
-  const x=new Date(`${key}T00:00:00Z`);x.setUTCDate(x.getUTCDate()+(group==='week'?7:1));return x.getTime();
- };
- const trimmed=a.series.filter(p=>endOfBucket(p.key)>first*1000);
- return trimmed.length?trimmed:a.series;
-}
-function heatmapWindow(){
- const a=currentAnalytics;if(!a)return null;
- const at=a.bucket==='year'&&state.period==='all'?new Date(a.end*1000-1000):new Date(a.start*1000);
- const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(at);
- const get=k=>+parts.find(p=>p.type===k).value;
- let year=get('year'),month=get('month');
- const level=state.heatmapScale==='month'?'month':'year';
- if(level==='month' && /^\d{4}-\d{2}$/.test(state.heatmapMonthFocus||'')){[year,month]=state.heatmapMonthFocus.split('-').map(Number)}
- const iso=(y,m)=>`${y}-${String(m).padStart(2,'0')}-01T00:00`;
- const from=level==='year'?iso(year,1):iso(year,month);
- const to=level==='year'?iso(year+1,1):month===12?iso(year+1,1):iso(year,month+1);
- return {from,to,level,year,month};
-}
-let heatmapRequestId=0;
-async function loadHeatmap(rid){
- const node=$('#heatmap'),win=heatmapWindow();if(!node||!win)return;
- const ticket=++heatmapRequestId;node.innerHTML=loading();
- if(Date.parse(win.from)>Date.now()){node.innerHTML='<div class="empty">No history yet.</div>';return}
- $('#heatmapPeriod').textContent=win.level==='year'?String(win.year):new Date(Date.UTC(win.year,win.month-1,15)).toLocaleDateString('en-GB',{month:'long',year:'numeric'});
- try{
-  const a=await api('/api/analytics',{period:'custom',bucket:'day',start:win.from,end:win.to,metric:state.metric,
-    ...(state.filtersEnabled?{category:state.category,type:state.type,airline:state.airline,icao:state.icao}:{})});
-  if(rid!==renderId||ticket!==heatmapRequestId)return;
-  node.innerHTML=window.AirspaceCalendar.render(a.series,{level:win.level,year:win.year,month:win.month,metric:state.metric});
-  $$('#heatmap [data-heat-month]').forEach(btn=>btn.onclick=()=>{
-    state.heatmapScale='month';state.heatmapMonthFocus=btn.dataset.heatMonth;persist();
-    $$('[data-heat-scale]').forEach(b=>b.classList.toggle('selected',b.dataset.heatScale==='month'));
-    loadHeatmap(rid);
-  });
- }catch(e){if(rid===renderId&&ticket===heatmapRequestId)node.innerHTML=safeError(e)}
-}
-async function loadAverages(rid){
- try{const a=await api('/api/patterns',{period:'all',metric:state.metric});if(rid!==renderId)return;
-  $('#weekdayPattern').innerHTML=renderWeekBars(a.weekday,true);
-  $('#hourPattern').innerHTML=renderChart(a.hourly,'bar',{height:220,everyHour:true,displayGroup:'hour_of_day'});
-  hookChart($('#hourPattern'),a.hourly,'hour_of_day',false);
- }catch(e){if(rid===renderId)['weekdayPattern','hourPattern'].forEach(id=>$('#'+id).innerHTML=safeError(e))}
+  fillPatterns(rid,a);
+ }catch(e){if(rid!==renderId)return;$('#exploreStats').innerHTML='';$('#exploreChart').innerHTML=safeError(e);}
 }
 function renderWeekBars(series,shortLabels=false){if(!series?.length)return '<div class="empty">No data available.</div>';
  const observed=series.filter(x=>x.samples>0&&x.value!==null);
@@ -463,14 +453,13 @@ function renderWeekBars(series,shortLabels=false){if(!series?.length)return '<di
   return `<div class="pattern-col" title="${esc(s.label)}: ${has?fmt(s.value,2)+' average from '+s.samples+' recorded day(s)':'No recorded days'}"><strong class="tiny muted">${has?fmt(s.value,1):'—'}</strong><div class="pattern-bar ${has?'':'missing'}" style="height:${has?Math.max(2,150*s.value/max):2}px"></div><small>${esc(shortLabels?String(s.label).slice(0,3):s.label)}</small></div>`;
  }).join('')}</div>`;
 }
-function renderHeatmap(cells,dayOfWeek=null){if(!cells?.length)return '<div class="empty">No hourly observations.</div>';
- const max=Math.max(1,...cells.filter(x=>x.value!=null).map(x=>x.value)),colorScale=v=>{
-  if(v===null||v===undefined)return 'var(--panel2)';const f=Math.max(0,Math.min(1,v/max));
-  return `hsl(${218-58*f} 85% ${16+41*f}%)`;
+function renderHeatmap(cells,onlyWeekday=null){if(!cells?.length)return '<div class="empty">No hourly observations.</div>';
+ const max=Math.max(1,...cells.map(x=>Number(x.value)||0)),colorScale=v=>{
+  if(v===null||v===undefined)return 'var(--panel2)';const f=Math.max(0,Math.min(1,Math.pow(v/max,.65)));return `hsl(${Math.round(224-67*f)} 89% ${Math.round(15+44*f)}%)`;
  };
  const cols=[...Array(24)].map((_,h)=>`<div class="heat-label">${h%3===0?String(h).padStart(2,'0'):''}</div>`).join('');
  const weekdays=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
- return `<div class="heat-outer"><div class="heatmap"><span></span>${cols}${weekdays.map((d,wd)=>dayOfWeek!==null&&wd!==(dayOfWeek+6)%7?'':`<span class="heat-day">${d}</span>${cells.filter(x=>x.weekday===wd).map(x=>`<div class="heat-cell" tabindex="0" title="${d} ${String(x.hour).padStart(2,'0')}:00 — ${x.samples?`avg ${fmt(x.value,2)}, ${x.samples} recorded hours`:'No samples'}" style="background:${colorScale(x.value)}"></div>`).join('')}`).join('')}</div></div><div class="heat-legend"><span>Less busy</span>${[.1,.3,.5,.7,1].map(x=>`<i style="background:${colorScale(max*x)}"></i>`).join('')}<span>More busy</span></div>`;
+ return `<div class="heat-outer"><div class="heatmap"><span></span>${cols}${weekdays.map((d,wd)=>onlyWeekday!==null&&wd!==onlyWeekday?'':`<span class="heat-day">${d}</span>${cells.filter(x=>x.weekday===wd).map(x=>`<div class="heat-cell" tabindex="0" title="${d} ${String(x.hour).padStart(2,'0')}:00 — ${x.samples?`avg ${fmt(x.value,2)}, ${x.samples} recorded hours`:'No samples'}" style="background:${colorScale(x.value)}"></div>`).join('')}`).join('')}</div></div><div class="heat-legend"><span>Less busy</span>${[.08,.24,.43,.65,.85].map(x=>`<i style="background:hsl(${Math.round(224-67*x)} 89% ${Math.round(15+44*x)}%)"></i>`).join('')}<span>More busy</span></div>`;
 }
 async function renderPatterns(){const rid=++renderId;
  $('#page').innerHTML=title('','Patterns')+
@@ -589,14 +578,11 @@ function collectSettingsLinks(){const original=getLinks();return $$('[data-linki
  if(url&&!/^https?:\/\//i.test(url))throw Error('URLs must begin with http:// or https://');
  return {...original[idx],name:$('.link-name',el).value.trim().slice(0,50)||'New link',sub:original[idx]?.sub||'Application shortcut',port,path,url,icon:original[idx]?.icon||'external'};
 })}
-function updaterToken(){
- try{return localStorage.getItem(pairedUpdaterKey)||sessionStorage.getItem('airspace-token')||''}catch{return ''}
-}
 function updateBox(){return `<div class="auth-box">
- <div class="status-row" style="margin-bottom:9px"><i class="dot" id="updateDot"></i><strong id="updateHeading">Checking GitHub…</strong></div>
- <div class="tiny muted break-word" id="updateDetails"></div>
- <div class="setting-actions"><button class="btn" id="checkUpdates">${icon('refresh')} Check GitHub</button><button class="btn primary" id="applyUpdate">Update now</button><button class="btn" id="rollbackUpdate">Restore previous</button></div>
- <div class="tiny muted" id="updateProgress"></div>
+  <div class="status-row" style="margin-bottom:9px"><i class="dot" id="updateDot"></i><strong id="updateHeading">Checking GitHub…</strong></div>
+  <div class="tiny muted break-word" id="updateDetails"></div>
+  <div class="setting-actions"><button class="btn" id="checkUpdates">${icon('refresh')} Check GitHub</button><button class="btn primary" id="applyUpdate">Update now</button><button class="btn" id="rollbackUpdate">Restore previous</button></div>
+  <div class="tiny muted" id="updateProgress"></div>
  </div>`}
 async function renderSettings(){const rid=++renderId;
  $('#page').innerHTML=title('','Settings')+
@@ -614,7 +600,6 @@ async function renderSettings(){const rid=++renderId;
  $('#restoreLinks').onclick=()=>{putLinks(defaultLinks);toast('Default links restored');renderSettings()};
  $$('[data-remove]').forEach(b=>b.onclick=()=>{if(!saveLinks())return;const xs=getLinks();xs.splice(+b.dataset.remove,1);putLinks(xs);renderSettings()});
  $$('[data-reorder]').forEach(b=>b.onclick=()=>{if(!saveLinks())return;const xs=getLinks(),i=+b.dataset.pos,j=i+(b.dataset.reorder==='up'?-1:1);if(j<0||j>=xs.length)return;[xs[i],xs[j]]=[xs[j],xs[i]];putLinks(xs);renderSettings()});
-
  $('#checkUpdates').onclick=async()=>{
   $('#updateDetails').textContent='Checking GitHub…';try{const d=await api('/api/update/check',{refresh:1});setUpdateInfo(d)}catch(e){$('#updateDetails').textContent=e.message}
  };
@@ -649,7 +634,7 @@ function setUpdateInfo(d){if(!$('#updateDetails'))return;
  $('#updateDetails').innerHTML=`<div class="detail-grid">${[['Version',d.version],['Installed',d.local_sha||'—'],['GitHub',d.remote_sha||'—']].map(([k,v])=>`<div class="detail-item"><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('')}</div>
  ${d.error?`<p style="color:var(--orange)">${esc(d.error)}</p>`:''}`;
 }
-async function loadPage(){const fallback=location.pathname==='/analytics'?'explore':'home';const hash=(location.hash||'#'+fallback).slice(1).split('?')[0];currentPage=names[hash]?hash:fallback;renderId++;document.body.classList.toggle('launcher-mode',currentPage==='home');document.title=(currentPage==='home'?'Airspace · Launcher':names[currentPage]+' · Airspace Analytics');
+async function loadPage(){const fallback=location.pathname==='/analytics'?'explore':'home';const hash=(location.hash||'#'+fallback).slice(1).split('?')[0];currentPage=hash==='patterns'?'explore':names[hash]?hash:fallback;renderId++;document.body.classList.toggle('launcher-mode',currentPage==='home');document.title=(currentPage==='home'?'Airspace · Launcher':names[currentPage]+' · Airspace Analytics');
  $$('.top-nav-link,.top-settings').forEach(el=>el.classList.toggle('active',el.dataset.page===currentPage||(currentPage==='database'&&el.dataset.page==='settings')));
  $('#topTitle').textContent=names[currentPage];setMenu(false);
  window.scrollTo({top:0,behavior:'instant'});

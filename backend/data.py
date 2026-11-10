@@ -41,7 +41,8 @@ AIRLINE_PREFIXES = {
     'VIR':'Virgin Atlantic','UAE':'Emirates','ETD':'Etihad Airways',
     'TAP':'TAP Air Portugal','FIN':'Finnair','LOT':'LOT Polish Airlines',
     'SAS':'SAS','ACA':'Air Canada',
-    # Airline and commercial operator designators observed in local receiver export.
+    # Additional ICAO airline/air-operator designators observed in the receiver
+    # export. These are actual company codes, not inferred from aircraft type.
     'RUK':'Ryanair UK','FDX':'FedEx Express','NPT':'West Atlantic UK',
     'WMT':'Wizz Air Malta','AEE':'Aegean Airlines',
     'TAY':'ASL Airlines Belgium','FPO':'ASL Airlines France',
@@ -416,6 +417,10 @@ def _analyze_uncached(start: int, end: int, preset: str, metric: str, group: str
     total = _new_unit()
     breakdowns: dict[str, dict[str, dict]] = {k:defaultdict(_new_unit) for k in ('category','type','airline','operator')}
     last_seen: dict[str, tuple[int,str]] = {}
+    # A call sign may arrive after an aircraft first appears. Correct the
+    # estimated VISIT classification when the SAME continuous session gets a
+    # known airline, without reclassifying unrelated historical flights.
+    pending_unknown_visits: dict[str, tuple[str, str, int]] = {}
     processed = 0
     first_data = None
     last_data = None
@@ -437,6 +442,8 @@ def _analyze_uncached(start: int, end: int, preset: str, metric: str, group: str
                 last = last_seen.get(icao)
                 new_flight = not last or seen_start-last[0] > SESSION_GAP or (last[1] and callsign and last[1] != callsign)
                 last_seen[icao] = (max(seen_end,last[0]) if last else seen_end,callsign or (last[1] if last else ''))
+                if new_flight:
+                    pending_unknown_visits.pop(icao, None)
                 # Lookback rows are only for session continuation.
                 if row['hour_bucket'] < from_hour or seen_end < start or seen_start >= end:
                     continue
@@ -450,6 +457,18 @@ def _analyze_uncached(start: int, end: int, preset: str, metric: str, group: str
                 operator = resolved_operator(category,row['operator'],airline,row['airline'])
                 if flt['airline'] != 'all' and flt['airline'] not in (airline,operator):
                     continue
+                # A later identified callsign belongs to this SAME uninterrupted
+                # session. Transfer its earlier Unknown visit classification to
+                # the identified airline/operator. Do not merge distinct visits.
+                pending=pending_unknown_visits.get(icao)
+                if pending and not new_flight and category=='commercial' and airline!='Unknown airline':
+                    previous_airline, previous_operator, _=pending
+                    breakdowns['airline'][previous_airline]['flights'] -= 1
+                    breakdowns['airline'][airline]['flights'] += 1
+                    if previous_operator != operator:
+                        breakdowns['operator'][previous_operator]['flights'] -= 1
+                        breakdowns['operator'][operator]['flights'] += 1
+                    pending_unknown_visits.pop(icao,None)
                 # Shared helper values; observed time is approximated to the containing hour.
                 unit = buckets[b]
                 unit['observations'] += n
@@ -472,6 +491,8 @@ def _analyze_uncached(start: int, end: int, preset: str, metric: str, group: str
                         if label == 'airline' and category != 'commercial':
                             continue
                         breakdowns[label][name]['flights'] += 1
+                    if category == 'commercial' and airline == 'Unknown airline':
+                        pending_unknown_visits[icao]=(airline,operator,seen_start)
         except sqlite3.OperationalError as exc:
             if 'interrupted' in str(exc).lower():
                 raise DataError('This query exceeded the 14-second safety limit. Please use a narrower date range.') from exc
@@ -519,7 +540,7 @@ def _analyze_uncached(start: int, end: int, preset: str, metric: str, group: str
         raise DataError(f'{len(series):,} chart points is too many. Choose a wider grouping.')
     charts = {}
     for label, collection in breakdowns.items():
-        items = [{'name':name,'value':_metric(unit,metric)} for name,unit in collection.items()]
+        items = [{'name':name,'value':_metric(unit,metric)} for name,unit in collection.items() if _metric(unit,metric) > 0]
         items.sort(key=lambda item:item['value'],reverse=True)
         charts[label] = items[:35]
     values_series = [float(i['value']) for i in series if i['value'] is not None]

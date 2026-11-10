@@ -64,3 +64,28 @@ class TestV15CompactCharts(unittest.TestCase):
         self.assertIn('Database explorer',js)
         self.assertNotIn('mobile-tabbar" id="mobileTabs"',js)
         self.assertNotIn("['aircraft','Aircraft'",js[js.index('const pages='):js.index('const names=')])
+
+class TestV17CalendarAndQuietUI(unittest.TestCase):
+    def test_sparse_buckets_use_left_anchored_slots(self):
+        js=(ROOT/'frontend/app.js').read_text()
+        self.assertIn('Math.max(n,guideSlots[axisGroup]||n)',js)
+        self.assertIn('year:8,month:12,week:6,day:7,hour:24',js)
+        self.assertIn('function toast(){',js)
+        self.assertNotIn('append(x);setTimeout(()=>x.remove()',js)
+
+    def test_calendar_is_year_and_month_only(self):
+        js=(ROOT/'frontend/app.js').read_text()
+        html=(ROOT/'frontend/index.html').read_text()
+        self.assertIn("['year','Year'],['month','Month']",js)
+        self.assertIn('data-heat-month', (ROOT/'frontend/calendar.js').read_text())
+        self.assertIn('window.AirspaceCalendar.render',js)
+        self.assertIn('calendar.css',html)
+        self.assertNotIn("['week','Week'],['day','Day']],state.heatScope",js)
+
+    def test_update_is_one_click_and_not_token_gated(self):
+        js=(ROOT/'frontend/app.js').read_text()
+        server=(ROOT/'backend/server.py').read_text()
+        self.assertNotIn("$('#saveUpdatePair')",js)
+        self.assertNotIn("X-Update-Token",js)
+        self.assertIn("'update_token_required':False",server)
+        self.assertIn('Cross-origin update request blocked',server)

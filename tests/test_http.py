@@ -33,7 +33,7 @@ class TestLocalAPI(unittest.TestCase):
   with urlopen(f'http://127.0.0.1:{self.port}{path}',timeout=15) as response:
    return response.status,response.headers,response.read()
  def test_html_and_static_assets(self):
-  for path,typ in [('/','text/html'),('/styles.css','text/css'),('/app.js','text/javascript'),('/favicon.svg','image/svg+xml'),('/manifest.webmanifest','application/manifest+json'),('/apple-touch-icon.png','image/png'),('/icon-192.png','image/png')]:
+  for path,typ in [('/','text/html'),('/analytics','text/html'),('/styles.css','text/css'),('/app.js','text/javascript'),('/favicon.svg','image/svg+xml'),('/manifest.webmanifest','application/manifest+json'),('/apple-touch-icon.png','image/png'),('/icon-192.png','image/png')]:
    status,headers,body=self.get(path)
    self.assertEqual(status,200,path)
    self.assertIn(typ,headers['Content-Type'],path)
@@ -58,11 +58,11 @@ class TestLocalAPI(unittest.TestCase):
   with self.assertRaises(HTTPError) as cm:
    self.get('/api/database/rows?table=sqlite_master')
   self.assertEqual(cm.exception.code,400)
- def test_update_requires_configured_repository(self):
+ def test_update_button_uses_configured_repository_only(self):
   url=f'http://127.0.0.1:{self.port}/api/update/apply'
   req=Request(url, data=b'{}',method='POST', headers={'X-Update-Token':'not-the-secret','Content-Type':'application/json'})
   with self.assertRaises(HTTPError) as cm:
    urlopen(req,timeout=5)
-  self.assertEqual(cm.exception.code,400)  # isolated test has no configured Git remote
+  self.assertEqual(cm.exception.code,400)  # no Git remote in isolated test server
 
 if __name__=='__main__':unittest.main()

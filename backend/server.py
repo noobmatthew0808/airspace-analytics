@@ -184,7 +184,8 @@ class App(BaseHTTPRequestHandler):
         path, _=self.get_query()
         if path not in ('/api/update/apply','/api/update/rollback'):
             return self.send_json({'error':'Unknown endpoint'},404)
-        # Only home-LAN, localhost or Tailscale clients can update this app.
+        # One-click updates are limited to loopback, home-LAN and Tailscale
+        # clients. Cross-site requests cannot initiate even the fixed Git update.
         origin=self.headers.get('Origin','')
         host=self.headers.get('Host','')
         fetch_site=self.headers.get('Sec-Fetch-Site','')

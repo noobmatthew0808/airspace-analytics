@@ -1,9 +1,5 @@
 # Airspace Analytics
 
-**v1.7.0:** Sparse charts now start at the left; activity heatmaps display full calendar years/months and allow month selection. Expanded ICAO-prefix airline matching. No popup toasts. On trusted local/Tailscale networks, GitHub updates no longer request a pairing code. Do not expose the website directly to the public internet: local-network visitors can now initiate website updates.
-
-**v1.6.0: One Traffic page, with years → months → weeks → days → hours.** The collapsed Traffic filters have On/Off and Reset controls. The breakdowns, heatmap and all-time weekday/hour averages are all on Traffic. Heatmap Year/Month/Week/Day selection follows the chart and can be changed manually. The top navigation is Home, Traffic and Settings; Database is accessed through Settings. The existing Aerodrome database and updater are unchanged.
-
 **v1.5.0 uses the original v1.3 zoom controls and chart drill-down**, with simplified top navigation.
 The top-left Home button opens the launcher; Traffic and Patterns are beside it, with Settings at top right. Open the read-only Database from the bottom of Settings. Compare, Aircraft and Saved Views are removed from navigation. Charts scale to the phone width, and hourly charts label every hour on a single-day view.
 
@@ -24,7 +20,7 @@ A private, responsive, self-hosted ADS-B analytics homepage and historical explo
 - **Aircraft:** search historical ICAO codes, callsigns, aircraft types or operators; inspect stored observations.
 - **Database:** view a whitelist of Aerodrome tables, paginate, search, CSV export (up to 5,000 rows at a time); never execute arbitrary SQL.
 - **Settings:** dark/light theme, editable local-service shortcuts, version checks, update, restore previous version, database health and storage.
-- **Security:** an unprivileged web server, read-only SQLite connections, private per-installation update token, separate updater systemd unit, read-safe queries with a time budget, no unsafe code execution endpoint.
+- **Security:** an unprivileged web server, read-only SQLite connections, local-network-only update endpoint with cross-origin checks, separate updater systemd unit, read-safe queries with a time budget, no unsafe code execution endpoint.
 
 All UI assets are bundled locally; there are no CDNs or mandatory npm packages. Python 3.10+ and a modern browser are enough. Node.js is **not** required after all.
 
@@ -37,8 +33,8 @@ All UI assets are bundled locally; there are no CDNs or mandatory npm packages. 
    git clone https://github.com/YOURNAME/airspace-analytics.git ~/airspace-analytics && sudo bash ~/airspace-analytics/scripts/install.sh
    ```
 
-3. The installer checks that the Aerodrome database exists and the normal Ubuntu user can read it, creates three dedicated systemd units, and starts the website. It prints the device's IP address and a **private update token**. Keep the token private.
-4. Visit `http://192.168.1.187:8088` from the laptop or phone on the same network (adjust IP if changed). Visit **Settings → GitHub updates** and connect the update token once per browser if needed (previously paired browsers migrate automatically). The website can then update or restore its previous version from the UI.
+3. The installer checks that the Aerodrome database exists and the normal Ubuntu user can read it, creates three dedicated systemd units, and starts the website. It prints the device's IP address.
+4. Visit `http://192.168.1.187:8088` from the laptop or phone on the same network (adjust IP if changed). Visit **Settings → GitHub updates** and select **Update now**. No update token is needed on this trusted-network deployment.
 
 **No Python virtual environment, npm install, compilation, Docker installation, or database migration is required.** The installer does not stop, restart or reconfigure Aerodrome or any feeders.
 
@@ -186,3 +182,11 @@ Traffic, Patterns and Compare share a single date-range control: **Last** (input
 The **Commercial airlines** chart excludes general aviation and can identify familiar carriers from callsigns like `EZY123` when Aerodrome's operator field is empty. Choose **Operators · all** to include owners and non-airline operators. No source records are changed.
 
 The website no longer shows routine caveat boxes, the About Installation panel, or the Understanding These Numbers section. Update actions remain authenticated, but an already paired browser no longer displays or requests the token each time.
+
+## v1.7.0: traffic chart and activity calendar
+
+- Sparse year, month and week charts anchor their first recorded bucket at the left.
+- Activity calendar is a 12-month year grid or a one-month day grid; choose month names to drill into a month.
+- Airline estimates: the original Aerodrome source remains unchanged. If a callsign is identified later within one continuous flight visit, the initial unknown visit's breakdown attribution is corrected. It does not identify genuinely unknown aircraft.
+- The Settings updater needs no pairing token. Access to the update endpoint is limited to trusted local/Tailscale client ranges with same-origin browser checks. **Anyone who can use the site's update action from that trusted network can request a GitHub update.** Keep the site off the public internet.
+- No transient corner notifications. Action errors remain visible inline where relevant.

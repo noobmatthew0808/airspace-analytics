@@ -238,38 +238,31 @@ body.launcher-mode .content{padding:0;margin:0;max-width:none;min-height:100vh;d
  .main-chart-panel{padding:10px}
  .main-chart-head{gap:9px}
 }
-
-/* v1.6 — one Traffic page, opt-in filters and responsive patterns */
-.traffic-filter-fold{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin:0 0 13px;overflow:hidden}
-.traffic-filter-fold>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;list-style:none;cursor:pointer;font-weight:650;font-size:12px}
-.traffic-filter-fold>summary::-webkit-details-marker{display:none}
-.traffic-filter-fold>summary>span:first-child{display:flex;align-items:center;gap:8px}
-.traffic-filter-fold>summary small{font-size:11px;color:var(--muted);font-weight:450}
-.filter-controls{display:flex;align-items:center;gap:9px}
-.filter-switch{display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;font-weight:600}
-.filter-switch input{accent-color:var(--aqua);width:16px;height:16px}
-.traffic-filter-body{padding:12px;border-top:1px solid var(--line)}
-.traffic-filter-body>.control-card{margin:0;border:0;background:transparent;padding:0}
-.chart-tools .btn.selected,.heatmap-choices .btn.selected{background:var(--aqua);color:#091f26;border-color:var(--aqua)}
-.traffic-heat-section{margin:12px 0;padding:17px}
-.traffic-heat-section .panel-top{gap:10px;flex-wrap:wrap;align-items:center}
-.traffic-heat-section .panel-title{margin:0}
-.heatmap-choices{display:flex;flex-wrap:wrap;gap:4px}
-.traffic-heat-section #heatmapPeriod{margin:4px 0 13px}
-.traffic-averages{margin-top:12px}
-.traffic-averages .panel-title small{font-size:10px;color:var(--muted);font-weight:450}
-.traffic-averages .chart-shell svg{width:100%;min-width:0!important}
-.traffic-averages .chart-axis.hour-axis{font-size:14px}
-.traffic-averages .chart-scroll{overflow:hidden!important}
-.traffic-heat-section .heat-cell{border:1px solid rgba(255,255,255,.035);border-radius:3px;min-width:0}
-.traffic-heat-section .heatmap{overflow:visible;min-width:0!important;width:100%;grid-template-columns:28px repeat(24,minmax(0,1fr))}
+/* v1.6 — one-page explorer, compact collapsed filter controls, richer heatmap. */
+.traffic-filter-panel{margin-bottom:11px}
+.traffic-filter-actions{display:flex;gap:9px;align-items:center;padding:12px 14px 2px}
+.traffic-filter-panel .control-card{margin:10px 12px 13px;border-color:var(--line2)}
+.traffic-filter-panel .filters-disabled{display:none}
+.traffic-filter-panel>summary small{color:var(--aqua);border:1px solid var(--line2);border-radius:7px;padding:2px 7px;font-size:10px}
+.chart-toggle .btn.selected{color:var(--bg);background:var(--aqua);border-color:var(--aqua)}
+.heat-control .field{display:flex;align-items:center;gap:8px}
+.heat-control .field>span{font-size:10px;margin:0}
+.heat-control select{min-height:32px;padding:5px 9px;font-size:11px}
+.pattern-section{margin-top:12px;min-width:0}
+.pattern-section .panel-top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.pattern-section #heatmapRange{margin:-6px 0 12px}
+.pattern-subgrid{margin-top:12px}
+.pattern-subgrid .panel{overflow:hidden}
+.pattern-subgrid .chart-shell svg{min-width:0!important;width:100%;max-height:none}
+.heatmap{gap:3px;grid-template-columns:27px repeat(24,minmax(0,1fr))}
+.heat-cell{border:1px solid #e8ecf011;min-height:7px}
 @media(max-width:700px){
- .traffic-filter-fold>summary{padding:10px;gap:8px}
- .traffic-filter-fold>summary small{display:none}
- .traffic-filter-body{padding:10px}
- .filter-controls{gap:5px}
- .traffic-heat-section{padding:10px}
- .traffic-heat-section .heatmap{grid-template-columns:23px repeat(24,minmax(0,1fr));gap:1px}
- .traffic-heat-section .heat-cell{min-height:6px;border-radius:2px}
- .traffic-averages .chart-axis.hour-axis{font-size:15px}
+ .traffic-filter-panel .control-card{margin:7px 8px 10px;padding:10px}
+ .heatmap{grid-template-columns:22px repeat(24,minmax(0,1fr));gap:1.5px}
+ .chart-toggle .btn{padding:6px 8px}
+ .pattern-section{padding:12px}
+ .pattern-section .panel-top{gap:6px}
+ .chart-frame svg .chart-axis{font-size:14px}
+ .pattern-subgrid .chart-axis.hour-axis{font-size:13px}
+ .heat-legend{margin-top:11px}
 }

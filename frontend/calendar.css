@@ -1,4 +1,4 @@
-/* Airspace daily calendar heatmaps: year and month, responsive. */
+/* Year / month calendar heatmap, responsive with no sideways scrolling. */
 .calendar-heatmap{width:100%;min-width:0}
 .calendar-headline{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:0 0 12px;flex-wrap:wrap}
 .calendar-headline strong{font-size:14px;font-weight:700}
