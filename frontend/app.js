@@ -183,7 +183,7 @@ async function renderHome(){
  <footer class="launcher-footer"><span><i class="dot" id="launcherDot"></i><span id="launcherStatus">Checking Aerodrome</span></span><a href="/analytics#settings">Manage shortcuts</a></footer></div>`;
  // Inline image onerror attributes are blocked by the CSP. Detect
  // genuine image loads so failed favicon requests retain the initials.
- $('.launcher-link-icon img').forEach(image=>{
+ $$('.launcher-link-icon img').forEach(image=>{
   const ready=()=>image.parentElement?.classList.add('has-logo');
   const failed=()=>image.remove();
   image.addEventListener('load',ready,{once:true});

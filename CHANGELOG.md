@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.9.4 — 11 November 2026
+- Fix launcher error `$(...).forEach is not a function` by using the multi-element `$$()` selector.
+- Add a regression test for single-element selectors used with Array methods.
+- No changes to traffic charts, database, heatmap, links, logos, updater, or styling.
+
+
 ## v1.9.3 — 11 November 2026
 - Restore Aerodrome to View Stats and repair ADSB.im's port to 1099 on existing browsers, keeping custom launcher shortcuts.
 - Show official Aerodrome and SkyStats icons; improve icon fit and permit only their trusted image hosts.
