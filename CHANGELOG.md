@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.9.2 — 11 November 2026
+- Equal-size month cards throughout the year activity calendar on desktop and mobile.
+- Unrecorded days remain blank, and tapping a month works as before.
+- No changes to aircraft statistics or other website sections.
+
 ## v1.9.1 — 11 November 2026
 - Complete the exact requested launcher shortcuts and service-logo fallback, including browser migration of previously saved built-in shortcuts.
 - Preserve the existing mobile Traffic layout and 38 passing tests while refining desktop graph/calendar proportions.

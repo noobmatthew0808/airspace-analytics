@@ -30,6 +30,24 @@ if((year.match(/data-heat-month=/g)||[]).length!==12)throw Error('Month navigati
         result=subprocess.run(['node','-e',code],capture_output=True,text=True,timeout=10)
         self.assertEqual(result.returncode,0,result.stderr)
 
+    @unittest.skipUnless(shutil.which('node'),'Node.js not installed')
+    def test_every_year_month_has_same_six_week_height(self):
+        js=(ROOT/'frontend/calendar.js').as_posix()
+        code=rf"""global.window={{}};require({js!r});
+const html=window.AirspaceCalendar.render([],{{level:'year',year:2026}});
+const cards=html.match(/<button class=\"calendar-month calendar-mini[\s\S]*?<\/button>/g)||[];
+if(cards.length!==12)throw Error('Expected twelve calendar cards');
+for(const [index, card] of cards.entries()){{
+ const days=(card.match(/class=\"calendar-date /g)||[]).length;
+ const blanks=(card.match(/class=\"calendar-blank\"/g)||[]).length;
+ if(days+blanks!==42)throw Error('Month '+(index+1)+' has '+(days+blanks)+' day slots');
+}}
+const month=window.AirspaceCalendar.render([],{{level:'month',year:2026,month:11}});
+if((month.match(/class=\"calendar-date /g)||[]).length!==30)throw Error('Monthly detail changed');
+"""
+        result=subprocess.run(['node','-e',code],capture_output=True,text=True,timeout=10)
+        self.assertEqual(result.returncode,0,result.stderr)
+
     def test_missing_days_are_blank_even_with_zero_padding(self):
         js=(ROOT/'frontend/calendar.js').as_posix()
         code=f"""global.window={{}};require({js!r});

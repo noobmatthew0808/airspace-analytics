@@ -30,6 +30,11 @@
       const base=observed?`background-color:hsl(172 74% ${Math.round(22+36*strength)}%);color:${strength>.5?'#072c2a':'#e7fbf7'}`:'';
       days.push(`<span class="calendar-date ${observed?'has-data':'missing'}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}" style="${base}">${d}</span>`);
     }
+    // Keep all twelve miniature calendars the same height, whether the month
+    // occupies four, five or six rows. Empty cells are not observations.
+    if(isYear){
+      while(days.length < 42)days.push('<span class="calendar-blank" aria-hidden="true"></span>');
+    }
     const grid=`<span class="calendar-grid">${WEEKDAYS.map(w=>`<span class="calendar-weekday" aria-hidden="true">${w}</span>`).join('')}${days.join('')}</span>`;
     // The entire mini-calendar is a large, accessible tap target, not just
     // the tiny month heading. Month view uses a noninteractive section.
