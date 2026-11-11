@@ -160,29 +160,13 @@ function branding(it){
    it.id==='skystats'?'<img src="https://raw.githubusercontent.com/tomcarman/skystats/main/docs/logo/logo_icon.png" alt="" loading="lazy" decoding="async" onerror="this.remove()">':'';
  return `<span class="launcher-link-icon brand-${esc(it.tone||'teal')}" aria-hidden="true">${officialLogo||selfLogo||logo}<span class="brand-fallback">${esc(initials)}</span></span>`;
 }
-// iOS Home Screen web apps normally use Safari View Controller for outbound pages.
-// The Safari-specific URL scheme requests full Safari on iOS 17+.
-// Never rewrite links on desktop, Android, ordinary Safari, or internal analytics pages.
-function safariAppLink(url){
- if(!url||!/^https?:\/\//i.test(url))return url;
- const agent=navigator.userAgent||'';
- const ios=/iPhone|iPad|iPod/i.test(agent)||
-   (navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
- const standalone=navigator.standalone===true||
-   (typeof window.matchMedia==='function'&&window.matchMedia('(display-mode: standalone)').matches);
- return ios&&standalone?'x-safari-'+url:url;
-}
 function launcherEntry(it,primary=false){
  const destination=primary?'/analytics#explore':hrefFor(it);
  const secondary=!primary&&it.extraLabel?hrefFor({url:it.extraUrl||'',port:it.extraPort||it.port,path:it.extraPath||'/' }):null;
- const openTo=primary?destination:safariAppLink(destination);
- const extraTo=safariAppLink(secondary);
- const safariExternal=!primary&&openTo?.startsWith('x-safari-');
- const safariExtra=extraTo?.startsWith('x-safari-');
  return `<div class="launcher-card ${primary?'launcher-primary':''} ${!destination?'disabled':''}">
-   <a class="launcher-card-main" ${openTo?`href="${esc(openTo)}" ${primary||safariExternal?'':'target="_blank" rel="noopener noreferrer"'}`:'aria-disabled="true"'}>
+   <a class="launcher-card-main" ${destination?`href="${esc(destination)}" ${primary?'':'target="_blank" rel="noopener noreferrer"'}`:'aria-disabled="true"'}>
      ${branding(it)}<span class="launcher-link-text"><strong>${esc(it.name)}</strong><small>${esc(it.sub||'Open website')}</small></span><span class="launcher-link-arrow">${icon(primary?'chevron':'external',16)}</span>
-   </a>${secondary?`<a class="launcher-sub-link" href="${esc(extraTo)}" ${safariExtra?'':'target="_blank" rel="noopener noreferrer"'}>${icon('map',14)} ${esc(it.extraLabel)} ${icon('external',12)}</a>`:''}
+   </a>${secondary?`<a class="launcher-sub-link" href="${esc(secondary)}" target="_blank" rel="noopener noreferrer">${icon('map',14)} ${esc(it.extraLabel)} ${icon('external',12)}</a>`:''}
  </div>`;
 }
 function launcherGroup(heading,items,primary=false){return `<section class="launcher-section"><h2>${esc(heading)}</h2><div class="launcher-list">${primary?launcherEntry(primaryAnalytics,true):''}${items.map(it=>launcherEntry(it)).join('')}</div></section>`}

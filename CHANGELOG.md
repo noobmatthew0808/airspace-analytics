@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.9.6 — 11 November 2026
+- Roll back v1.9.5's unsupported Safari deep-link scheme after iOS reported invalid addresses.
+- Restore the exact working v1.9.4 launcher: normal HTTP(S) links and prior browser behaviour.
+- Add regression tests. Leave all charts, calendars, database code, styling and updater unchanged.
+
+
 ## v1.9.5 — 11 November 2026
 - On iOS Home Screen web apps, launcher links request full Safari via the iOS 17+ x-safari-http(s) URL scheme (including HTTP local addresses).
 - Leave links unchanged in regular Safari, Android, desktop browsers, and internal Airspace Analytics navigation.
