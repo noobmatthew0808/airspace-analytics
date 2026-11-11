@@ -7,7 +7,7 @@ ROOT=Path(__file__).resolve().parents[1]
 class LauncherContract(unittest.TestCase):
     def test_requested_links_and_grouping(self):
         js=(ROOT/'frontend/app.js').read_text()
-        for url in ["port:'1573'", "port:'5173'", "path:'/map/'", "port:'1094'",
+        for url in ["port:'1099'", "port:'5173'", "path:'/map/'", "port:'1094'",
                     "port:'8754'", "EXTRPI737643", "tryflightdeck.com/map/account/feeder",
                     "port:'30053'", "path:'/stats.html'", "extraPath:'/map.html'",
                     "adsbexchange.com/myip/", "globe.adsbexchange.com/?feed=CGyw2ZDXE-Y2",

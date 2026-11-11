@@ -15,8 +15,8 @@ class TestDesktopLauncher(unittest.TestCase):
                       'Flightradar24', 'AirNav Radar', 'FlightDeck', 'Plane Finder',
                       'ADS-B Exchange', 'FlightAware'):
             self.assertIn(label, self.js)
-        self.assertNotIn("{id:'aerodrome'", self.js)
-        for port in ('1573','5173','1099','1094','8754','30053','1093'):
+        self.assertIn("{id:'aerodrome'", self.js)
+        for port in ('1099','5173','8000','1094','8754','30053','1093'):
             self.assertIn("port:'"+port+"'", self.js)
         self.assertIn("extraPath:'/map.html'", self.js)
         self.assertIn('globe.adsbexchange.com/?feed=CGyw2ZDXE-Y2', self.js)

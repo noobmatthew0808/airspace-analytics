@@ -30,9 +30,10 @@ const savedViewsKey='airspace-analytics-views-v1';
 // Built-in launcher entries are deliberately independent of the analytics UI.
 // Relative ports use the hostname currently serving the dashboard (also works via Tailscale).
 const defaultLinks=[
- {id:'adsb-im',name:'ADSB.im',group:'stats',sub:'Receiver dashboard',port:'1573',path:'/',icon:'radar',brand:'AD',logoDomain:'adsb.im',tone:'teal'},
+ {id:'adsb-im',name:'ADSB.im',group:'stats',sub:'Receiver dashboard',port:'1099',path:'/',icon:'radar',brand:'AD',logoDomain:'adsb.im',tone:'teal'},
  {id:'skystats',name:'SkyStats',group:'stats',sub:'Receiver statistics',port:'5173',path:'/',icon:'chart',brand:'SK',logoDomain:'skystats.adsb.sixtopia.net',tone:'violet'},
  {id:'tar1090',name:'tar1090 map',group:'stats',sub:'Live aircraft map',port:'1099',path:'/map/',icon:'plane',brand:'1090',tone:'blue'},
+ {id:'aerodrome',name:'Aerodrome',group:'stats',sub:'Aircraft history and live stats',port:'8000',path:'/',icon:'radar',brand:'AE',tone:'teal'},
  {id:'dozzle',name:'Dozzle',group:'stats',sub:'Container logs',port:'1094',path:'/',icon:'terminal',brand:'DZ',logoDomain:'dozzle.dev',tone:'amber'},
  {id:'fr24',name:'Flightradar24',group:'feeders',sub:'Local feeder status',port:'8754',path:'/',icon:'radar',brand:'24',logoDomain:'flightradar24.com',tone:'gold'},
  {id:'airnav',name:'AirNav Radar',group:'feeders',sub:'EXTRPI737643',url:'https://www.airnavradar.com/stations/EXTRPI737643',icon:'radar',brand:'AN',logoDomain:'airnavradar.com',tone:'green'},
@@ -57,7 +58,22 @@ function migrateLinks(){
  }catch{localStorage.setItem(linksKey,JSON.stringify(defaultLinks))}
  localStorage.setItem(linksMigration,'1');
 }
-function getLinks(){try{migrateLinks();const x=JSON.parse(localStorage.getItem(linksKey));return Array.isArray(x)?x:defaultLinks}catch{return defaultLinks}}
+// Repair built-in links exactly once after the v1.9 launcher change.
+// Preserve user-created shortcuts rather than wiping all local preferences.
+function restoreV193Launcher(){
+ const marker='airspace-links-v193-repaired';
+ if(localStorage.getItem(marker))return;
+ try{
+  const previous=JSON.parse(localStorage.getItem(linksKey)||'null');
+  const defaultIds=new Set(defaultLinks.map(x=>x.id));
+  const defaultNames=new Set(defaultLinks.map(x=>x.name.toLowerCase()));
+  const legacyNames=new Set(['aircraft map','receiver graphs','airspace analytics']);
+  const added=Array.isArray(previous)?previous.filter(x=>x&&typeof x.name==='string'&&!defaultIds.has(x.id)&&!defaultNames.has(x.name.trim().toLowerCase())&&!legacyNames.has(x.name.trim().toLowerCase())):[];
+  localStorage.setItem(linksKey,JSON.stringify([...defaultLinks,...added]));
+ }catch{localStorage.setItem(linksKey,JSON.stringify(defaultLinks));}
+ localStorage.setItem(marker,'1');
+}
+function getLinks(){try{migrateLinks();restoreV193Launcher();const x=JSON.parse(localStorage.getItem(linksKey));return Array.isArray(x)?x:defaultLinks}catch{return defaultLinks}}
 function putLinks(links){localStorage.setItem('airspace-analytics-links',JSON.stringify(links))}
 function icon(name,size=18){
  const paths={
@@ -140,7 +156,9 @@ function branding(it){
  const domain=String(it.logoDomain||'').trim();
  const logo=/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)?`<img src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128" alt="" loading="lazy" decoding="async" onerror="this.remove()">`:'';
  const selfLogo=/^\/[a-z0-9/_-]+\.svg$/i.test(it.logoSrc||'')?`<img src="${esc(it.logoSrc)}" alt="" loading="lazy" onerror="this.remove()">`:'';
- return `<span class="launcher-link-icon brand-${esc(it.tone||'teal')}" aria-hidden="true">${selfLogo||logo}<span class="brand-fallback">${esc(initials)}</span></span>`;
+ const officialLogo=it.id==='aerodrome'?'<img src="/brand/aerodrome.svg" alt="" loading="lazy" onerror="this.remove()">':
+   it.id==='skystats'?'<img src="https://raw.githubusercontent.com/tomcarman/skystats/main/docs/logo/logo_icon.png" alt="" loading="lazy" decoding="async" onerror="this.remove()">':'';
+ return `<span class="launcher-link-icon brand-${esc(it.tone||'teal')}" aria-hidden="true">${officialLogo||selfLogo||logo}<span class="brand-fallback">${esc(initials)}</span></span>`;
 }
 function launcherEntry(it,primary=false){
  const destination=primary?'/analytics#explore':hrefFor(it);
@@ -163,6 +181,15 @@ async function renderHome(){
  ${launcherGroup('View Stats',configured.filter(x=>x.group!=='feeders'),true)}
  ${launcherGroup('Feeder Website Status',configured.filter(x=>x.group==='feeders'))}
  <footer class="launcher-footer"><span><i class="dot" id="launcherDot"></i><span id="launcherStatus">Checking Aerodrome</span></span><a href="/analytics#settings">Manage shortcuts</a></footer></div>`;
+ // Inline image onerror attributes are blocked by the CSP. Detect
+ // genuine image loads so failed favicon requests retain the initials.
+ $('.launcher-link-icon img').forEach(image=>{
+  const ready=()=>image.parentElement?.classList.add('has-logo');
+  const failed=()=>image.remove();
+  image.addEventListener('load',ready,{once:true});
+  image.addEventListener('error',failed,{once:true});
+  if(image.complete){if(image.naturalWidth>0)ready();else failed();}
+ });
  try{const h=await api('/api/health');if(currentPage!=='home')return;const dot=$('#launcherDot');if(dot)dot.classList.toggle('good',h.fresh===true);$('#launcherStatus').textContent=h.fresh?'Aerodrome connected':h.ok?'Aerodrome history available':'Database unavailable';setStatus(h)}catch{if($('#launcherStatus'))$('#launcherStatus').textContent='Status unavailable'}
 }
 function queryArgs(groupOverride){return {period:state.period,metric:state.metric,bucket:groupOverride||state.bucket,
@@ -423,7 +450,14 @@ async function fillPatterns(rid,a){
    const pad=n=>String(n).padStart(2,'0');
    const from=mode==='year'?`${year}-01-01T00:00`:`${year}-${pad(month)}-01T00:00`;
    const to=mode==='year'?`${year+1}-01-01T00:00`:(month===12?`${year+1}-01-01T00:00`:`${year}-${pad(month+1)}-01T00:00`);
-   const response=await api('/api/analytics',{...filters,period:'custom',start:from,end:to,bucket:'day'});
+   // Future months have no observations. The API caps future end dates;
+   // avoid requesting a window whose start is already beyond that cap.
+   const nowUK=new Date().toLocaleString('sv-SE',{timeZone:'Europe/London'}).replace(' ','T');
+   let response={series:[]};
+   if(from<nowUK){
+    try{response=await api('/api/analytics',{...filters,period:'custom',start:from,end:to,bucket:'day'});}
+    catch(e){if(!String(e.message||e).includes('Start must be before end'))throw e;}
+   }
    if(rid!==renderId||run!==patternsRequestId)return;
    $('#heatmap').innerHTML=window.AirspaceCalendar.render(response.series,{level:mode,year,month,metric});
    $('#heatmapRange').textContent='';

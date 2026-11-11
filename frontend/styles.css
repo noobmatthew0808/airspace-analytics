@@ -322,3 +322,7 @@ body.launcher-mode .launcher-header{margin-bottom:24px;padding-bottom:16px}
  .launcher-sub-link{margin-left:65px}
  .shortcut-edit-main{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+/* v1.9.3 — fit original service artwork without cropping or fallback text overlap. */
+.launcher-link-icon img{inset:5px;width:calc(100% - 10px);height:calc(100% - 10px);max-width:calc(100% - 10px);max-height:calc(100% - 10px);object-fit:contain;object-position:center}
+.launcher-link-icon.has-logo .brand-fallback{visibility:hidden}

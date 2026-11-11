@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.9.3 — 11 November 2026
+- Restore Aerodrome to View Stats and repair ADSB.im's port to 1099 on existing browsers, keeping custom launcher shortcuts.
+- Show official Aerodrome and SkyStats icons; improve icon fit and permit only their trusted image hosts.
+- Prevent a future-month selection from hiding the year calendar with “Start must be before end”. Back to year remains available.
+- Preserve the entire ADS-B analytics/query engine, charts, zoom, calendar rendering, and updater.
+
+
 ## v1.9.2 — 11 November 2026
 - Equal-size month cards throughout the year activity calendar on desktop and mobile.
 - Unrecorded days remain blank, and tapping a month works as before.

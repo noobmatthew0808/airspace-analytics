@@ -99,7 +99,7 @@ class App(BaseHTTPRequestHandler):
         self.send_header('X-Frame-Options','SAMEORIGIN')
         self.send_header('Cache-Control','no-store')
         self.send_header('Content-Security-Policy',
-            "default-src 'self'; connect-src 'self'; img-src 'self' data: https://www.google.com https://*.gstatic.com; "
+            "default-src 'self'; connect-src 'self'; img-src 'self' data: https://www.google.com https://*.gstatic.com https://raw.githubusercontent.com; "
             "style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; "
             "object-src 'none'; base-uri 'none'; frame-ancestors 'self'")
 
