@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.9.0 — 11 November 2026
+- The desktop traffic chart now uses a wider, more compact aspect ratio; mobile analytics stays unchanged.
+- Desktop year calendar is six columns on large screens and four on mid-sized monitors.
+- The launcher is grouped into View Stats and Feeder Website Status, with all supplied links.
+- Plane Finder and ADS-B Exchange include separate feeder-map actions.
+- Service-specific favicons with coloured themed fallbacks; custom shortcuts retain group and secondary-link editing.
+- A one-time launcher migration preserves a backup of the previous shortcuts in browser storage.
+
 ## v1.8.0 — 10 November 2026
 - Year calendar now leaves days with no actual observed aircraft empty rather than colouring zero-filled API buckets. Unobserved days have faint unboxed date numbers only.
 - Year calendar is the default. Tap anywhere on a month card to open that month's daily calendar; tap the year button to return. Removed the Year/Month selector.

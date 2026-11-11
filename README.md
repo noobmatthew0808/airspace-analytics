@@ -165,7 +165,7 @@ MIT — see `LICENSE`.
 
 ## v1.2 compact redesign and update from v1.1
 
-The normal URL `http://<your-host>:8088/` is now a simple **application launcher**. Its first, fixed link is **Airspace Analytics**, which opens `http://<your-host>:8088/analytics#explore` on the same port. The other links can be edited, removed, added and reordered under **Settings → Launcher links**. The links live in each browser's storage, so changes made on a phone do not automatically appear on a PC.
+The normal URL `http://<your-host>:8088/` is now a simple **application launcher**. Its first, fixed link is **Airspace Analytics**, which opens `http://<your-host>:8088/analytics#explore` on the same port. The shortcuts are grouped into **View Stats** (Airspace Analytics, ADSB.im :1573, SkyStats :5173, tar1090 :1099/map/, Aerodrome :8000, Dozzle :1094) and **Feeder Website Status** (Flightradar24 :8754, AirNav Radar, FlightDeck, Plane Finder stats and map :30053, ADS-B Exchange status and feeder map, FlightAware :1093). Brand favicons load when online, with coloured local glyphs as fallbacks. Shortcuts can be edited, removed, added and reordered, assigned to groups, and given an optional second URL under **Settings → Launcher links**. The links live in each browser's storage, so changes made on a phone do not automatically appear on a PC.
 
 The Analytics workspace now exposes Traffic and Patterns at the top, plus Settings with a database explorer link. Traffic displays a single main chart, flexible duration/date controls, metric selector (Visits, Aircraft, Samples), grouping, a click-to-drill zoom with a **Zoom out** button, and collapsible Filters and Breakdowns. No new aircraft collection process or writeable database is created.
 

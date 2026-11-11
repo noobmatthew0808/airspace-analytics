@@ -27,16 +27,42 @@ function persist(){localStorage.setItem(key,JSON.stringify(state))}
 const savedViewsKey='airspace-analytics-views-v1';
 // A previously paired browser stays paired across reloads without showing a
 // password box each time. The updater's server-side token check remains active.
+// Launcher v1.9: user-specified local services and feeder status shortcuts.
 const defaultLinks=[
-  {name:'ADSB.im',sub:'Receiver controls',path:'/',color:'aqua',icon:'radar'},
-  {name:'Aerodrome',sub:'History & records',port:'8000',path:'/',color:'blue',icon:'plane'},
-  {name:'SkyStats',sub:'Flight statistics',port:'5173',path:'/',color:'pink',icon:'chart'},
-  {name:'Aircraft map',sub:'Readsb live map',port:'1099',path:'/',color:'aqua',icon:'map'},
-  {name:'Receiver graphs',sub:'Signal & coverage',port:'1094',path:'/',color:'orange',icon:'activity'},
-  {name:'Dozzle',sub:'Container logs',port:'',path:'/',color:'blue',icon:'terminal'}
+ {name:'ADSB.im',sub:'Receiver control panel',group:'stats',port:'1573',path:'/',icon:'radar',brand:'adsbim'},
+ {name:'SkyStats',sub:'Receiver statistics',group:'stats',port:'5173',path:'/',icon:'chart',brand:'skystats'},
+ {name:'tar1090 map',sub:'Live receiver map',group:'stats',port:'1099',path:'/map/',icon:'map',brand:'tar1090'},
+ {name:'Aerodrome',sub:'Aircraft history',group:'stats',port:'8000',path:'/',icon:'plane',brand:'aerodrome'},
+ {name:'Dozzle',sub:'Container logs',group:'stats',port:'1094',path:'/',icon:'terminal',brand:'dozzle'},
+ {name:'Flightradar24',sub:'Feeder status',group:'feeders',port:'8754',path:'/',icon:'radar',brand:'flightradar24'},
+ {name:'AirNav Radar',sub:'Station EXTRPI737643',group:'feeders',url:'https://www.airnavradar.com/stations/EXTRPI737643',icon:'radar',brand:'airnav'},
+ {name:'FlightDeck',sub:'Feeder account map',group:'feeders',url:'https://www.tryflightdeck.com/map/account/feeder',icon:'plane',brand:'flightdeck'},
+ {name:'Plane Finder',sub:'Feeder statistics',group:'feeders',port:'30053',path:'/stats.html',icon:'plane',brand:'planefinder',extraLabel:'Feeder map',extraUrl:'http://192.168.1.187:30053/map.html'},
+ {name:'ADS-B Exchange',sub:'Feeder status',group:'feeders',url:'https://www.adsbexchange.com/myip/',icon:'radar',brand:'adsbexchange',extraLabel:'Feeder map',extraUrl:'https://globe.adsbexchange.com/?feed=CGyw2ZDXE-Y2'},
+ {name:'FlightAware',sub:'PiAware feeder status',group:'feeders',port:'1093',path:'/',icon:'plane',brand:'flightaware'}
 ];
-function getLinks(){try{const x=JSON.parse(localStorage.getItem('airspace-analytics-links'));return Array.isArray(x)?x:defaultLinks}catch{return defaultLinks}}
-function putLinks(links){localStorage.setItem('airspace-analytics-links',JSON.stringify(links))}
+const savedLinksKey='airspace-analytics-links';
+function getLinks(){try{const x=JSON.parse(localStorage.getItem(savedLinksKey));return Array.isArray(x)?x:defaultLinks}catch{return defaultLinks}}
+function putLinks(links){localStorage.setItem(savedLinksKey,JSON.stringify(links))}
+(function migrateLauncher(){
+ try{
+  const mark='airspace-v19-launcher-migrated';
+  if(localStorage.getItem(mark))return;
+  const old=JSON.parse(localStorage.getItem(savedLinksKey)||'null');
+  if(Array.isArray(old)){
+   localStorage.setItem('airspace-links-before-v19',JSON.stringify(old));
+   const known=['adsb.im','aerodrome','skystats','aircraft map','receiver graphs','dozzle','airspace analytics'];
+   const extra=old.filter(x=>x?.name&&!known.includes(x.name.toLowerCase())&&!defaultLinks.some(y=>y.name.toLowerCase()===x.name.toLowerCase()));
+   putLinks([...defaultLinks,...extra.map(x=>({...x,group:x.group||'stats'}))]);
+  }else putLinks(defaultLinks);
+  localStorage.setItem(mark,'1');
+ }catch{}
+})();
+const brandDomains={
+ adsbim:'adsb.im',dozzle:'dozzle.dev',flightradar24:'flightradar24.com',
+ airnav:'airnavradar.com',flightdeck:'tryflightdeck.com',planefinder:'planefinder.net',
+ adsbexchange:'adsbexchange.com',flightaware:'flightaware.com'
+};
 function icon(name,size=18){
  const paths={
   grid:'<rect x="3" y="3" width="7" height="7" rx="1.4"/><rect x="14" y="3" width="7" height="7" rx="1.4"/><rect x="3" y="14" width="7" height="7" rx="1.4"/><rect x="14" y="14" width="7" height="7" rx="1.4"/>',
@@ -112,17 +138,39 @@ const timerDate=(d)=>d?d:new Date().toISOString().slice(0,16);
 function title(eyebrow,heading,subtitle='',accessory=''){return `<div class="page-heading"><div><h1 class="page-title">${esc(heading)}</h1>${subtitle&&currentPage!=='explore'?`<p class="page-subtitle">${subtitle}</p>`:''}</div>${accessory}</div>`}
 function stat(label,value,meta,ic='chart'){return `<article class="stat-card"><div class="stat-label"><span>${esc(label)}</span><span class="stat-icon">${icon(ic)}</span></div><div class="stat-value">${value}</div><div class="stat-meta">${meta}</div></article>`}
 function section(h,sub='',right=''){return `<div class="section-heading"><div><h2>${h}</h2>${sub?`<p>${sub}</p>`:''}</div>${right}</div>`}
-function links(){return getLinks().map((it,i)=>{const destination=hrefFor(it);return `<${destination?'a':'div'} class="launcher-link ${destination?'':'disabled'}" ${destination?`href="${esc(destination)}" target="_blank" rel="noopener noreferrer"`:''}>
-  <span class="launcher-link-icon">${icon(it.icon||'external',19)}</span><span class="launcher-link-text"><strong>${esc(it.name)}</strong><small>${esc(destination?it.sub||'Open application':'Set a port or URL in Settings')}</small></span><span class="launcher-link-arrow">${destination?icon('external',16):'—'}</span></${destination?'a':'div'}>`}).join('')}
+function logoFor(it,size=23){
+ const brand=it.brand||'';
+ const domain=brandDomains[brand];
+ return `<span class="service-icon service-${esc(brand||'custom')}">
+  ${icon(it.icon||'external',size)}${domain?`<img class="service-brand-img" loading="lazy" decoding="async" referrerpolicy="no-referrer" src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128" alt="" />`:''}
+ </span>`;
+}
+function linkTile(it){
+ const destination=hrefFor(it),secondary=it.extraUrl&&/^https?:\/\/+/i.test(it.extraUrl)?it.extraUrl:null;
+ return `<div class="launcher-entry ${destination?'':'disabled'}">
+  <${destination?'a':'div'} class="launcher-link" ${destination?`href="${esc(destination)}" target="_blank" rel="noopener noreferrer"`:''}>
+   <span class="launcher-link-icon">${logoFor(it)}</span>
+   <span class="launcher-link-text"><strong>${esc(it.name)}</strong><small>${esc(destination?it.sub||'Open service':'Configure URL in Settings')}</small></span>
+   <span class="launcher-link-arrow">${destination?icon('external',15):'—'}</span>
+  </${destination?'a':'div'}>
+  ${secondary?`<a class="launcher-secondary" href="${esc(secondary)}" target="_blank" rel="noopener noreferrer">${esc(it.extraLabel||'Feeder map')} ${icon('external',12)}</a>`:''}
+ </div>`;
+}
+function links(group){return getLinks().filter(it=>(it.group||'stats')===group).map(linkTile).join('')}
 function hrefFor(link){const host=location.hostname;const proto=location.protocol==='https:'?'https:':'http:';const path=String(link.path||'/');if(link.url){try{const u=new URL(link.url);if(!['http:','https:'].includes(u.protocol))return null;return u.href}catch{return null}}
  if(link.port===''||link.port===null)return null;
  const port=link.port?':'+link.port:'';
  return `${proto}//${host}${port}${path.startsWith('/')?path:'/'+path}`;
 }
 async function renderHome(){
- $('#page').innerHTML=`<div class="launcher-screen"><header class="launcher-header"><div class="launcher-brand"><span class="launcher-brand-icon">${icon('radar',24)}</span><div><h1>Airspace</h1><span>Application launcher</span></div></div><a class="launcher-settings" href="/analytics#settings" title="Edit links in Settings" aria-label="Settings">${icon('settings',19)}</a></header>
- <div class="launcher-list"><a class="launcher-link launcher-primary" href="/analytics#explore"><span class="launcher-link-icon">${icon('chart',20)}</span><span class="launcher-link-text"><strong>Airspace Analytics</strong><small>Traffic, trends and comparisons</small></span><span class="launcher-link-arrow">${icon('chevron',18)}</span></a>${links()}</div>
- <footer class="launcher-footer"><span><i class="dot" id="launcherDot"></i><span id="launcherStatus">Checking Aerodrome</span></span><a href="/analytics#settings">Manage shortcuts</a></footer></div>`;
+ $('#page').innerHTML=`<div class="launcher-screen"><header class="launcher-header"><div class="launcher-brand"><span class="launcher-brand-icon">${icon('radar',23)}</span><div><h1>Airspace</h1><span>Receiver shortcuts</span></div></div><a class="launcher-settings" href="/analytics#settings" title="Edit links in Settings" aria-label="Settings">${icon('settings',19)}</a></header>
+  <section class="launcher-group" aria-label="View Stats"><h2>View Stats</h2>
+   <div class="launcher-list"><div class="launcher-entry launcher-primary"><a class="launcher-link" href="/analytics#explore"><span class="launcher-link-icon"><span class="service-icon service-airspace"><img src="/favicon.svg" alt="" /></span></span><span class="launcher-link-text"><strong>Airspace Analytics</strong><small>Traffic and historical analytics</small></span><span class="launcher-link-arrow">${icon('chevron',17)}</span></a></div>${links('stats')}</div>
+  </section>
+  <section class="launcher-group" aria-label="Feeder Website Status"><h2>Feeder Website Status</h2>
+   <div class="launcher-list">${links('feeders')}</div>
+  </section>
+  <footer class="launcher-footer"><span><i class="dot" id="launcherDot"></i><span id="launcherStatus">Checking Aerodrome</span></span><a href="/analytics#settings">Manage shortcuts</a></footer></div>`;
  try{const h=await api('/api/health');if(currentPage!=='home')return;const dot=$('#launcherDot');if(dot)dot.classList.toggle('good',h.fresh===true);$('#launcherStatus').textContent=h.fresh?'Aerodrome connected':h.ok?'Aerodrome history available':'Database unavailable';setStatus(h)}catch{if($('#launcherStatus'))$('#launcherStatus').textContent='Status unavailable'}
 }
 function queryArgs(groupOverride){return {period:state.period,metric:state.metric,bucket:groupOverride||state.bucket,
@@ -227,7 +275,8 @@ function renderSavedViews(){const place=$('#savedViews');if(!place)return;let vi
 }
 function renderChart(series,kind='line',{height=305,mini=false,color='aqua',everyHour=false,axisGroup=''}={}){
  if(!series?.length||series.every(s=>s.value===null||s.value===undefined))return `<div class="chart-empty">No observations in this period.</div>`;
- const n=series.length,W=720,H=height,L=55,R=14,T=19,B=49;
+ const desktop=height>=300&&window.matchMedia('(min-width: 1000px)').matches;
+ const n=series.length,W=desktop?1160:720,H=height,L=desktop?60:55,R=14,T=19,B=49;
  const plotW=W-L-R,plotH=H-T-B;
  const max=Math.max(1,...series.map(s=>Number(s.value)||0));
  // Keep sparse series anchored at the LEFT of the timeline rather than
@@ -574,14 +623,16 @@ async function renderDatabase(){const rid=++renderId;
  }catch(e){if(rid===renderId)$('#dbResults').innerHTML=safeError(e)}
 }
 function settingsRow(title,desc,body){return `<div class="settings-group"><div><h3>${title}</h3><p>${desc}</p></div><div>${body}</div></div>`}
-function settingsLinks(){return `<div class="shortcut-list" id="shortcutList">${getLinks().map((it,i)=>`<div class="shortcut-edit-row" data-linkindex="${i}"><div class="shortcut-edit-main">${field('Name',`<input class="link-name" value="${esc(it.name)}" maxlength="50">`)}${field('Port',`<input class="link-port" value="${esc(it.port??'')}" placeholder="e.g. 5173" inputmode="numeric">`)}${field('Full URL (optional)',`<input class="link-url" value="${esc(it.url||'')}" placeholder="http://…">`)}${field('Path',`<input class="link-path" value="${esc(it.path||'/')}" placeholder="/">`)}</div><div class="shortcut-edit-actions"><button class="btn small" data-reorder="up" data-pos="${i}" title="Move up" ${i===0?'disabled':''}>↑</button><button class="btn small" data-reorder="down" data-pos="${i}" title="Move down" ${i===getLinks().length-1?'disabled':''}>↓</button><button class="btn small danger" data-remove="${i}" title="Remove shortcut">Remove</button></div></div>`).join('')}</div>
+function settingsLinks(){return `<div class="shortcut-list" id="shortcutList">${getLinks().map((it,i)=>`<div class="shortcut-edit-row" data-linkindex="${i}"><div class="shortcut-edit-main">${field('Name',`<input class="link-name" value="${esc(it.name)}" maxlength="50">`)}${field('Port',`<input class="link-port" value="${esc(it.port??'')}" placeholder="e.g. 5173" inputmode="numeric">`)}${field('Full URL (optional)',`<input class="link-url" value="${esc(it.url||'')}" placeholder="http://…">`)}${field('Path',`<input class="link-path" value="${esc(it.path||'/')}" placeholder="/">`)}${field('Group',`<select class="link-group">${opts([['stats','View Stats'],['feeders','Feeder Website Status']],it.group||'stats')}</select>`)}${field('Second link name',`<input class="link-extra-label" value="${esc(it.extraLabel||'')}" placeholder="e.g. Feeder map">`)}${field('Second link URL',`<input class="link-extra-url" value="${esc(it.extraUrl||'')}" placeholder="https://…">`)}</div><div class="shortcut-edit-actions"><button class="btn small" data-reorder="up" data-pos="${i}" title="Move up" ${i===0?'disabled':''}>↑</button><button class="btn small" data-reorder="down" data-pos="${i}" title="Move down" ${i===getLinks().length-1?'disabled':''}>↓</button><button class="btn small danger" data-remove="${i}" title="Remove shortcut">Remove</button></div></div>`).join('')}</div>
  <div class="setting-actions shortcut-actions"><button class="btn" id="addLink" type="button">${icon('plus',15)} Add link</button><button class="btn primary" id="saveLinks" type="button">Save links</button><button class="btn" id="restoreLinks" type="button">Restore defaults</button></div>`}
 function collectSettingsLinks(){const original=getLinks();return $$('[data-linkindex]').map(el=>{
  const idx=Number(el.dataset.linkindex),port=$('.link-port',el).value.trim(),path=$('.link-path',el).value.trim()||'/',url=$('.link-url',el).value.trim();
  if(port&&!/^\d{1,5}$/.test(port))throw Error('Ports must be numeric');
  if(port&&(Number(port)<1||Number(port)>65535))throw Error('Port must be 1–65535');
  if(url&&!/^https?:\/\//i.test(url))throw Error('URLs must begin with http:// or https://');
- return {...original[idx],name:$('.link-name',el).value.trim().slice(0,50)||'New link',sub:original[idx]?.sub||'Application shortcut',port,path,url,icon:original[idx]?.icon||'external'};
+ const extraUrl=$('.link-extra-url',el).value.trim();
+ if(extraUrl&&!/^https?:\/\//i.test(extraUrl))throw Error('Secondary URLs must begin with http:// or https://');
+ return {...original[idx],name:$('.link-name',el).value.trim().slice(0,50)||'New link',sub:original[idx]?.sub||'Application shortcut',port,path,url,group:$('.link-group',el).value,extraLabel:$('.link-extra-label',el).value.trim().slice(0,40),extraUrl,icon:original[idx]?.icon||'external'};
 })}
 function updateBox(){return `<div class="auth-box">
   <div class="status-row" style="margin-bottom:9px"><i class="dot" id="updateDot"></i><strong id="updateHeading">Checking GitHub…</strong></div>
@@ -601,7 +652,7 @@ async function renderSettings(){const rid=++renderId;
  $('#saveAppearance').onclick=()=>{setTheme($('#settingTheme').value);state.metric=$('#settingMetric').value;persist();toast('Preferences saved')};
  function saveLinks(){try{putLinks(collectSettingsLinks());toast('Launcher links saved');return true}catch(e){toast('Invalid link',e.message,true);return false}}
  $('#saveLinks').onclick=()=>saveLinks();
- $('#addLink').onclick=()=>{if(!saveLinks())return;const xs=getLinks();xs.push({name:'New link',sub:'Application shortcut',port:'',path:'/',url:'',icon:'external'});putLinks(xs);renderSettings()};
+ $('#addLink').onclick=()=>{if(!saveLinks())return;const xs=getLinks();xs.push({name:'New link',sub:'Application shortcut',group:'stats',port:'',path:'/',url:'',icon:'external'});putLinks(xs);renderSettings()};
  $('#restoreLinks').onclick=()=>{putLinks(defaultLinks);toast('Default links restored');renderSettings()};
  $$('[data-remove]').forEach(b=>b.onclick=()=>{if(!saveLinks())return;const xs=getLinks();xs.splice(+b.dataset.remove,1);putLinks(xs);renderSettings()});
  $$('[data-reorder]').forEach(b=>b.onclick=()=>{if(!saveLinks())return;const xs=getLinks(),i=+b.dataset.pos,j=i+(b.dataset.reorder==='up'?-1:1);if(j<0||j>=xs.length)return;[xs[i],xs[j]]=[xs[j],xs[i]];putLinks(xs);renderSettings()});
