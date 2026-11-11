@@ -13,14 +13,15 @@
     const start=new Date(Date.UTC(year,month-1,1));
     const blanks=(start.getUTCDay()+6)%7;
     const totalDays=new Date(Date.UTC(year,month,0)).getUTCDate();
-    const head=isYear?`<button class="calendar-month-link" data-heat-month="${year}-${pad(month)}" type="button" aria-label="Open ${MONTHS[month-1]} ${year} calendar">${MONTHS[month-1]} <span aria-hidden="true">›</span></button>`:
+    const head=isYear?`<span class="calendar-month-link">${MONTHS[month-1]} <span aria-hidden="true">›</span></span>`:
       `<h4 class="calendar-month-title">${MONTHS[month-1]} ${year}</h4>`;
     const days=[];
     for(let i=0;i<blanks;i++)days.push('<span class="calendar-blank" aria-hidden="true"></span>');
     for(let d=1;d<=totalDays;d++){
       const key=dateKey(year,month,d);
       const row=points.get(key);
-      const observed=row&&row.value!==null&&row.value!==undefined;
+      const observed=Boolean(row && (typeof row.has_data === 'boolean'
+        ? row.has_data : Number(row.value) > 0));
       const value=observed?Number(row.value):null;
       // Missing calendar days stay dark, instead of being mistaken for 0 traffic.
       const strength=observed?Math.max(0.12,Math.sqrt(Math.max(0,value)/Math.max(1,max))):0;
@@ -29,7 +30,12 @@
       const base=observed?`background-color:hsl(172 74% ${Math.round(22+36*strength)}%);color:${strength>.5?'#072c2a':'#e7fbf7'}`:'';
       days.push(`<span class="calendar-date ${observed?'has-data':'missing'}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}" style="${base}">${d}</span>`);
     }
-    return `<section class="calendar-month ${isYear?'calendar-mini':'calendar-large'}">${head}<div class="calendar-grid">${WEEKDAYS.map(w=>`<span class="calendar-weekday" aria-hidden="true">${w}</span>`).join('')}${days.join('')}</div></section>`;
+    const grid=`<span class="calendar-grid">${WEEKDAYS.map(w=>`<span class="calendar-weekday" aria-hidden="true">${w}</span>`).join('')}${days.join('')}</span>`;
+    // The entire mini-calendar is a large, accessible tap target, not just
+    // the tiny month heading. Month view uses a noninteractive section.
+    return isYear
+      ? `<button class="calendar-month calendar-mini calendar-month-button" type="button" data-heat-month="${year}-${pad(month)}" aria-label="Open ${MONTHS[month-1]} ${year}">${head}${grid}</button>`
+      : `<section class="calendar-month calendar-large">${head}${grid}</section>`;
   }
   function render(series,{level='year',year,month,metric='flights'}={}){
     const y=Number(year),m=Number(month||1);
@@ -43,7 +49,7 @@
     const heading=level==='month'?MONTHS[m-1]+' '+y:String(y);
     const keys={flights:'estimated visits',aircraft:'unique aircraft',observations:'observations'};
     return `<div class="calendar-heatmap" role="group" aria-label="${escapeHtml(heading)} traffic calendar">
-      <div class="calendar-headline"><strong>${escapeHtml(heading)}</strong><span>Daily ${escapeHtml(keys[metric]||metric)}</span></div>
+      <div class="calendar-headline"><strong>${escapeHtml(heading)}</strong><span class="calendar-head-actions">${level==='month'?`<button type="button" class="btn small" data-heat-back>← ${y}</button>`:''}<span>Daily ${escapeHtml(keys[metric]||metric)}</span></span></div>
       <div class="calendar-months ${level==='month'?'single-month':'year-months'}">${months.map(mon=>monthGrid(y,mon,points,max,level)).join('')}</div>
       <div class="calendar-legend"><span>Less</span>${[0.15,.3,.5,.7,1].map(v=>`<i style="background-color:hsl(172 74% ${Math.round(22+36*v)}%)"></i>`).join('')}<span>More</span><span class="calendar-no-data">No data</span></div>
     </div>`;

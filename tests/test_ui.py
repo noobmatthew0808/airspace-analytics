@@ -76,7 +76,8 @@ class TestV17CalendarAndQuietUI(unittest.TestCase):
     def test_calendar_is_year_and_month_only(self):
         js=(ROOT/'frontend/app.js').read_text()
         html=(ROOT/'frontend/index.html').read_text()
-        self.assertIn("['year','Year'],['month','Month']",js)
+        self.assertNotIn('id="heatScope"',js)
+        self.assertIn('data-heat-back',js)
         self.assertIn('data-heat-month', (ROOT/'frontend/calendar.js').read_text())
         self.assertIn('window.AirspaceCalendar.render',js)
         self.assertIn('calendar.css',html)

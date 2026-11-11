@@ -378,7 +378,7 @@ async function fillPatterns(rid,a){
    const selected=(state.period==='custom'&&state.start?state.start.slice(0,7):tail.slice(0,7));
    const year=state.heatYear||Number(selected.slice(0,4));
    const month=state.heatMonth||Number(selected.slice(5,7));
-   const mode=state.heatScope==='month'?'month':'year';
+   const mode=state.heatMonth?'month':'year';
    const pad=n=>String(n).padStart(2,'0');
    const from=mode==='year'?`${year}-01-01T00:00`:`${year}-${pad(month)}-01T00:00`;
    const to=mode==='year'?`${year+1}-01-01T00:00`:(month===12?`${year+1}-01-01T00:00`:`${year}-${pad(month+1)}-01T00:00`);
@@ -389,9 +389,15 @@ async function fillPatterns(rid,a){
    $$('[data-heat-month]',$('#heatmap')).forEach(button=>button.onclick=()=>{
      const [y,m]=button.dataset.heatMonth.split('-').map(Number);
      state.heatYear=y;state.heatMonth=m;state.heatScope='month';persist();
-     $('#heatScope').value='month';$('#heatmap').innerHTML=loading();
+     $('#heatmap').innerHTML=loading();
      renderCalendar().catch(e=>$('#heatmap').innerHTML=safeError(e));
    });
+   const back=$('[data-heat-back]',$('#heatmap'));
+   if(back)back.onclick=()=>{
+     delete state.heatMonth;state.heatScope='year';persist();
+     $('#heatmap').innerHTML=loading();
+     renderCalendar().catch(e=>$('#heatmap').innerHTML=safeError(e));
+   };
  };
  try{await renderStats();await renderCalendar();}
  catch(e){if(rid!==renderId||run!==patternsRequestId)return;
@@ -412,7 +418,7 @@ async function renderExplore(){const rid=++renderId;currentAnalytics=null;applyF
  <div class="chart-foot"><span id="pointCount">—</span><span>Tap a bar or point to see the next level</span></div></section>
  <details class="foldout" id="breakdownDetails" open><summary><span>${icon('layers',18)} Breakdowns <small>Category · aircraft type · operator</small></span>${icon('chevron',17)}</summary><div class="breakdown-head"><button class="btn small" id="breakdownVizSwitch" type="button">${state.typeViz==='pie'?'Show bars':'Show pies'}</button></div>
  <div class="grid-three breakdown-grid"><div class="panel"><h3 class="panel-title">Aviation category</h3><div id="categoryDonut">${loading()}</div></div><div class="panel"><h3 class="panel-title">Aircraft types</h3><div id="typeBars">${loading()}</div></div><div class="panel"><select id="operatorScope" class="breakdown-scope" aria-label="Operator breakdown">${opts([['airline','Airlines · commercial'],['operator','Operators · all']],state.operatorScope||'airline')}</select><div id="airlineBars">${loading()}</div></div></div></details>
- <div class="panel pattern-section"><div class="panel-top"><h3 class="panel-title">Activity calendar</h3><div class="heat-control">${field('View',`<select id="heatScope">${opts([['year','Year'],['month','Month']],state.heatScope)}</select>`)}</div></div><div id="heatmapRange" class="muted tiny"></div><div id="heatmap">${loading()}</div></div>
+ <div class="panel pattern-section"><div class="panel-top"><h3 class="panel-title">Activity calendar</h3></div><div id="heatmapRange" class="muted tiny"></div><div id="heatmap">${loading()}</div></div>
  <div class="pattern-subgrid"><div class="panel"><h3 class="panel-title">Average by weekday <small class="muted">· all time</small></h3><div id="weekdayPattern">${loading()}</div></div><div class="panel"><h3 class="panel-title">Average by hour <small class="muted">· all time</small></h3><div id="hourPattern">${loading()}</div></div></div>`;
  initControls(()=>{if(state.filtersEnabled){zoomHistory.length=0;renderExplore()}},false);populateFilters();
  $('#filtersToggle').onclick=()=>{state.filtersEnabled=!state.filtersEnabled;if(!state.filtersEnabled)resetTimeline();persist();renderExplore();};
@@ -421,7 +427,6 @@ async function renderExplore(){const rid=++renderId;currentAnalytics=null;applyF
  $('#barSwitch').onclick=()=>{state.chart='bar';persist();drawCurrentChart()};
  $('#zoomBack').onclick=()=>{const prev=zoomHistory.pop();if(prev){Object.assign(state,prev);persist();renderExplore()}};
  $('#zoomReset').onclick=()=>{resetTimeline();renderExplore()};
- $('#heatScope').onchange=()=>{state.heatScope=$('#heatScope').value;delete state.heatYear;delete state.heatMonth;persist();if(currentAnalytics){$('#heatmap').innerHTML=loading();fillPatterns(rid,currentAnalytics)}};
  try{
   const a=await api('/api/analytics',queryArgs());if(rid!==renderId)return;
   currentAnalytics=a;fillFilterOptions(a);

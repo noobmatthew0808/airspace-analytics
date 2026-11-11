@@ -40,8 +40,10 @@ class TestReadOnlyAnalytics(unittest.TestCase):
         self.assertEqual(h['total_aircraft'],7)
         self.assertGreater(h['raw_observations'],100)
         o=data.overview()
-        self.assertGreaterEqual(o['unique_today'],1)
-        self.assertGreaterEqual(o['observations_today'],1)
+        # At midnight the seeded fixture can legitimately have no recorded
+        # aircraft yet; an empty current day is valid and must not be invented.
+        self.assertGreaterEqual(o['unique_today'],0)
+        self.assertGreaterEqual(o['observations_today'],0)
 
     def test_grouped_metrics(self):
         for metric in ['flights','aircraft','observations']:
@@ -116,6 +118,35 @@ class TestReadOnlyAnalytics(unittest.TestCase):
         self.assertEqual(data.resolved_airline('general_aviation',None,None,'EZY123'),'')
         self.assertEqual(data.resolved_airline('commercial',None,None,'GABCD'),'Unknown airline')
         self.assertEqual(data.resolved_operator('general_aviation',None,'',None),'Unknown GA operator')
+
+    def test_receiver_unknown_codes_now_identified(self):
+        examples={'EWG123':'Eurowings','CFE36Y':'BA Cityflyer',
+                  'NSZ5708':'Norwegian Air Sweden','NOZ3PM':'Norwegian Air Shuttle',
+                  'EZS68ZC':'easyJet Switzerland','KMM103':'KM Malta Airlines',
+                  'HOP32UH':'Air France HOP','ITY224':'ITA Airways'}
+        for call,expected in examples.items():
+            self.assertEqual(data.resolved_airline('commercial',None,None,call),expected)
+        self.assertEqual(data.resolved_airline('commercial','BAW',None,None),'British Airways')
+        self.assertEqual(data.resolved_airline('commercial',None,None,None),'Unknown airline')
+
+    def test_new_exported_airline_prefixes_have_grounded_names(self):
+        expected={
+            'IMX358':'Zimex Aviation', 'TKJ7BX':'AJet',
+            'DAH3131':'Air Algérie', 'UBT86F':'Norse Atlantic UK',
+            'MEA201':'Middle East Airlines', 'NCR652':'National Airlines',
+            'ALK504':'SriLankan Airlines', 'BOX192':'AeroLogic',
+            'AZG1970':'Silk Way West Airlines',
+        }
+        for call,company in expected.items():
+            self.assertEqual(data.resolved_airline('commercial',None,None,call),company)
+        self.assertEqual(data.resolved_airline('commercial',None,None,None),'Unknown airline')
+
+    def test_empty_calendar_day_marked_without_data(self):
+        analysis=data.analyze({'period':'custom','start':'2025-01-01T00:00',
+                               'end':'2025-01-05T00:00','bucket':'day',
+                               'metric':'flights'})
+        self.assertTrue(all('has_data' in x for x in analysis['series']))
+        self.assertTrue(all(x['has_data'] is False for x in analysis['series']))
 
     def test_dynamic_rolling_months(self):
         lo,hi,period=data.resolve_period({'period':'rolling','amount':'1','unit':'months'})

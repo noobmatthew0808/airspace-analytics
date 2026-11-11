@@ -57,6 +57,72 @@ AIRLINE_PREFIXES = {
 }
 
 
+# Additional ICAO operator codes checked against airline/aviation references,
+# concentrated on codes actually seen by this receiver in November 2026.
+# Links: IATA DAQCP operators (2025); IATA airline directory (2026),
+# ICAO CORSIA operator listing and FAA aircraft company designators.
+AIRLINE_PREFIXES.update({
+    'CFE': 'BA Cityflyer',
+    'EWG': 'Eurowings',
+    'NSZ': 'Norwegian Air Sweden',
+    'NOZ': 'Norwegian Air Shuttle',
+    'ITY': 'ITA Airways',
+    'AUR': 'Aurigny',
+    'PGT': 'Pegasus Airlines',
+    'HOP': 'Air France HOP',
+    'DHK': 'DHL Air',
+    'CFG': 'Condor',
+    'KLC': 'KLM Cityhopper',
+    'LGL': 'Luxair',
+    'KMM': 'KM Malta Airlines',
+    'SVA': 'Saudia',
+    'EZS': 'easyJet Switzerland',
+    'ELY': 'El Al',
+    'ETH': 'Ethiopian Airlines',
+    'RAM': 'Royal Air Maroc',
+    'TFL': 'TUI fly Netherlands',
+    'RWD': 'RwandAir',
+    'PIA': 'Pakistan International Airlines',
+    'DLA': 'Air Dolomiti',
+    'KQA': 'Kenya Airways',
+    'TSC': 'Air Transat',
+    'SHT': 'British Airways',
+    'CAL': 'China Airlines',
+    'OMA': 'Oman Air',
+    'UZB': 'Uzbekistan Airways',
+    'RJA': 'Royal Jordanian',
+    'OCN': 'Discover Airlines',
+    'SEH': 'SKY express',
+    'UGD': 'Uganda Airlines',
+    'VKG': 'Sunclass Airlines',
+    'HVN': 'Vietnam Airlines',
+    'CJT': 'Cargojet Airways',
+    'ISR': 'Israir Airlines',
+    'ASL': 'Air Serbia',
+    'SXS': 'SunExpress',
+    'ABY': 'Air Arabia',
+    'BTI': 'airBaltic',
+    'THT': 'Air Tahiti Nui',
+    'FBU': 'French Bee',
+    'SRR': 'Maersk Air Cargo',
+    'MPH': 'Martinair',
+    'AWC': 'Titan Airways',
+    # Verified against FAA ICAO 3-letter operator assignments and IATA
+    # records; these callsign prefixes appear in the supplied hourly export.
+    'IMX': 'Zimex Aviation',
+    'TKJ': 'AJet',
+    'DAH': 'Air Algérie',
+    'UBT': 'Norse Atlantic UK',
+    'MEA': 'Middle East Airlines',
+    'NCR': 'National Airlines',
+    'ALK': 'SriLankan Airlines',
+    'BOX': 'AeroLogic',
+    'AZG': 'Silk Way West Airlines',
+})
+# IATA's current member directory lists MNG as Aero Mongolia; MNG Airlines Cargo
+# is MNB and is already mapped above. Keep these operators distinct.
+AIRLINE_PREFIXES['MNG']='Aero Mongolia'
+
 def resolved_airline(category: str, operator: str | None, route_airline: str | None,
                      callsign: str | None) -> str:
     """Resolve a *commercial* airline from existing metadata, then callsign.
@@ -68,7 +134,11 @@ def resolved_airline(category: str, operator: str | None, route_airline: str | N
         return ''
     for value in (route_airline, operator):
         if value and value.strip() and value.strip().lower() not in ('unknown','n/a','none','null'):
-            return value.strip()
+            display = value.strip()
+            # Aerodrome often stores only a three-letter designator (BAW,
+            # EZY, etc). Display a unified human-readable airline name rather
+            # than splitting the same airline across code and full name.
+            return AIRLINE_PREFIXES.get(display.upper(), display)
     call = (callsign or '').strip().upper()
     match = re.fullmatch(r'([A-Z]{3})[0-9][A-Z0-9]{0,7}', call)
     if match:
@@ -532,7 +602,8 @@ def _analyze_uncached(start: int, end: int, preset: str, metric: str, group: str
             series.append({'key':str(idx),'label':name,'value':round(mean,2) if mean is not None else None,'samples':len(units)})
         aggregation_label = 'Average per recorded occurrence'
     else:
-        series = [{'key':key,'label':display_bucket(key,group),'value':_metric(buckets[key],metric)} for key in sorted(buckets)]
+        series = [{'key':key,'label':display_bucket(key,group),'value':_metric(buckets[key],metric),
+                   'has_data':buckets[key]['observations'] > 0} for key in sorted(buckets)]
         aggregation_label = 'Per time bucket'
     # A chart with >1000 points would be unusable on an iPhone; enforce a
     # predictable response rather than silently dropping or altering dates.

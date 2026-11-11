@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.8.0 — 10 November 2026
+- Year calendar now leaves days with no actual observed aircraft empty rather than colouring zero-filled API buckets. Unobserved days have faint unboxed date numbers only.
+- Year calendar is the default. Tap anywhere on a month card to open that month's daily calendar; tap the year button to return. Removed the Year/Month selector.
+- Added verified airline ICAO callsign prefixes observed in the user's hourly export (Eurowings, BA Cityflyer, Norwegian, ITA, easyJet Switzerland, DHL, AJet, Air Algérie, AeroLogic, etc.) and normalised known 3-letter operator codes to full names.
+- Actual user export analysis: 3,972 hourly records; 424 commercial records had previously unrecognised nonblank callsign prefixes; 223 had no usable callsign/operator. Residual Unknown is kept rather than invented.
+- All Aerodrome and receiver data remain read-only. No feeder or service configuration changed.
+
+
 ## v1.7.0 — 10 November 2026
 - Sparse traffic charts place year/month/week bars at the left, retaining full-width time scale.
 - No transient corner notifications.

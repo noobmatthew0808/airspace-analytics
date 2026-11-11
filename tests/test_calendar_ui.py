@@ -30,4 +30,22 @@ if((year.match(/data-heat-month=/g)||[]).length!==12)throw Error('Month navigati
         result=subprocess.run(['node','-e',code],capture_output=True,text=True,timeout=10)
         self.assertEqual(result.returncode,0,result.stderr)
 
+    def test_missing_days_are_blank_even_with_zero_padding(self):
+        js=(ROOT/'frontend/calendar.js').as_posix()
+        code=f"""global.window={{}};require({js!r});
+const x=window.AirspaceCalendar.render([
+  {{key:'2026-11-09',value:19,has_data:true}},
+  {{key:'2026-11-10',value:0,has_data:false}},
+  {{key:'2026-11-11',value:0,has_data:false}}
+],{{level:'year',year:2026}});
+const known=(x.match(/calendar-date has-data/g)||[]).length;
+const blank=(x.match(/calendar-date missing/g)||[]).length;
+if(known!==1||blank!==364)throw Error('Missing days shown as activity: '+known+'/'+blank);
+if((x.match(/data-heat-month=/g)||[]).length!==12)throw Error('Year cards are not clickable');
+const month=window.AirspaceCalendar.render([],{{level:'month',year:2026,month:11}});
+if(!month.includes('data-heat-back'))throw Error('Month lacks year-back control');
+"""
+        result=subprocess.run(['node','-e',code],capture_output=True,text=True,timeout=10)
+        self.assertEqual(result.returncode,0,result.stderr)
+
 if __name__=='__main__':unittest.main()

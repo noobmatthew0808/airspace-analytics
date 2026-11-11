@@ -190,3 +190,9 @@ The website no longer shows routine caveat boxes, the About Installation panel, 
 - Airline estimates: the original Aerodrome source remains unchanged. If a callsign is identified later within one continuous flight visit, the initial unknown visit's breakdown attribution is corrected. It does not identify genuinely unknown aircraft.
 - The Settings updater needs no pairing token. Access to the update endpoint is limited to trusted local/Tailscale client ranges with same-origin browser checks. **Anyone who can use the site's update action from that trusted network can request a GitHub update.** Keep the site off the public internet.
 - No transient corner notifications. Action errors remain visible inline where relevant.
+
+### Year calendar and airline codes (v1.8)
+
+The calendar uses `series[].has_data`, not the zero-filled traffic value, to avoid colouring days before Aerodrome started collecting. No-data days have no cell background or border; faint date numbers preserve a readable calendar layout. Tap a year month card to open its daily view, and the year button to return.
+
+Airline labels are inferred from a small, explicit set of ICAO three-letter callsign prefixes. The mapping is deliberately conservative and updated against the [IATA DAQCP airline code list](https://www.iata.org/contentassets/2335b0082f4f41c9941cc5f3428c2698/airline-members.pdf), [IATA airline directory](https://www.iata.org/en/about/members/airline-list/), [ICAO operator list](https://www.icao.int/CORSIA/AeroplaneOperators), [FAA three-letter list](https://www.faa.gov/air_traffic/publications/atpubs/cnt_html/chap3_section_1.html), and carrier/airport airline profiles. Missing/unmatched callsigns are *not* invented.
