@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.9.5 — 11 November 2026
+- On iOS Home Screen web apps, launcher links request full Safari via the iOS 17+ x-safari-http(s) URL scheme (including HTTP local addresses).
+- Leave links unchanged in regular Safari, Android, desktop browsers, and internal Airspace Analytics navigation.
+- Add browser-simulation regression tests for both local and external launcher links.
+- No edits to styles, database, Aerodrome collection, heatmaps, charts, or updater.
+
+
 ## v1.9.4 — 11 November 2026
 - Fix launcher error `$(...).forEach is not a function` by using the multi-element `$$()` selector.
 - Add a regression test for single-element selectors used with Array methods.
