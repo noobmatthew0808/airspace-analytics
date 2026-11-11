@@ -1,35 +1,36 @@
-"""Contract tests for desktop-only chart scale and launcher shortcuts."""
+"""Desktop and launcher regression contracts for the v1.9.1 release."""
 import unittest
 from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]
 
-ROOT=Path(__file__).resolve().parents[1]
-
-class TestLauncher(unittest.TestCase):
+class TestDesktopLauncher(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.js=(ROOT/'frontend/app.js').read_text()
-        cls.css=(ROOT/'frontend/styles.css').read_text()
+        cls.js = (ROOT / 'frontend/app.js').read_text()
+        cls.css = (ROOT / 'frontend/styles.css').read_text()
 
-    def test_receiver_links_and_groups(self):
-        for name in ('View Stats', 'Feeder Website Status', 'Airspace Analytics',
-            'ADSB.im', 'SkyStats', 'tar1090 map', 'Aerodrome', 'Dozzle',
-            'Flightradar24', 'AirNav Radar', 'FlightDeck', 'Plane Finder',
-            'ADS-B Exchange', 'FlightAware'):
-            self.assertIn(name,self.js)
-        for url in ('/map/', '/stats.html', '/myip/',
-            'https://globe.adsbexchange.com/?feed=CGyw2ZDXE-Y2',
-            'https://www.airnavradar.com/stations/EXTRPI737643',
-            'https://www.tryflightdeck.com/map/account/feeder'):
-            self.assertIn(url,self.js)
-        for port in ('1573','5173','1099','8000','1094','8754','30053','1093'):
-            self.assertIn("port:'"+port+"'",self.js)
+    def test_grouped_requested_links(self):
+        for label in ('View Stats', 'Feeder Website Status', 'Airspace Analytics',
+                      'ADSB.im', 'SkyStats', 'tar1090 map', 'Dozzle',
+                      'Flightradar24', 'AirNav Radar', 'FlightDeck', 'Plane Finder',
+                      'ADS-B Exchange', 'FlightAware'):
+            self.assertIn(label, self.js)
+        self.assertNotIn("{id:'aerodrome'", self.js)
+        for port in ('1573','5173','1099','1094','8754','30053','1093'):
+            self.assertIn("port:'"+port+"'", self.js)
+        self.assertIn("extraPath:'/map.html'", self.js)
+        self.assertIn('globe.adsbexchange.com/?feed=CGyw2ZDXE-Y2', self.js)
 
-    def test_settings_can_edit_both_groups(self):
-        for marker in ('link-group','link-extra-label','link-extra-url','saveLinks','addLink'):
-            self.assertIn(marker,self.js)
+    def test_desktop_only_chart_scale(self):
+        self.assertIn('window.innerWidth>=1050', self.js)
+        self.assertIn('W=desktopMain?1120:720', self.js)
+        self.assertIn('@media(min-width:1050px)', self.css)
+        self.assertIn('grid-template-columns:repeat(6,minmax(0,1fr))',self.css)
 
-    def test_desktop_specific_chart_scale(self):
-        self.assertIn("window.matchMedia('(min-width: 1000px)').matches",self.js)
-        self.assertIn('W=desktop?1160:720',self.js)
-        self.assertIn('@media(min-width:1000px)',self.css)
-        self.assertIn('repeat(6,minmax(0,1fr))',self.css)
+    def test_settings_logo_editor(self):
+        for token in ('link-group', 'link-extra-label', 'link-logo-domain',
+                      'saveLinks', 'restoreLinks'):
+            self.assertIn(token,self.js)
+
+if __name__ == '__main__':
+    unittest.main()

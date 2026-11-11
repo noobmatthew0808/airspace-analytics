@@ -267,69 +267,58 @@ body.launcher-mode .content{padding:0;margin:0;max-width:none;min-height:100vh;d
  .heat-legend{margin-top:11px}
 }
 
-/* v1.9 desktop charts keep a useful wide aspect ratio, without touching mobile analytics. */
-@media(min-width:1000px){
- .content{max-width:1560px;padding:14px clamp(16px,2vw,28px) 40px}
- .main-chart-panel{padding:14px 18px}
- .main-chart-head{margin-bottom:7px}
- .main-chart-head h2{font-size:16px}
- .compact-stats{margin:10px 0 12px;padding:7px 0}
- .mini-stat{padding:9px 12px}
- .mini-stat strong{font-size:18px}
- .chart-frame{min-height:0}
- .chart-frame .chart-shell svg{width:100%;height:auto}
+/* v1.9 — compact branded launcher; works independently from Traffic. */
+body.launcher-mode .launcher-screen{width:min(1180px,100%);margin:44px 24px 52px}
+body.launcher-mode .launcher-header{margin-bottom:24px;padding-bottom:16px}
+.launcher-section{margin-bottom:24px}
+.launcher-section h2{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:11px;letter-spacing:.9px;font-weight:730;text-transform:uppercase;margin:0 0 11px}
+.launcher-section h2:after{content:'';height:1px;background:var(--line);flex:1}
+.launcher-section .launcher-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.launcher-card{background:var(--panel);border:1px solid var(--line);border-radius:11px;min-width:0;overflow:hidden;transition:border-color .14s,background .14s}
+.launcher-card:hover,.launcher-card:focus-within{border-color:var(--line2);background:var(--panel2)}
+.launcher-card.launcher-primary{grid-column:auto;border-color:color-mix(in srgb,var(--aqua) 43%,var(--line));background:color-mix(in srgb,var(--aqua) 7%,var(--panel))}
+.launcher-card-main{display:flex;align-items:center;gap:12px;padding:13px;min-width:0;min-height:82px}
+.launcher-card-main:hover .launcher-link-arrow{color:var(--aqua)}
+.launcher-card .launcher-link-text strong{font-size:13px;font-weight:720;letter-spacing:-.1px}
+.launcher-card .launcher-link-text small{font-size:11px}
+.launcher-card .launcher-link-arrow{margin-left:auto;color:var(--dim);flex-shrink:0}
+.launcher-card .launcher-link-icon{width:48px;height:48px;flex:0 0 48px;position:relative;display:grid;place-items:center;border-radius:12px;border:1px solid color-mix(in srgb,currentColor 22%,var(--line));background:color-mix(in srgb,currentColor 8%,var(--panel2));font-weight:800;letter-spacing:-.7px;font-size:15px;isolation:isolate}
+.launcher-card .brand-fallback{line-height:1;text-shadow:0 1px 2px #0002}
+.launcher-link-icon img{width:35px;height:35px;object-fit:contain;position:absolute;z-index:2;inset:6px;image-rendering:auto}
+.launcher-card .brand-aqua{color:var(--aqua)}.launcher-card .brand-teal{color:#5fe9db}.launcher-card .brand-violet{color:#bb9fff}
+.launcher-card .brand-blue{color:#8fb7ff}.launcher-card .brand-amber{color:#ffb64a}.launcher-card .brand-gold{color:#ffc94a}
+.launcher-card .brand-green{color:#49db98}.launcher-card .brand-sky{color:#8fd9ff}.launcher-card .brand-navy{color:#98baf1}
+.launcher-sub-link{margin:0 13px 11px 73px;display:inline-flex;gap:6px;align-items:center;font-size:11px;font-weight:700;border:1px solid var(--line2);border-radius:7px;padding:6px 8px;color:var(--muted);background:var(--panel2)}
+.launcher-sub-link:hover{color:var(--aqua);border-color:var(--aqua)}
+.launcher-card.disabled{opacity:.5}
+.launcher-card.disabled .launcher-card-main{cursor:default}
+.shortcut-extras{margin:9px 0 0;border-top:1px solid var(--line);padding-top:8px}
+.shortcut-extras summary{font-size:11px;color:var(--muted);cursor:pointer;font-weight:650;list-style:revert}
+.shortcut-extras .shortcut-edit-main{margin-top:10px}
+.shortcut-edit-main{grid-template-columns:minmax(130px,1.05fr) minmax(125px,.8fr) minmax(90px,.5fr) minmax(190px,1.8fr) minmax(110px,.65fr)}
+@media(min-width:1050px){
+ /* Traffic: the old 720px SVG was stretching to 1200+px wide and becoming enormous. */
+ .content{width:min(100%,1720px);max-width:none;padding:21px clamp(25px,2.9vw,52px) 50px}
+ .main-chart-panel{padding:15px 19px 11px}
+ .main-chart-panel .chart-shell svg{width:100%;height:auto}
+ .compact-stats{margin:13px 0 10px;padding:9px 0}
+ .pattern-subgrid .panel{padding:14px 16px}
+ .pattern-section{padding:16px}
  .breakdown-grid{gap:10px}
- .breakdown-grid>.panel{padding:14px}
- .pattern-section{padding:14px 17px}
- .calendar-months.year-months{grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
- .calendar-mini{padding:8px}
- .calendar-mini .calendar-grid{gap:2px}
- .calendar-mini .calendar-date,.calendar-mini .calendar-blank{font-size:10px}
- .calendar-month-link{margin-bottom:7px}
- .pattern-subgrid{gap:12px}
- .pattern-subgrid>.panel{padding:14px}
+ .foldout .breakdown-grid{padding:11px}
+ .calendar-months.single-month{margin:0;max-width:415px}
 }
-@media(min-width:1000px) and (max-width:1300px){
- .calendar-months.year-months{grid-template-columns:repeat(4,minmax(0,1fr))}
-}
-/* Grouped launcher cards, using recognisable brand favicons with coloured SVG fallbacks. */
-body.launcher-mode .content{display:block}
-.launcher-screen{width:min(1100px,100%);margin:clamp(22px,5vh,54px) auto 44px;padding:0 18px}
-.launcher-header{margin-bottom:21px;padding-bottom:15px}
-.launcher-group{margin:0 0 24px}
-.launcher-group>h2{font-size:12px;line-height:1.4;font-weight:750;letter-spacing:.025em;color:var(--muted);margin:0 0 10px}
-.launcher-list{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-.launcher-entry{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;transition:border-color .15s,background .15s}
-.launcher-entry:hover{border-color:color-mix(in srgb,var(--aqua) 55%,var(--line));background:var(--panel2)}
-.launcher-entry .launcher-link{border:0;border-radius:0;background:transparent;min-height:66px;padding:12px 13px}
-.launcher-entry .launcher-link:hover{transform:none;background:transparent;border:0}
-.launcher-entry .launcher-link-icon{width:42px;height:42px;overflow:hidden;border-radius:10px;background:var(--panel2)}
-.launcher-entry .launcher-link-text strong{font-size:12px}
-.launcher-entry .launcher-link-text small{font-size:10px}
-.launcher-entry.launcher-primary{grid-column:auto;background:color-mix(in srgb,var(--aqua) 6%,var(--panel));border-color:color-mix(in srgb,var(--aqua) 45%,var(--line))}
-.launcher-secondary{display:flex;align-items:center;justify-content:center;gap:7px;margin:0 12px 10px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;color:var(--aqua);font-size:11px;font-weight:680;background:var(--panel2)}
-.launcher-secondary:hover{background:var(--panel3);border-color:var(--aqua)}
-.service-icon{display:grid;place-items:center;width:100%;height:100%;position:relative;color:var(--aqua)}
-.service-icon>svg{width:25px;height:25px}
-.service-icon>img{position:absolute;inset:0;margin:auto;width:28px;height:28px;object-fit:contain}
-.service-icon.service-airspace>img{width:29px;height:29px}
-.service-flightradar24{background:#ffbd1820;color:#ffd34d}
-.service-airnav{background:#6dab2b20;color:#8cdb3c}
-.service-flightdeck{background:#4d8fed20;color:#96bcff}
-.service-planefinder{background:#7164d020;color:#b1a8ff}
-.service-adsbexchange{background:#2ad77c1f;color:#38db8b}
-.service-flightaware{background:#388fc920;color:#77bde9}
-.service-tar1090{background:#2fd5bd20;color:var(--aqua)}
-.service-skystats{background:#e0a6ff17;color:var(--pink)}
-.service-aerodrome{background:#6b96e825;color:var(--blue)}
-.service-dozzle{background:#f8bd7e18;color:var(--orange)}
-.shortcut-edit-main{grid-template-columns:repeat(3,minmax(0,1fr))}
-@media(min-width:701px) and (max-width:1099px){.launcher-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(min-width:1250px){.calendar-months.year-months{grid-template-columns:repeat(5,minmax(0,1fr));gap:9px}}
+@media(min-width:1650px){.calendar-months.year-months{grid-template-columns:repeat(6,minmax(0,1fr));gap:9px}}
+@media(min-width:720px) and (max-width:1080px){.launcher-section .launcher-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){
- .launcher-screen{margin:26px auto 32px;padding:0 14px}
- .launcher-list{grid-template-columns:1fr;gap:8px}
- .launcher-entry .launcher-link{min-height:61px;padding:10px 11px}
- .launcher-entry .launcher-link-icon{width:39px;height:39px}
+ /* Preserve the existing mobile Traffic styling; only the launcher and its link editor change. */
+ body.launcher-mode .launcher-screen{margin:28px 14px 38px}
+ .launcher-section{margin-bottom:20px}
+ .launcher-section .launcher-list{grid-template-columns:1fr;gap:8px}
+ .launcher-card-main{min-height:66px;padding:10px}
+ .launcher-card .launcher-link-icon{width:43px;height:43px;flex-basis:43px}
+ .launcher-link-icon img{width:32px;height:32px;inset:5px}
+ .launcher-sub-link{margin-left:65px}
  .shortcut-edit-main{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
-@media(max-width:360px){.shortcut-edit-main{grid-template-columns:1fr}}

@@ -7,8 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 class TestRedesignedUI(unittest.TestCase):
     def test_launcher_first_and_separate_route(self):
         js = (ROOT / 'frontend/app.js').read_text()
-        self.assertIn('class="launcher-entry launcher-primary"', js)
-        self.assertIn('class="launcher-link" href="/analytics#explore"', js)
+        self.assertIn("const primaryAnalytics=", js)
+        self.assertIn("primary?'/analytics#explore'", js)
         self.assertIn('class="launcher-list"', js)
         self.assertIn("location.pathname==='/analytics'", js)
         self.assertNotIn('Every aircraft tells', js)

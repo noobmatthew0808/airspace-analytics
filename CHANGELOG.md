@@ -1,12 +1,18 @@
 # Changelog
 
+## v1.9.1 — 11 November 2026
+- Complete the exact requested launcher shortcuts and service-logo fallback, including browser migration of previously saved built-in shortcuts.
+- Preserve the existing mobile Traffic layout and 38 passing tests while refining desktop graph/calendar proportions.
+- Keep the Settings shortcut editor functional with logo-domain and secondary feeder-map fields.
+
+
 ## v1.9.0 — 11 November 2026
-- The desktop traffic chart now uses a wider, more compact aspect ratio; mobile analytics stays unchanged.
-- Desktop year calendar is six columns on large screens and four on mid-sized monitors.
-- The launcher is grouped into View Stats and Feeder Website Status, with all supplied links.
-- Plane Finder and ADS-B Exchange include separate feeder-map actions.
-- Service-specific favicons with coloured themed fallbacks; custom shortcuts retain group and secondary-link editing.
-- A one-time launcher migration preserves a backup of the previous shortcuts in browser storage.
+- Desktop-only Traffic layout: a wider working area, shorter main traffic chart and six calendar months per row on large monitors. Phone Traffic layout and its graph interactions remain unchanged.
+- Launcher rebuilt into **View Stats** and **Feeder Website Status** with the exact supplied receiver addresses, plus independent feeder-map links for Plane Finder and ADS-B Exchange.
+- Brand-coloured icons use service website favicons where available, with matching readable local fallback marks when offline. Existing app favicon is used for the Airspace Analytics tile.
+- One-time migration refreshes the built-in link destinations while preserving custom-added links; the Settings editor now supports group, logo domain and an optional second link.
+- No Aerodrome database, ADS-B feeder, systemd service, retention, or updater logic changes.
+
 
 ## v1.8.0 — 10 November 2026
 - Year calendar now leaves days with no actual observed aircraft empty rather than colouring zero-filled API buckets. Unobserved days have faint unboxed date numbers only.

@@ -165,7 +165,7 @@ MIT — see `LICENSE`.
 
 ## v1.2 compact redesign and update from v1.1
 
-The normal URL `http://<your-host>:8088/` is now a simple **application launcher**. Its first, fixed link is **Airspace Analytics**, which opens `http://<your-host>:8088/analytics#explore` on the same port. The shortcuts are grouped into **View Stats** (Airspace Analytics, ADSB.im :1573, SkyStats :5173, tar1090 :1099/map/, Aerodrome :8000, Dozzle :1094) and **Feeder Website Status** (Flightradar24 :8754, AirNav Radar, FlightDeck, Plane Finder stats and map :30053, ADS-B Exchange status and feeder map, FlightAware :1093). Brand favicons load when online, with coloured local glyphs as fallbacks. Shortcuts can be edited, removed, added and reordered, assigned to groups, and given an optional second URL under **Settings → Launcher links**. The links live in each browser's storage, so changes made on a phone do not automatically appear on a PC.
+The normal URL `http://<your-host>:8088/` is now a simple **application launcher**. Its first, fixed link is **Airspace Analytics**, which opens `http://<your-host>:8088/analytics#explore` on the same port. The other links can be edited, removed, added and reordered under **Settings → Launcher links**. The links live in each browser's storage, so changes made on a phone do not automatically appear on a PC.
 
 The Analytics workspace now exposes Traffic and Patterns at the top, plus Settings with a database explorer link. Traffic displays a single main chart, flexible duration/date controls, metric selector (Visits, Aircraft, Samples), grouping, a click-to-drill zoom with a **Zoom out** button, and collapsible Filters and Breakdowns. No new aircraft collection process or writeable database is created.
 
@@ -196,3 +196,14 @@ The website no longer shows routine caveat boxes, the About Installation panel, 
 The calendar uses `series[].has_data`, not the zero-filled traffic value, to avoid colouring days before Aerodrome started collecting. No-data days have no cell background or border; faint date numbers preserve a readable calendar layout. Tap a year month card to open its daily view, and the year button to return.
 
 Airline labels are inferred from a small, explicit set of ICAO three-letter callsign prefixes. The mapping is deliberately conservative and updated against the [IATA DAQCP airline code list](https://www.iata.org/contentassets/2335b0082f4f41c9941cc5f3428c2698/airline-members.pdf), [IATA airline directory](https://www.iata.org/en/about/members/airline-list/), [ICAO operator list](https://www.icao.int/CORSIA/AeroplaneOperators), [FAA three-letter list](https://www.faa.gov/air_traffic/publications/atpubs/cnt_html/chap3_section_1.html), and carrier/airport airline profiles. Missing/unmatched callsigns are *not* invented.
+
+
+### Desktop layout and launcher shortcuts (v1.9.1)
+
+The launcher at `/` now has two compact sections. **View Stats** links to Airspace Analytics (`/analytics#explore`), ADSB.im (`:1573`), SkyStats (`:5173`), tar1090 (`:1099/map/`) and Dozzle (`:1094`). **Feeder Website Status** links to Flightradar24 (`:8754`), AirNav Radar's station page, FlightDeck's account/feeder page, Plane Finder (`:30053/stats.html`, plus `:30053/map.html`), ADS-B Exchange status (plus feeder-only map), and FlightAware (`:1093`). Relative local ports use the browser's current hostname, so the launcher can be opened by LAN IP or Tailscale name.
+
+On the first page load after updating, saved built-in links are replaced with the newly requested destinations. Other user-created shortcuts are preserved. The launcher editor in Settings supports group assignment, ports, paths, explicit URLs, logo domain, and an optional secondary link. Customizations remain in **that browser's local storage**, not in Aerodrome's database, so edits on PC do not synchronize to the phone.
+
+Site favicons are loaded from Google's public favicon endpoint (with a strict image-only Content Security Policy) and never include private local URLs. If the service's icon cannot be fetched, its colour-coded monogram appears automatically. The local Airspace tile uses this project's own favicon; SkyStats and tar1090 also have distinct labelled fallback tiles.
+
+Only desktop breakpoints (1050px and above) alter Traffic/chart sizing. The mobile Traffic stylesheet and zoom behaviour are not changed.
