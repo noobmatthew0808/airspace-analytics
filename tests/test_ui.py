@@ -62,7 +62,8 @@ class TestV15CompactCharts(unittest.TestCase):
         js=(ROOT/'frontend/app.js').read_text()
         self.assertIn('class="top-nav-link"',js)
         self.assertIn('class="top-icon-link top-settings"',js)
-        self.assertIn('Database explorer',js)
+        self.assertIn('href="/analytics#database"',js)
+        self.assertIn('database-hitbox',js)
         self.assertNotIn('mobile-tabbar" id="mobileTabs"',js)
         self.assertNotIn("['aircraft','Aircraft'",js[js.index('const pages='):js.index('const names=')])
 

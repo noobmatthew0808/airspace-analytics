@@ -815,25 +815,47 @@ def compare(args: dict[str,str]) -> dict:
         'interpretation':'Comparison periods may have different data availability; below 50% historical minute-sample coverage, a percentage change is not shown.'}
 
 
+def excluded_dates_from_args(raw: str) -> frozenset[str]:
+    """Validate browser-only presentation overrides; never modify Aerodrome."""
+    if not raw:
+        return frozenset()
+    pieces = raw.split(',')
+    if len(pieces) > 64:
+        raise DataError('Too many excluded dates (maximum 64)')
+    dates = set()
+    for value in pieces:
+        if len(value) != 10:
+            raise DataError('Invalid excluded date')
+        try:
+            parsed = datetime.strptime(value, '%Y-%m-%d')
+        except ValueError as exc:
+            raise DataError('Invalid excluded date') from exc
+        if parsed.strftime('%Y-%m-%d') != value:
+            raise DataError('Invalid excluded date')
+        dates.add(value)
+    return frozenset(dates)
+
+
 def patterns(args:dict[str,str]) -> dict:
     start,end,preset=resolve_period(args)
     metric=args.get('metric','flights')
     if metric not in ('flights','aircraft','observations'): raise DataError('Invalid measurement')
     filters=validate_filters(args)
-    key=('patterns',start//60,end//60,metric,tuple(sorted(filters.items())))
+    excluded=excluded_dates_from_args(args.get('exclude_days',''))
+    key=('patterns',start//60,end//60,metric,tuple(sorted(filters.items())),tuple(sorted(excluded)))
     cached=_take_cached(key)
     if cached:return cached
     if not _DB_SEM.acquire(timeout=0.2):
         raise DataError('An analysis is already running. Please try again shortly.')
     try:
-        result=_patterns_uncached(start,end,metric,filters)
+        result=_patterns_uncached(start,end,metric,filters,excluded)
         _put_cached(key,result)
         return result
     finally:
         _DB_SEM.release()
 
 
-def _patterns_uncached(start,end,metric,flt):
+def _patterns_uncached(start,end,metric,flt,excluded_dates=frozenset()):
     from_hour=(start//3600)*3600
     until_hour=((end-1)//3600)*3600+3600
     w=['h.hour_bucket >= ?','h.hour_bucket < ?']
@@ -897,13 +919,13 @@ def _patterns_uncached(start,end,metric,flt):
         d['flights']+=x['flights']
         d['aircraft'].update(x['aircraft'])
         wd=local.weekday(); hour=local.hour
-        if recorded_occurrence_eligible(bucket_id(ts,'hour'),'hour',start,end,minute_hours):
+        if day not in excluded_dates and recorded_occurrence_eligible(bucket_id(ts,'hour'),'hour',start,end,minute_hours):
             cell[(wd,hour)].append(_metric(x,metric))
             hour_by[hour].append(_metric(x,metric))
     weekday_names=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
     by_wd=defaultdict(list)
     for date_string, unit in days.items():
-        if not recorded_occurrence_eligible(date_string,'day',start,end,minute_hours):
+        if date_string in excluded_dates or not recorded_occurrence_eligible(date_string,'day',start,end,minute_hours):
             continue
         wd=datetime.strptime(date_string,'%Y-%m-%d').weekday()
         by_wd[wd].append(_metric(unit,metric))

@@ -25,6 +25,45 @@ if(!['rolling','custom','all'].includes(state.period)){
 function readPrefs(){try {return JSON.parse(localStorage.getItem(key))||{}}catch{return {}}}
 function persist(){localStorage.setItem(key,JSON.stringify(state))}
 const savedViewsKey='airspace-analytics-views-v1';
+const exclusionKey='airspace-analytics-excluded-average-days';
+function excludedAverageDays(){
+ try{
+  const stored=localStorage.getItem(exclusionKey);
+  if(stored===null)return ['2026-11-09'];
+  const list=JSON.parse(stored);
+  return Array.isArray(list)?[...new Set(list.filter(s=>typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s)))].sort().slice(0,64):[];
+ }catch{return ['2026-11-09']}
+}
+function setExcludedAverageDays(days){localStorage.setItem(exclusionKey,JSON.stringify([...new Set(days)].sort().slice(0,64)))}
+let launcherEditorExpanded=false;
+let followingToday=false;
+function ukToday(){return new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/London'})}
+function tomorrowUK(day){const noon=new Date(day+'T12:00:00Z');noon.setUTCDate(noon.getUTCDate()+1);return noon.toISOString().slice(0,10)}
+function setTodayWindow(){
+ const day=ukToday();followingToday=true;zoomHistory.length=0;
+ Object.assign(state,{period:'custom',bucket:'hour',start:day+'T00:00',end:tomorrowUK(day)+'T00:00',filtersEnabled:false,category:'all',type:'all',airline:'all',icao:'all'});
+ persist();
+}
+function todayChartSeries(analysis){
+ if(!followingToday||analysis.bucket!=='hour')return analysis.series;
+ const day=ukToday(),items=new Map(analysis.series.map(x=>[String(x.key),x]));
+ const start=Date.parse(day+'T00:00:00Z')-3600000;
+ const ukDate=ts=>new Date(ts).toLocaleDateString('sv-SE',{timeZone:'Europe/London'});
+ const ukHour=ts=>new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',hour:'2-digit',hourCycle:'h23'}).format(new Date(ts));
+ const out=[];
+ for(let h=0;h<28;h++){
+  const ts=start+h*3600000;
+  if(ukDate(ts)!==day)continue;
+  const key=new Date(ts).toISOString().slice(0,16)+'Z';
+  out.push(items.get(key)||{key,label:ukHour(ts)+':00',value:null,has_data:false,samples:0});
+ }
+ return out;
+}
+function checkTodayRollover(){
+ if(!followingToday||currentPage!=='explore'||state.start.slice(0,10)===ukToday())return;
+ setTodayWindow();renderExplore();
+}
+
 // A previously paired browser stays paired across reloads without showing a
 // password box each time. The updater's server-side token check remains active.
 // Built-in launcher entries are deliberately independent of the analytics UI.
@@ -122,7 +161,8 @@ if(state.filtersEnabled===undefined)state.filtersEnabled=false;
 if(!['year','month'].includes(state.heatScope))state.heatScope='year';
 
 function setTheme(theme){document.documentElement.dataset.theme=theme||'dark';state.theme=theme;persist()}
-setTheme(state.theme);
+setTheme('dark');
+setTodayWindow();
 
 function shell(){
  $('#app').innerHTML=`<div class="overlay" id="overlay"></div><div class="layout">
@@ -207,7 +247,6 @@ function initialDates(){
 function controls(extra=false){
  const mode=rangeMode(),[fallbackStart,fallbackEnd]=initialDates();
  return `<div class="control-card compact-controls">
-  <div class="metric-toolbar"><div class="metric-toolbar-left">${metrics()}</div></div>
   <div class="range-layout">
    <div class="range-picker" role="group" aria-label="Time period">
     <button class="range-choice ${mode==='rolling'?'selected':''}" type="button" data-range-mode="rolling">Last</button>
@@ -358,6 +397,7 @@ function hookChart(container,series,group,drill=true){if(!container||!series)ret
 }
 function ukDatetime(iso){const d=new Date(iso);return d.toLocaleString('sv-SE',{timeZone:'Europe/London'}).replace(' ','T').slice(0,16)}
 function drillInto(point,group){
+ followingToday=false;
  const key=point.key;let from,to,next;
  if(group==='year'){from=`${key}-01-01T00:00`;to=`${(+key+1)}-01-01T00:00`;next='month'}
  else if(group==='month'){const [y,m]=key.split('-').map(Number);from=`${key}-01T00:00`;to=m===12?`${y+1}-01-01T00:00`:`${y}-${String(m+1).padStart(2,'0')}-01T00:00`;next='week'}
@@ -385,7 +425,7 @@ function summaryFor(a){const unit={flights:'estimated visits',aircraft:'unique a
  return `<div class="summary-row"><div class="summary-item"><span>Period total</span><strong>${fmt(a.total)}</strong></div><div class="summary-item"><span>${a.aggregation_label}</span><strong>${fmt(a.average,2)}</strong></div><div class="summary-item"><span>Highest bucket</span><strong>${fmt(a.peak,2)}</strong></div><div class="summary-item"><span>Distinct aircraft</span><strong>${fmt(a.unique_aircraft)}</strong></div></div>`;
 }
 // Simple progressive timeline: all years → months → weeks → days → hours.
-function resetTimeline(){delete state.heatYear;delete state.heatMonth;zoomHistory.length=0;Object.assign(state,{period:'all',bucket:'year',start:'',end:'',amount:7,unit:'days',metric:'flights',category:'all',type:'all',airline:'all',icao:'all'});persist();}
+function resetTimeline(){followingToday=false;delete state.heatYear;delete state.heatMonth;zoomHistory.length=0;Object.assign(state,{period:'all',bucket:'year',start:'',end:'',amount:7,unit:'days',category:'all',type:'all',airline:'all',icao:'all'});persist();}
 function periodHeading(data){
  const localDate=d=>new Date(String(d).slice(0,10)+'T12:00:00Z');
  const locale=(d,o)=>localDate(d).toLocaleDateString('en-GB',o);
@@ -401,12 +441,13 @@ function periodHeading(data){
  return from===end?from:`${from} – ${end}`;
 }
 function applyFilterState(){
- if(!state.filtersEnabled)Object.assign(state,{metric:'flights',category:'all',type:'all',airline:'all',icao:'all'});
+ if(!state.filtersEnabled)Object.assign(state,{category:'all',type:'all',airline:'all',icao:'all'});
 }
 function drawCurrentChart(){
  if(!currentAnalytics)return;
- $('#exploreChart').innerHTML=renderChart(currentAnalytics.series,state.chart||'bar',{everyHour:currentAnalytics.bucket==='hour',axisGroup:currentAnalytics.bucket});
- hookChart($('#exploreChart'),currentAnalytics.series,currentAnalytics.bucket);
+ const visibleSeries=todayChartSeries(currentAnalytics);
+ $('#exploreChart').innerHTML=renderChart(visibleSeries,state.chart||'bar',{everyHour:currentAnalytics.bucket==='hour',axisGroup:currentAnalytics.bucket});
+ hookChart($('#exploreChart'),visibleSeries,currentAnalytics.bucket);
  $$('#lineSwitch,#barSwitch').forEach(b=>b.classList.toggle('selected',b.id===(state.chart==='line'?'lineSwitch':'barSwitch')));
 }
 function latestSelection(a,scope){
@@ -430,10 +471,10 @@ function latestSelection(a,scope){
 let patternsRequestId=0;
 async function fillPatterns(rid,a){
  const run=++patternsRequestId;
- const metric=state.filtersEnabled?state.metric:'flights';
+ const metric=state.metric;
  const filters={metric,category:state.filtersEnabled?state.category:'all',type:state.filtersEnabled?state.type:'all',airline:state.filtersEnabled?state.airline:'all',icao:state.filtersEnabled?state.icao:'all'};
  const renderStats=async()=>{
-   const all=await api('/api/patterns',{...filters,period:'all'});
+   const all=await api('/api/patterns',{...filters,period:'all',exclude_days:excludedAverageDays().join(',')});
    if(rid!==renderId||run!==patternsRequestId)return;
    $('#weekdayPattern').innerHTML=renderWeekBars(all.weekday,true);
    $('#hourPattern').innerHTML=renderChart(all.hourly,'bar',{height:230,everyHour:true,axisGroup:'hour_of_day'});
@@ -481,7 +522,7 @@ async function fillPatterns(rid,a){
 }
 
 async function renderExplore(){const rid=++renderId;currentAnalytics=null;applyFilterState();
- $('#page').innerHTML=title('','Traffic')+`
+ $('#page').innerHTML=`<div class="traffic-page-title">${title('','Traffic')}${metrics()}</div>`+`
  <details class="foldout traffic-filter-panel" id="trafficFilterPanel"><summary><span>${icon('layers',17)} Traffic filters <small id="filterModeLabel">${state.filtersEnabled?'On':'Off'}</small></span>${icon('chevron',17)}</summary>
   <div class="traffic-filter-actions"><button class="btn small ${state.filtersEnabled?'primary':''}" id="filtersToggle" type="button">Filters ${state.filtersEnabled?'on':'off'}</button><button class="btn small" id="filtersReset" type="button">Reset</button></div>
   <div class="${state.filtersEnabled?'':'filters-disabled'}" id="filtersBody">${controls(false)}</div>
@@ -495,12 +536,13 @@ async function renderExplore(){const rid=++renderId;currentAnalytics=null;applyF
  <div class="grid-three breakdown-grid"><div class="panel"><h3 class="panel-title">Aviation category</h3><div id="categoryDonut">${loading()}</div></div><div class="panel"><h3 class="panel-title">Aircraft types</h3><div id="typeBars">${loading()}</div></div><div class="panel"><select id="operatorScope" class="breakdown-scope" aria-label="Operator breakdown">${opts([['airline','Airlines · commercial'],['operator','Operators · all']],state.operatorScope||'airline')}</select><div id="airlineBars">${loading()}</div></div></div></details>
  <div class="panel pattern-section"><div class="panel-top"><h3 class="panel-title">Activity calendar</h3></div><div id="heatmapRange" class="muted tiny"></div><div id="heatmap">${loading()}</div></div>
  <div class="pattern-subgrid"><div class="panel"><h3 class="panel-title">Average by weekday <small class="muted">· all time</small></h3><div id="weekdayPattern">${loading()}</div></div><div class="panel"><h3 class="panel-title">Average by hour <small class="muted">· all time</small></h3><div id="hourPattern">${loading()}</div></div></div>`;
- initControls(()=>{if(state.filtersEnabled){zoomHistory.length=0;renderExplore()}},false);populateFilters();
- $('#filtersToggle').onclick=()=>{state.filtersEnabled=!state.filtersEnabled;if(!state.filtersEnabled)resetTimeline();persist();renderExplore();};
+ initControls(()=>{if(state.filtersEnabled){followingToday=false;zoomHistory.length=0;renderExplore()}},false);populateFilters();
+ $$('[data-metric]').forEach(b=>b.onclick=()=>{state.metric=b.dataset.metric;persist();renderExplore()});
+ $('#filtersToggle').onclick=()=>{followingToday=false;state.filtersEnabled=!state.filtersEnabled;if(!state.filtersEnabled)resetTimeline();persist();renderExplore();};
  $('#filtersReset').onclick=()=>{state.filtersEnabled=false;resetTimeline();renderExplore()};
  $('#lineSwitch').onclick=()=>{state.chart='line';persist();drawCurrentChart()};
  $('#barSwitch').onclick=()=>{state.chart='bar';persist();drawCurrentChart()};
- $('#zoomBack').onclick=()=>{const prev=zoomHistory.pop();if(prev){Object.assign(state,prev);persist();renderExplore()}};
+ $('#zoomBack').onclick=()=>{followingToday=false;const prev=zoomHistory.pop();if(prev){Object.assign(state,prev);persist();renderExplore()}};
  $('#zoomReset').onclick=()=>{resetTimeline();renderExplore()};
  try{
   const a=await api('/api/analytics',queryArgs());if(rid!==renderId)return;
@@ -509,7 +551,7 @@ async function renderExplore(){const rid=++renderId;currentAnalytics=null;applyF
   $('#chartLabel').textContent={flights:'Estimated flight visits',aircraft:'Unique aircraft',observations:'Recorded observations'}[a.metric];
   $('#chartPeriod').textContent=periodHeading(a);
   $('#chartMeta').textContent=`Grouped by ${a.bucket==='hour'?'hour':a.bucket==='day'?'day':a.bucket==='week'?'week':a.bucket==='month'?'month':'year'}`;
-  $('#pointCount').textContent=`${a.series.length} intervals`;
+  $('#pointCount').textContent=`${todayChartSeries(a).length} intervals`;
   drawCurrentChart();
   function showBreakdowns(){
    const pie=state.typeViz==='pie';
@@ -661,6 +703,11 @@ function collectSettingsLinks(){const original=getLinks();return $$('[data-linki
  if(logoDomain&&!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(logoDomain))throw Error('Logo domain should look like flightaware.com');
  return {...original[idx],name:$('.link-name',el).value.trim().slice(0,50)||'New link',group:$('.link-group',el).value,sub:original[idx]?.sub||'Application shortcut',port,path,url,logoDomain,extraLabel:$('.link-extra-label',el).value.trim().slice(0,32),extraPort,extraUrl,extraPath:$('.link-extra-path',el).value.trim()||'/',icon:original[idx]?.icon||'external'};
 })}
+function averageExclusionSettings(){
+ const days=excludedAverageDays();
+ const list=days.map(day=>`<div class="setting-actions excluded-day-row"><span>${esc(day)}</span><button class="btn small" type="button" data-include-day="${esc(day)}">Include again</button></div>`).join('')||'<span class="muted">All recorded dates are included.</span>';
+ return `<details class="foldout" id="excludedDaysEditor"><summary>${days.length} excluded date(s)</summary><div class="setting-actions"><input id="excludeDate" type="date" value="2026-11-09" aria-label="Date to exclude"><button class="btn" id="addExcludedDay" type="button">Exclude</button></div><div id="excludedDaysList">${list}</div><small class="muted">Affects weekday/hour averages in this browser only. Aerodrome data stays unchanged.</small></details>`;
+}
 function updateBox(){return `<div class="auth-box">
   <div class="status-row" style="margin-bottom:9px"><i class="dot" id="updateDot"></i><strong id="updateHeading">Checking GitHub…</strong></div>
   <div class="tiny muted break-word" id="updateDetails"></div>
@@ -669,14 +716,15 @@ function updateBox(){return `<div class="auth-box">
  </div>`}
 async function renderSettings(){const rid=++renderId;
  $('#page').innerHTML=title('','Settings')+
- `<div class="panel">${settingsRow('Appearance','Choose a theme and your preferred default measurement.',
-   `<div class="settings-entry">${field('Colour theme',`<select id="settingTheme">${opts([['dark','Dark / midnight'],['light','Light / cloud']],state.theme)}</select>`)}${field('Default measurement',`<select id="settingMetric">${opts([['flights','Estimated flights'],['aircraft','Unique aircraft'],['observations','Observations']],state.metric)}</select>`)}</div><button class="btn primary" id="saveAppearance" style="margin-top:13px">Save preferences</button>`)}
- ${settingsRow('Launcher links','The Analytics link always comes first. Add, remove and reorder the other links.',settingsLinks())}
+ `<div class="panel">
+ ${settingsRow('Launcher links','',`<details class="foldout" id="launcherEditor" ${launcherEditorExpanded?'open':''}><summary>Manage launcher links</summary>${settingsLinks()}</details>`)}
+ ${settingsRow('Excluded days from averages','',averageExclusionSettings())}
  ${settingsRow('GitHub updates','',updateBox())}
-  ${settingsRow('Aerodrome database','',`<div id="databaseInfo">${loading()}</div>`)}
-  ${settingsRow('Database explorer','',`<a class="btn primary" href="/analytics#database">${icon('database',16)} Open database →</a>`)}
+  ${settingsRow('Aerodrome database','',`<a id="databaseInfo" class="database-hitbox" href="/analytics#database" title="Open database" aria-label="Browse database">${loading()}</a>`)}
  </div>`;
- $('#saveAppearance').onclick=()=>{setTheme($('#settingTheme').value);state.metric=$('#settingMetric').value;persist();toast('Preferences saved')};
+ $('#launcherEditor').ontoggle=()=>{launcherEditorExpanded=$('#launcherEditor').open};
+ $('#addExcludedDay').onclick=()=>{const day=$('#excludeDate').value;if(!day)return;setExcludedAverageDays([...excludedAverageDays(),day]);renderSettings()};
+ $$('[data-include-day]').forEach(b=>b.onclick=()=>{setExcludedAverageDays(excludedAverageDays().filter(day=>day!==b.dataset.includeDay));renderSettings()});
  function saveLinks(){try{putLinks(collectSettingsLinks());toast('Launcher links saved');return true}catch(e){toast('Invalid link',e.message,true);return false}}
  $('#saveLinks').onclick=()=>saveLinks();
  $('#addLink').onclick=()=>{if(!saveLinks())return;const xs=getLinks();xs.push({name:'New link',group:'stats',sub:'Application shortcut',port:'',path:'/',url:'',icon:'external'});putLinks(xs);renderSettings()};
@@ -721,9 +769,10 @@ async function loadPage(){const fallback=location.pathname==='/analytics'?'explo
  $$('.top-nav-link,.top-settings').forEach(el=>el.classList.toggle('active',el.dataset.page===currentPage||(currentPage==='database'&&el.dataset.page==='settings')));
  $('#topTitle').textContent=names[currentPage];setMenu(false);
  window.scrollTo({top:0,behavior:'instant'});
+ if(currentPage==='explore'&&followingToday&&state.start.slice(0,10)!==ukToday())setTodayWindow();
  const routes={home:renderHome,explore:renderExplore,database:renderDatabase,settings:renderSettings};
  try{await routes[currentPage]()}catch(e){$('#page').innerHTML=safeError(e)}
 }
 async function refreshStatus(){try{const h=await api('/api/health');setStatus(h)}catch{setStatus(null)}}
-function boot(){shell();window.addEventListener('hashchange',loadPage);loadPage();refreshStatus();api('/api/config').then(d=>$$('.versionValue').forEach(x=>x.textContent='v'+d.version)).catch(()=>{});activeTimer=setInterval(refreshStatus,60000)}
+function boot(){shell();window.addEventListener('hashchange',loadPage);loadPage();refreshStatus();api('/api/config').then(d=>$$('.versionValue').forEach(x=>x.textContent='v'+d.version)).catch(()=>{});activeTimer=setInterval(()=>{refreshStatus();checkTodayRollover()},60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkTodayRollover()})}
 boot();

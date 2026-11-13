@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.9.7 — 13 November 2026
+- Default Traffic to today's Europe/London calendar day with its full hourly x-axis, without changing zoom or saved aircraft history. Roll to the next date at midnight and on tab return.
+- Offer Visits, Aircraft and Samples as live buttons beside the Traffic heading; keep dark theme only.
+- Exclude 9 November 2026 from all-time weekday/hour averages by default. Add/remove other excluded days in Settings. This browser-only preference never changes Aerodrome's SQLite data or the main graph.
+- Keep launcher link management collapsed until selected. Make the existing Aerodrome database details panel an invisible link to the database explorer.
+- Preserve current service launcher, charts, date heatmap, database browsing, and updater logic; add new regression tests.
+
+
 ## v1.9.6 — 11 November 2026
 - Roll back v1.9.5's unsupported Safari deep-link scheme after iOS reported invalid addresses.
 - Restore the exact working v1.9.4 launcher: normal HTTP(S) links and prior browser behaviour.

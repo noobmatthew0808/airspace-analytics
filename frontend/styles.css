@@ -326,3 +326,20 @@ body.launcher-mode .launcher-header{margin-bottom:24px;padding-bottom:16px}
 /* v1.9.3 — fit original service artwork without cropping or fallback text overlap. */
 .launcher-link-icon img{inset:5px;width:calc(100% - 10px);height:calc(100% - 10px);max-width:calc(100% - 10px);max-height:calc(100% - 10px);object-fit:contain;object-position:center}
 .launcher-link-icon.has-logo .brand-fallback{visibility:hidden}
+
+/* v1.9.7: compact Traffic metrics, no changes to chart/launcher geometry. */
+.traffic-page-title{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+.traffic-page-title .page-heading{margin:0}
+.traffic-page-title .segmented{display:inline-flex;gap:3px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:3px;flex-wrap:nowrap}
+.traffic-page-title .segmented button{font-size:11px;font-weight:650;padding:8px 12px;white-space:nowrap}
+.traffic-page-title .segmented button.on{background:var(--aqua);color:var(--bg);border-radius:6px}
+.database-hitbox,.database-hitbox:visited{display:block;color:inherit;text-decoration:none;cursor:pointer}
+.database-hitbox:hover .detail-grid{border-color:var(--aqua)}
+.database-hitbox:focus-visible{outline:2px solid var(--aqua);outline-offset:3px;border-radius:6px}
+.excluded-day-row{justify-content:space-between;margin:7px 0}
+#excludedDaysEditor>summary,#launcherEditor>summary{padding:12px 14px}
+#excludedDaysEditor>.setting-actions,#excludedDaysEditor>#excludedDaysList,#excludedDaysEditor>small{margin:12px 14px}
+@media(max-width:700px){
+ .traffic-page-title .segmented{width:auto;max-width:100%}
+ .traffic-page-title .segmented button{padding:7px 9px;font-size:10px}
+}
