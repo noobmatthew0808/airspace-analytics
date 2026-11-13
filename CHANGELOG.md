@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.9.8 — 13 November 2026
+- Make launcher management a compact list with individually expandable shortcut editors; keep Save, Remove, Reorder, Add and Restore Defaults.
+- Leave the v1.9.7 daily Traffic default, automatic midnight rollover, measure buttons, all-time average exclusions, database navigation and dark theme unchanged.
+- Add regression tests for editor rendering and existing controls. No Aerodrome or feeder changes.
+
+
 ## v1.9.7 — 13 November 2026
 - Default Traffic to today's Europe/London calendar day with its full hourly x-axis, without changing zoom or saved aircraft history. Roll to the next date at midnight and on tab return.
 - Offer Visits, Aircraft and Samples as live buttons beside the Traffic heading; keep dark theme only.

@@ -343,3 +343,16 @@ body.launcher-mode .launcher-header{margin-bottom:24px;padding-bottom:16px}
  .traffic-page-title .segmented{width:auto;max-width:100%}
  .traffic-page-title .segmented button{padding:7px 9px;font-size:10px}
 }
+
+/* v1.9.8: compact single-shortcut editor, no Traffic layout changes. */
+.shortcut-edit-row{padding:0;overflow:hidden}
+.shortcut-edit-summary{display:flex;align-items:center;gap:12px;min-height:42px;padding:10px 13px;cursor:pointer;list-style:none;user-select:none}
+.shortcut-edit-summary::-webkit-details-marker{display:none}
+.shortcut-edit-summary .shortcut-edit-name{font-size:12px;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.shortcut-edit-summary small{font-size:10px}
+.shortcut-edit-summary svg{transition:transform .15s ease}
+.shortcut-edit-row[open]>.shortcut-edit-summary svg{transform:rotate(90deg)}
+.shortcut-edit-row[open]>.shortcut-edit-main,.shortcut-edit-row[open]>.shortcut-extras,.shortcut-edit-row[open]>.shortcut-edit-actions{margin:0 12px}
+.shortcut-edit-row[open]>.shortcut-edit-main{padding:11px 0 0;border-top:1px solid var(--line)}
+.shortcut-edit-row[open]>.shortcut-edit-actions{padding-bottom:12px}
+@media(max-width:700px){.shortcut-edit-summary{min-height:46px;padding:11px 12px}}
