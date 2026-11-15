@@ -86,6 +86,19 @@ class AerodromeFallbackTests(unittest.TestCase):
         self.assertEqual(again['aircraft'],[])
         self.assertEqual(self.get.call_count,5)  # one full localhost attempt, then DB cache
 
+    def test_recent_aircraft_count_does_not_flicker_to_zero(self):
+        self.sighting('abc123')
+        self.sighting('def456')
+        first,lat,lon=alerts.read_receiver()
+        self.assertEqual(first['recent_aircraft_count'],2)
+        self.assertEqual(len(first['aircraft']),2)
+        alerts.process_snapshot(first,lat,lon)
+        second,lat,lon=alerts.read_receiver()
+        self.assertEqual(len(second['aircraft']),0)
+        self.assertEqual(second['recent_aircraft_count'],2)
+        alerts.process_snapshot(second,lat,lon)
+        self.assertEqual(alerts.snapshot()['receiver']['aircraft'],2)
+
     def test_one_real_observation_is_not_two_exits(self):
         alerts.save_rule({'field':'type','pattern':'A388','max_km':20})
         self.sighting()
