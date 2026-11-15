@@ -99,8 +99,8 @@ def validate_rule(data):
     else:
         parts = [v.strip() for v in pattern.split(',')]
         allowed = r'[A-Z0-9*?\- ]{1,60}' if field == 'operator' else r'[A-Z0-9*?\-]{1,16}'
-        if not parts or len(parts) > 20 or any(not re.fullmatch(allowed, x) for x in parts):
-            raise ValueError('Enter up to 20 values separated by commas (letters, numbers, * or ?)')
+        if not parts or len(parts) > 100 or any(not re.fullmatch(allowed, x) for x in parts):
+            raise ValueError('Enter up to 100 values separated by commas (letters, numbers, * or ?)')
         pattern = ','.join(parts)
     label = str(data.get('label', '')).strip()
     if not label: label = pattern if field != 'military' else 'Military'
@@ -375,7 +375,8 @@ def process_snapshot(payload, receiver_lat, receiver_lon, now=None):
         for key,old in current.items():
             if key not in seen and now - old['last_seen'] >= LOST_SECONDS:
                 c.execute('DELETE FROM occupancy WHERE rule_id=? AND hex=?',key)
-        _last_sample.update(time=now, aircraft=len(aircraft), error=None,lat=receiver_lat,lon=receiver_lon)
+        _last_sample.update(time=now, aircraft=payload.get('recent_aircraft_count',len(aircraft)),
+                            error=None,lat=receiver_lat,lon=receiver_lon)
 
 
 class _NoReceiverRedirect(HTTPRedirectHandler):
@@ -412,9 +413,9 @@ def _aerodrome_snapshot(lat, lon, consume=True):
         ).fetchall()
     newest_id=int(rows[0]['id']) if rows else 0
     flights={}
+    recent_hex=set()
     for row in rows:
         rid=int(row['id'])
-        if consume and rid<=_aerodrome_cursor: break
         try: observed=float(row['seen_at'])
         except (ValueError,TypeError): continue
         age=now-observed
@@ -422,6 +423,9 @@ def _aerodrome_snapshot(lat, lon, consume=True):
         if age< -5: continue
         hexcode=str(row['icao'] or '').lower()
         if not re.fullmatch(r'[0-9a-f]{6}',hexcode):continue
+        # Count all fresh aircraft, even rows already consumed by alert matching.
+        recent_hex.add(hexcode)
+        if consume and rid<=_aerodrome_cursor:continue
         plane=flights.setdefault(hexcode,{'hex':hexcode,'seen':max(0,age)})
         # Take newest available identity, while retaining a newer sample's
         # observed position and altitude, and keeping missing values unknown.
@@ -443,7 +447,8 @@ def _aerodrome_snapshot(lat, lon, consume=True):
             except (ValueError,TypeError):pass
     if consume:_aerodrome_cursor=max(_aerodrome_cursor,newest_id)
     for plane in flights.values():plane.pop('_alt_set',None)
-    return {'now':now,'aircraft':list(flights.values())},lat,lon
+    return {'now':now,'aircraft':list(flights.values()),
+            'recent_aircraft_count':len(recent_hex)},lat,lon
 
 
 def read_receiver(consume=True):

@@ -79,6 +79,24 @@ class AlertsTest(unittest.TestCase):
         result=alerts.snapshot()
         self.assertTrue(result['ntfy']['token_set'])
         self.assertNotIn('tok-secret',json.dumps(result))
+    def test_31_registration_values_in_one_rule(self):
+        registrations = [f'G-EX{i:04d}' for i in range(31)]
+        saved = alerts.validate_rule({'label':'Previously flown', 'field':'registration',
+                                      'pattern':','.join(registrations),
+                                      'max_km':5,'max_ft':10000})
+        self.assertEqual(len(saved['pattern'].split(',')),31)
+        alerts.save_rule(saved)
+        target=plane('abc123',reg=registrations[-1],lon=.01,alt=8000)
+        alerts.process_snapshot({'aircraft':[target]},50,0,now=100)
+        self.assertEqual(len(alerts.snapshot()['events']),1)
+        self.assertEqual(alerts.snapshot()['events'][0]['registration'],registrations[-1])
+
+    def test_pattern_limit_100_and_reject_101(self):
+        valid = ','.join(f'G-A{i:03d}' for i in range(100))
+        self.assertEqual(len(alerts.validate_rule({'label':'Group of 100','field':'registration','pattern':valid})['pattern'].split(',')),100)
+        with self.assertRaisesRegex(ValueError,'up to 100'):
+            alerts.validate_rule({'label':'Group of 101','field':'registration','pattern':valid+',G-XTRA'})
+
     def test_invalid_rules(self):
         for value in ({'field':'zip','pattern':'A388'}, {'field':'type','pattern':'&bad'},
                       {'field':'type','pattern':'A388','min_ft':10000,'max_ft':5000},
