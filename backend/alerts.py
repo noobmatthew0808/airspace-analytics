@@ -80,14 +80,14 @@ def connect():
         conn.close()
 
 
-def _number(v, lower, upper, name, integer=False):
+def _number(v, lower, upper, name, integer=False, digits=2):
     if v is None or v == '': return None
     try:
         x = float(v)
         if not math.isfinite(x) or x < lower or x > upper: raise ValueError()
     except (TypeError, ValueError):
         raise ValueError(f'{name} must be between {lower:g} and {upper:g}')
-    return int(x) if integer else round(x, 2)
+    return int(x) if integer else round(x, digits)
 
 
 def validate_rule(data):
@@ -234,8 +234,8 @@ def save_receiver(data):
     raw_lat,raw_lon=data.get('lat'),data.get('lon')
     if (raw_lat in ('',None)) != (raw_lon in ('',None)):
         raise ValueError('Enter both antenna latitude and longitude, or leave both blank')
-    lat=_number(raw_lat,-90,90,'Latitude')
-    lon=_number(raw_lon,-180,180,'Longitude')
+    lat=_number(raw_lat,-90,90,'Latitude',digits=7)
+    lon=_number(raw_lon,-180,180,'Longitude',digits=7)
     with _lock, connect() as c:
         for key,value in (('receiver_url',url),('receiver_lat',str(lat) if lat is not None else ''),
                           ('receiver_lon',str(lon) if lon is not None else '')):

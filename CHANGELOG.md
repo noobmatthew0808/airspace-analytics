@@ -4,6 +4,7 @@
 - If live HTTP isn't reachable, read only newly recorded sightings from Aerodrome's existing SQLite history; calculate position/altitude conditions using antenna coordinates saved locally in Alerts.
 - Never copy aircraft history or write to Aerodrome; limit the recent-sightings query to 2,500 newest rows and ignore stale observations.
 - Track processed row IDs to prevent a single recorded outside-position from counting as multiple exits. The connection-test action never consumes an observation.
+- Preserve seven decimal places when saving antenna latitude and longitude (previously rounded to two, introducing up to hundreds of metres of distance error).
 - Remove Beluga/A380/Boeing 747/A340 shortcut buttons; all aircraft types are still configurable with Add rule.
 - Keep Traffic, heatmaps, settings, ntfy delivery, chart zoom and updater unchanged.
 

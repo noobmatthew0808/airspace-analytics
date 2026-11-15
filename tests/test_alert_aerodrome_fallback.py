@@ -66,6 +66,14 @@ class AerodromeFallbackTests(unittest.TestCase):
         with sqlite3.connect(self.db_path) as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM all_sightings').fetchone()[0],1)
 
+    def test_gps_coordinates_keep_precision_without_being_hardcoded(self):
+        # Fictional coordinates; private antenna location never belongs in Git.
+        alerts.save_receiver({'lat':'51.123456789','lon':'-0.987654321'})
+        cfg=alerts.snapshot()['receiver_settings']
+        self.assertEqual(cfg['lat'],51.1234568)
+        self.assertEqual(cfg['lon'],-0.9876543)
+        self.assertLess(abs(cfg['lat']-51.123456789),0.0000001)
+
     def test_test_connection_does_not_consume_new_sightings(self):
         self.sighting()
         report=alerts.check_receiver()
