@@ -1,3 +1,11 @@
+# v1.10.7 — Local map opens selected aircraft from ntfy (15 November 2026)
+
+- Tapping a real Airspace Analytics ntfy aircraft notification now opens local tar1090 with the matched aircraft selected, centered and highlighted using its ICAO hex.
+- The app detects its home LAN address automatically, preferring 192.168.x.x; no Tailscale, Shortcuts, manual URL configuration or public access needed.
+- The existing Send test button opens the local tar1090 map without selecting a plane.
+- No changes to alert matching, notification delivery/retries, Traffic, Aerodrome, ADS-B feeder processes, database schema, or other preferences.
+- Test the actual tap behaviour on an iPhone connected to the same home Wi-Fi; historical alerts may target an aircraft no longer in live receiver range.
+
 # v1.10.5 — Repair Activity calendar month default (15 November 2026)
 
 - Correct an existing startup migration that forced the Activity calendar to the year view after v1.10.4 initialized its month default.
