@@ -3,7 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from backend import alerts
 
 def plane(hexcode, t='A388', lon=.05, flight='BAW1', reg='G-XLEA', alt=9000):
@@ -102,6 +102,50 @@ class AlertsTest(unittest.TestCase):
                       {'field':'type','pattern':'A388','min_ft':10000,'max_ft':5000},
                       {'field':'registration','pattern':'G-ABC','max_km':-1}):
             with self.assertRaises(ValueError):alerts.save_rule(value)
+    def test_ntfy_tap_opens_selected_aircraft_on_local_map(self):
+        self.rule()
+        alerts.save_notifier({'topic':'test_local_alerts'})
+        alerts.process_snapshot({'aircraft':[plane('abc123'),plane('def456')]},50,0,now=100)
+        response=Mock()
+        response.status=200
+        response.__enter__=Mock(return_value=response)
+        response.__exit__=Mock(return_value=None)
+        opener=Mock(return_value=response)
+        with patch.object(alerts,'_local_addresses',return_value={
+                '127.0.0.1','192.168.1.187','172.17.0.1'}):
+            alerts.deliver_pending(now=100,opener=opener)
+        urls={call.args[0].get_header('Click') for call in opener.call_args_list}
+        self.assertEqual(urls,{
+            'http://192.168.1.187:1099/map/?icao=ABC123&noIsolation',
+            'http://192.168.1.187:1099/map/?icao=DEF456&noIsolation'
+        })
+        self.assertEqual(len([e for e in alerts.snapshot()['events'] if e['delivery']=='sent']),2)
+
+    def test_local_click_prefers_home_lan_and_ignores_tailscale(self):
+        with patch.object(alerts,'_local_addresses',return_value={
+                '127.0.0.1','100.120.2.20','172.17.0.1',
+                '192.168.122.1','192.168.1.187'}):
+            self.assertEqual(alerts._tar1090_local_click_url('a1b2c3'),
+                             'http://192.168.1.187:1099/map/?icao=A1B2C3&noIsolation')
+            self.assertEqual(alerts._tar1090_local_click_url(),
+                             'http://192.168.1.187:1099/map/')
+            self.assertIsNone(alerts._tar1090_local_click_url('A1B2&3'))
+        with patch.object(alerts,'_local_addresses',return_value={
+                '127.0.0.1','100.120.2.20'}):
+            self.assertIsNone(alerts._tar1090_local_click_url('abcdef'))
+
+    def test_ntfy_test_notification_opens_local_map_without_hex(self):
+        alerts.save_notifier({'topic':'test_local_alerts'})
+        response=Mock()
+        response.status=200
+        response.__enter__=Mock(return_value=response)
+        response.__exit__=Mock(return_value=None)
+        opener=Mock(return_value=response)
+        with patch.object(alerts,'_local_addresses',return_value={'192.168.1.187'}):
+            alerts.send_test(opener=opener)
+        self.assertEqual(opener.call_args.args[0].get_header('Click'),
+                         'http://192.168.1.187:1099/map/')
+
     def test_ntfy_delivered_once(self):
         self.rule();alerts.save_notifier({'topic':'topicXYZ'})
         alerts.process_snapshot({'aircraft':[plane('abc123')]},50,0,now=100)
