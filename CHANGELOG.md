@@ -1,3 +1,10 @@
+# v1.10.3 — Larger alert lists and more accurate aircraft count
+
+- Allow up to 100 patterns per Alerts rule.
+- Show recent aircraft rather than only new database rows when using Aerodrome fallback.
+- Preserve incremental alert matching, existing Traffic and notification delivery.
+- Add tests for 31 registrations, the 100-item limit and stable counts.
+
 # v1.10.2 — Aerodrome alert fallback and compact Alerts page (15 November 2026)
 
 - Continue preferring fresh tar1090 aircraft.json when available.
