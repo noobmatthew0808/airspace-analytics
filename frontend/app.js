@@ -14,6 +14,8 @@ const safeError=e=>`<div class="notice error-note"><strong>Couldn't load this vi
 const key='airspace-analytics-prefs-v1';
 const defaults={metric:'flights',period:'rolling',bucket:'auto',category:'all',type:'all',airline:'all',icao:'all',amount:7,unit:'days',start:'',end:'',chart:'line',theme:'dark',comparison:'previous',offset:1,other_start:'',other_end:'',typeViz:'bars',airlineViz:'bars',operatorScope:'airline'};
 const state={...defaults,...readPrefs()};
+// Start each fresh page load with the current UK month; year navigation remains available.
+delete state.heatYear;delete state.heatMonth;delete state.heatScope;
 // Convert old preset preferences to the new single duration picker. A preset
 // never reappears as a confusing legacy dropdown after an update.
 if(!['rolling','custom','all'].includes(state.period)){
@@ -484,12 +486,12 @@ async function fillPatterns(rid,a){
  };
  const renderCalendar=async()=>{
    // When the timeline is zoomed to a calendar year/month, follow that selection.
-   // Otherwise default to the most recent recorded year, never an empty future year.
+   // Otherwise default to the current UK month; keep manual month/year navigation.
    const tail=new Date((Math.max(a.start,a.end-1))*1000).toLocaleDateString('sv-SE',{timeZone:'Europe/London'});
-   const selected=(state.period==='custom'&&state.start?state.start.slice(0,7):tail.slice(0,7));
+   const selected=state.heatScope?(state.period==='custom'&&state.start?state.start.slice(0,7):tail.slice(0,7)):ukToday().slice(0,7);
    const year=state.heatYear||Number(selected.slice(0,4));
    const month=state.heatMonth||Number(selected.slice(5,7));
-   const mode=state.heatMonth?'month':'year';
+   const mode=state.heatScope==='year'?'year':'month';
    const pad=n=>String(n).padStart(2,'0');
    const from=mode==='year'?`${year}-01-01T00:00`:`${year}-${pad(month)}-01T00:00`;
    const to=mode==='year'?`${year+1}-01-01T00:00`:(month===12?`${year+1}-01-01T00:00`:`${year}-${pad(month+1)}-01T00:00`);
