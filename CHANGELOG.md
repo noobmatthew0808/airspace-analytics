@@ -1,3 +1,10 @@
+# v1.10.5 — Repair Activity calendar month default (15 November 2026)
+
+- Correct an existing startup migration that forced the Activity calendar to the year view after v1.10.4 initialized its month default.
+- Opening Traffic now shows the current month in Europe/London automatically. The existing Back to year button still shows the entire year and month-selection buttons still work.
+- Only change the calendar initialization; no changes to the Traffic charts, analytics, Alerts, notifications, database, or updater.
+- Add a startup-execution regression test to prevent the calendar default from being overwritten again.
+
 # v1.10.4 — Default Activity calendar to current month (15 November 2026)
 
 - When Traffic loads, open the Activity calendar on the current UK month instead of its full-year overview.
