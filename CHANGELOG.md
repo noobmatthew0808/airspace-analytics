@@ -1,3 +1,11 @@
+# v1.10.0 — Aircraft alerts (staged)
+
+- New compact Alerts tab beside Traffic; previous Traffic drilldown, charts and launcher unchanged.
+- Per-aircraft ICAO hex state tracking, independent rules for type, registration, callsign, hex, operator or military; distance and minimum/maximum barometric altitude filters.
+- Live Ultrafeeder JSON polling with receiver.json location, read-only Aerodrome metadata fallback, and separate local alerts-only SQLite state (not a second sightings database).
+- ntfy settings, optional bearer token, test push and recent events. Events rearm on confirmed exit, not a shared type-wide cooldown; handles temporary position loss and signal jitter.
+- Work in isolated feature branch pending local receiver/ntfy acceptance and full regression checks; release to main only after review.
+
 # Changelog
 
 ## v1.9.8 — 13 November 2026
