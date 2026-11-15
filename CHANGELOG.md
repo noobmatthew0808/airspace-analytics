@@ -1,5 +1,9 @@
 # v1.10.0 — Aircraft alerts (staged)
 
+- Open Receiver setup inside Alerts for auto-detected or manually configured local feed/antenna coordinates, with connection test.
+- Improve malformed aircraft field handling and broaden A340/747 ICAO type presets.
+- Update obsolete Traffic contract tests to match v1.9.8 and require all tests to pass cleanly.
+
 - New compact Alerts tab beside Traffic; previous Traffic drilldown, charts and launcher unchanged.
 - Per-aircraft ICAO hex state tracking, independent rules for type, registration, callsign, hex, operator or military; distance and minimum/maximum barometric altitude filters.
 - Live Ultrafeeder JSON polling with receiver.json location, read-only Aerodrome metadata fallback, and separate local alerts-only SQLite state (not a second sightings database).

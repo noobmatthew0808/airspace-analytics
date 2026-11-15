@@ -207,3 +207,35 @@ On the first page load after updating, saved built-in links are replaced with th
 Site favicons are loaded from Google's public favicon endpoint (with a strict image-only Content Security Policy) and never include private local URLs. If the service's icon cannot be fetched, its colour-coded monogram appears automatically. The local Airspace tile uses this project's own favicon; SkyStats and tar1090 also have distinct labelled fallback tiles.
 
 Only desktop breakpoints (1050px and above) alter Traffic/chart sizing. The mobile Traffic stylesheet and zoom behaviour are not changed.
+
+
+## Aircraft Alerts — v1.10
+
+Open **Alerts** next to Traffic. Create rules by aircraft type, registration,
+callsign, ICAO hex, operator or military flag. Example types: A388 (A380),
+A3ST/A337 (Beluga), B74* (747 family), A34* (A340 family).
+Set a maximum **ground distance (km)** from the antenna and optional
+minimum/maximum **barometric altitude (feet)**. Leave a limit empty to disable it.
+
+Alerts monitors the receiver's live `aircraft.json` every three seconds in the
+website's Python service, even after closing the phone or browser. It tries
+local tar1090 on port 1099 automatically. Under **Alerts → Receiver setup**,
+you can optionally supply a localhost feed URL and manual antenna latitude/
+longitude when `receiver.json` lacks them. **Test connection** checks the
+configured live feed. Distance-limited rules require a fresh aircraft position
+and known antenna coordinates; type/hex-only rules do not.
+
+Each **rule + aircraft hex** has independent activation state, persisted
+through restarts. Two simultaneous A380s generate independent notifications.
+A tracked aircraft rearms only after two consecutive confirmed exits
+(with boundary hysteresis), or a long uninterrupted absence.
+
+Under **Notifications**, configure an existing ntfy topic, optional access
+token, and send a test. Subscribe to that topic using the ntfy iPhone app.
+The default server is `https://ntfy.sh`; ntfy publishing requires HTTPS.
+
+Aerodrome's `/opt/aerodrome/aircraft_history.db` is accessed read-only for
+optional missing aircraft metadata. The only extra writable file is
+`.airspace-state/alerts.sqlite3` in this same project, holding rules, active
+state, notifications settings and recent event history—not duplicate aircraft
+observations. No extra container, package or service needs installing.

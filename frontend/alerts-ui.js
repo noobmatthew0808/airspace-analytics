@@ -2,7 +2,7 @@
 const ae = v => String(v??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const at = n => n==null?'Any':Number(n).toLocaleString('en-GB');
 const whenAlert = n => new Date(n*1000).toLocaleString('en-GB',{timeZone:'Europe/London',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
-const presets = [['Beluga','A3ST,A337'],['A380','A388'],['Boeing 747','B741,B742,B743,B744,B748'],['A340','A342,A343,A345,A346']];
+const presets = [['Beluga','A3ST,A337'],['A380','A388'],['Boeing 747','B74*'],['A340','A34*']];
 const matchFields = [['type','Aircraft type'],['registration','Registration'],['callsign','Callsign'],['hex','ICAO hex'],['operator','Operator'],['military','Military']];
 let alertsData=null, alertsTimer=null, editingRule=null, alertsBusy=false;
 async function alertApi(path,body){
@@ -42,6 +42,12 @@ function renderAlertPageContents(){
  '<label class="alert-field alert-wide">Access token <small>'+(d.ntfy.token_set?'Saved · blank to keep':'Optional')+'</small><input type="password" name="token" autocomplete="off" placeholder="Leave empty to keep saved token"></label>'+
  '</div><div class="alert-editor-buttons"><button class="btn primary" type="submit">Save notifications</button><button class="btn small" type="button" id="alertTest">Send test</button>'+
  (d.ntfy.token_set?'<label class="alert-clear"><input type="checkbox" id="clearNtfyToken"> Clear token</label>':'')+'</div></form></details>'+
+ '<details class="foldout alert-config" id="alertReceiver"><summary><span>Receiver setup <small>'+(receiver.lat!=null&&receiver.lon!=null?'Antenna located':'Optional setup')+'</small></span></summary>'+
+ '<form id="alertReceiverForm" class="alert-config-content"><div class="alert-form-grid">'+
+ '<label class="alert-field alert-wide">Aircraft feed URL <small>Leave blank for automatic local tar1090 detection</small><input name="url" type="url" value="'+ae(d.receiver_settings?.url||'')+'" placeholder="http://127.0.0.1:1099/map/data/aircraft.json"></label>'+
+ '<label class="alert-field">Antenna latitude<input name="lat" type="number" min="-90" max="90" step="any" value="'+ae(d.receiver_settings?.lat??'')+'" placeholder="Automatic"></label>'+
+ '<label class="alert-field">Antenna longitude<input name="lon" type="number" min="-180" max="180" step="any" value="'+ae(d.receiver_settings?.lon??'')+'" placeholder="Automatic"></label>'+
+ '</div><div class="alert-editor-buttons"><button type="submit" class="btn primary">Save receiver</button><button type="button" class="btn small" id="alertReceiverCheck">Test connection</button></div></form></details>'+
  '<details class="foldout alert-history" id="alertHistory" open><summary><span>Recent alerts <small>'+d.events.length+' shown</small></span></summary>'+
  '<div class="alert-events">'+(d.events.length?d.events.slice(0,30).map(alertEvent).join(''):'<div class="alert-empty">No alerts yet.</div>')+'</div></details></div>';
  bindAlerts();
@@ -84,6 +90,16 @@ function bindAlerts(){
   try{await alertApi('/api/alerts/rule',{...rule,enabled:b.checked});await refreshAlerts();}
   catch(err){b.checked=!b.checked;notifyInline(err.message,true)}
  });
+ const recvForm=document.querySelector('#alertReceiverForm');
+ recvForm.onsubmit=async e=>{e.preventDefault();try{
+   await alertApi('/api/alerts/receiver',Object.fromEntries(new FormData(recvForm)));
+   await refreshAlerts();document.querySelector('#alertReceiver').open=true;
+   notifyInline('Receiver settings saved.');
+  }catch(err){notifyInline(err.message,true)}};
+ document.querySelector('#alertReceiverCheck').onclick=async()=>{
+  try{const result=await alertApi('/api/alerts/receiver/check',{});
+   notifyInline(result.aircraft+' aircraft in current snapshot'+(result.coordinates_available?' · antenna position available':' · antenna position missing (distance filters need coordinates)'));}
+  catch(err){notifyInline(err.message,true)}};
  const form=document.querySelector('#alertNtfyForm');
  form.onsubmit=async e=>{e.preventDefault();const wasOpen=true;const obj=Object.fromEntries(new FormData(form));
    if(!obj.token&&!document.querySelector('#clearNtfyToken')?.checked)delete obj.token;
@@ -98,11 +114,13 @@ export async function renderAlertsPage(){
  host.innerHTML='<div class="loading">Loading alerts…</div>';
  try{await refreshAlerts()}catch(err){host.innerHTML='<div class="notice error-note">'+ae(err.message)+'</div>';return}
  const poll=async()=>{if(location.hash!=='#alerts')return;
-  try{if(!document.querySelector('#alertEditorForm')&&!document.querySelector('#alertNtfyForm:focus-within')){
+  try{if(!document.querySelector('#alertEditorForm')&&!document.querySelector('#alertNtfyForm:focus-within')&&!document.querySelector('#alertReceiverForm:focus-within')){
    const ntfyOpen=document.querySelector('#alertNtfy')?.open;
+   const receiverOpen=document.querySelector('#alertReceiver')?.open;
    const historyOpen=document.querySelector('#alertHistory')?.open;
    await refreshAlerts();
    if(ntfyOpen)document.querySelector('#alertNtfy').open=true;
+   if(receiverOpen)document.querySelector('#alertReceiver').open=true;
    if(historyOpen===false)document.querySelector('#alertHistory').open=false;
   }}catch{}
   alertsTimer=setTimeout(poll,10000);

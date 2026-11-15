@@ -19,6 +19,8 @@ jobs:
         run: python3 -m compileall -q backend tests
       - name: Compare full Python suite against unchanged main
         run: python3 scripts/check_regression.py
+      - name: Require all tests to pass (including Alerts)
+        run: python3 -m unittest discover -s tests -t . -q
       - name: Browser code syntax
         run: |
           node --check frontend/app.js

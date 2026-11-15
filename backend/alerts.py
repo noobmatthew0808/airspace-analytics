@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
 
 STATE_DIR = Path(__file__).resolve().parents[1] / '.airspace-state'
 DB_PATH = STATE_DIR / 'alerts.sqlite3'
@@ -23,6 +24,8 @@ API_MAX = 12 * 1024
 DEFAULT_RECEIVER_URLS = (
     'http://127.0.0.1:1099/map/data/aircraft.json',
     'http://127.0.0.1:1099/data/aircraft.json',
+    'http://127.0.0.1:1099/map/aircraft.json',
+    'http://127.0.0.1:8080/data/aircraft.json',
 )
 FIELDS = frozenset(('type', 'registration', 'callsign', 'hex', 'operator', 'military'))
 GEO_HYSTERESIS_KM = 0.5
@@ -88,8 +91,9 @@ def validate_rule(data):
     if field == 'military': pattern = 'YES'
     else:
         parts = [v.strip() for v in pattern.split(',')]
-        if not parts or len(parts) > 20 or any(not re.fullmatch(r'[A-Z0-9*?\-]{1,16}', x) for x in parts):
-            raise ValueError('Enter up to 20 codes separated by commas (letters, numbers, * or ?)')
+        allowed = r'[A-Z0-9*?\- ]{1,60}' if field == 'operator' else r'[A-Z0-9*?\-]{1,16}'
+        if not parts or len(parts) > 20 or any(not re.fullmatch(allowed, x) for x in parts):
+            raise ValueError('Enter up to 20 values separated by commas (letters, numbers, * or ?)')
         pattern = ','.join(parts)
     label = str(data.get('label', '')).strip()
     if not label: label = pattern if field != 'military' else 'Military'
@@ -149,6 +153,35 @@ def save_notifier(data):
             c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',('token',token))
 
 
+def receiver_settings(c):
+    cfg = {row['key']:row['value'] for row in c.execute(
+        "SELECT key,value FROM config WHERE key IN ('receiver_url','receiver_lat','receiver_lon')")}
+    return {'url':cfg.get('receiver_url',''), 'lat':float(cfg['receiver_lat']) if cfg.get('receiver_lat') else None,
+            'lon':float(cfg['receiver_lon']) if cfg.get('receiver_lon') else None}
+
+
+def save_receiver(data):
+    """Optional local feed URL / antenna location, stored only in alert state."""
+    if not isinstance(data, dict): raise ValueError('Invalid receiver settings')
+    url = str(data.get('url','')).strip()
+    if len(url)>240: raise ValueError('Receiver URL is too long')
+    if url:
+        u=urlsplit(url)
+        if (u.scheme!='http' or u.hostname not in ('localhost','127.0.0.1') or
+                not u.port or not u.path.endswith('/aircraft.json') or
+                u.username or u.password or u.query or u.fragment):
+            raise ValueError('Use a localhost http://127.0.0.1:PORT/.../aircraft.json URL')
+    raw_lat,raw_lon=data.get('lat'),data.get('lon')
+    if (raw_lat in ('',None)) != (raw_lon in ('',None)):
+        raise ValueError('Enter both antenna latitude and longitude, or leave both blank')
+    lat=_number(raw_lat,-90,90,'Latitude')
+    lon=_number(raw_lon,-180,180,'Longitude')
+    with _lock, connect() as c:
+        for key,value in (('receiver_url',url),('receiver_lat',str(lat) if lat is not None else ''),
+                          ('receiver_lon',str(lon) if lon is not None else '')):
+            c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',(key,value))
+
+
 def notifier(c):
     cfg={row['key']:row['value'] for row in c.execute('SELECT key,value FROM config')}
     return {'server':cfg.get('server','https://ntfy.sh'), 'topic':cfg.get('topic',''),
@@ -162,7 +195,8 @@ def snapshot():
         for r in rules:r['active']=active.get(r['id'],0)
         events=[dict(x) for x in c.execute('SELECT id,rule_id,rule_label,hex,callsign,registration,aircraft_type,distance_km,altitude_ft,created,delivery FROM events ORDER BY id DESC LIMIT 60')]
         pub,_=notifier(c)
-        return {'rules':rules,'events':events,'ntfy':pub,'receiver':dict(_last_sample)}
+        return {'rules':rules,'events':events,'ntfy':pub,'receiver':dict(_last_sample),
+                'receiver_settings':receiver_settings(c)}
 
 
 def dist_km(lat1,lon1,lat2,lon2):
@@ -178,9 +212,12 @@ def _match_pattern(pattern, value):
 
 def _classify(rule, plane, lat,lon, receiver_lat,receiver_lon, was_active):
     source_age=plane.get('seen',99)
-    if not isinstance(source_age,(int,float)) or source_age>STALE_SECONDS:return None
+    if not isinstance(source_age,(int,float)) or not math.isfinite(source_age) or source_age>STALE_SECONDS:return None
     field=rule['field']
-    if field == 'military': matched = bool(int(plane.get('dbFlags') or 0) & 1) or plane.get('_aerodrome_category') == 'military'
+    if field == 'military':
+        try: flags=int(plane.get('dbFlags') or 0)
+        except (TypeError,ValueError): flags=0
+        matched = bool(flags & 1) or plane.get('_aerodrome_category') == 'military'
     else:
         value={'type':plane.get('t'),'registration':plane.get('r'),'callsign':plane.get('flight'),
                'hex':plane.get('hex'),'operator':plane.get('_operator') or plane.get('ownOp')}.get(field)
@@ -190,12 +227,13 @@ def _classify(rule, plane, lat,lon, receiver_lat,receiver_lon, was_active):
     if max_km is not None:
         if lat is None or lon is None or receiver_lat is None or receiver_lon is None:return None
         age=plane.get('seen_pos',99)
-        if not isinstance(age,(int,float)) or age > STALE_SECONDS:return None
+        if not isinstance(age,(int,float)) or not math.isfinite(age) or age > STALE_SECONDS:return None
         distance=dist_km(receiver_lat,receiver_lon,lat,lon)
         if distance > max_km + (GEO_HYSTERESIS_KM if was_active else 0):return False
     else: distance=dist_km(receiver_lat,receiver_lon,lat,lon) if None not in (lat,lon,receiver_lat,receiver_lon) else None
     altitude=plane.get('alt_baro')
     if isinstance(altitude,str):altitude=0 if altitude.lower()=='ground' else None
+    if isinstance(altitude,(int,float)) and not math.isfinite(altitude):altitude=None
     if (rule['min_ft'] is not None or rule['max_ft'] is not None):
         if not isinstance(altitude,(int,float)):return None
         if rule['min_ft'] is not None and altitude < rule['min_ft'] - (ALT_HYSTERESIS_FT if was_active else 0):return False
@@ -251,6 +289,8 @@ def process_snapshot(payload, receiver_lat, receiver_lon, now=None):
                 lat=float(plane['lat']) if plane.get('lat') is not None else None
                 lon=float(plane['lon']) if plane.get('lon') is not None else None
             except (TypeError,ValueError):lat=lon=None
+            if lat is not None and lon is not None and (not math.isfinite(lat) or not math.isfinite(lon) or not (-90<=lat<=90 and -180<=lon<=180)):
+                lat=lon=None
             for rule in rules:
                 key=(rule['id'],hexcode)
                 old=current.get(key)
@@ -288,29 +328,41 @@ def _get_json(url):
 
 
 def read_receiver():
-    custom=os.environ.get('AIRSPACE_AIRCRAFT_URL','').strip()
+    with _lock, connect() as c: stored=receiver_settings(c)
+    custom=stored['url'] or os.environ.get('AIRSPACE_AIRCRAFT_URL','').strip()
     urls=(custom,) if custom else DEFAULT_RECEIVER_URLS
     err='Receiver URL unavailable'
     for url in urls:
-        if not url.startswith('http://127.0.0.1:') and not url.startswith('http://localhost:'):
-            err='Receiver URL must use localhost';continue
+        u=urlsplit(url)
+        if u.scheme!='http' or u.hostname not in ('127.0.0.1','localhost') or not u.port or not u.path.endswith('/aircraft.json'):
+            err='Receiver URL must use a localhost aircraft.json endpoint';continue
         try:
             a=_get_json(url)
             if not isinstance(a,dict) or not isinstance(a.get('aircraft'),list):raise ValueError('Not an aircraft.json response')
             updated=a.get('now')
-            if isinstance(updated,(int,float)) and time.time()-updated>20:
+            if isinstance(updated,(int,float)) and (time.time()-updated>20 or updated>time.time()+20):
                 raise ValueError('Receiver snapshot is stale')
             try:
                 r=_get_json(url.replace('aircraft.json','receiver.json'))
             except (ValueError,OSError,URLError,HTTPError):
                 r={}
-            lat=r.get('lat',r.get('latitude',a.get('lat',os.environ.get('AIRSPACE_RECEIVER_LAT'))))
-            lon=r.get('lon',r.get('longitude',a.get('lon',os.environ.get('AIRSPACE_RECEIVER_LON'))))
-            if lat is None or lon is None:raise ValueError('Receiver coordinates missing; check receiver.json or AIRSPACE_RECEIVER_LAT/LON')
-            return a,float(lat),float(lon)
+            # Manual settings override the receiver's optional metadata. A missing
+            # location must NOT disable type, registration, or hex-only alerts.
+            lat=stored['lat'] if stored['lat'] is not None else r.get('lat',r.get('latitude',a.get('lat',os.environ.get('AIRSPACE_RECEIVER_LAT'))))
+            lon=stored['lon'] if stored['lon'] is not None else r.get('lon',r.get('longitude',a.get('lon',os.environ.get('AIRSPACE_RECEIVER_LON'))))
+            lat=float(lat) if lat not in (None,'') else None
+            lon=float(lon) if lon not in (None,'') else None
+            if lat is not None and not (-90<=lat<=90):raise ValueError('Invalid antenna latitude')
+            if lon is not None and not (-180<=lon<=180):raise ValueError('Invalid antenna longitude')
+            return a,lat,lon
         except (ValueError,OSError,URLError,HTTPError,KeyError) as exc:
             err=str(exc)[:180]
     raise ValueError(err)
+
+
+def check_receiver():
+    sample,lat,lon=read_receiver()
+    return {'ok':True,'aircraft':len(sample['aircraft']), 'coordinates_available':lat is not None and lon is not None}
 
 
 def deliver_pending(now=None, opener=urlopen):
