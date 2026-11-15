@@ -1,3 +1,8 @@
+# v1.10.4 — Default Activity calendar to current month (15 November 2026)
+
+- When Traffic loads, open the Activity calendar on the current UK month instead of its full-year overview.
+- Keep the existing year overview, month selection, Back to year navigation, Traffic chart, drilldowns, Alerts, Aerodrome database, notifications and updater unchanged.
+
 # v1.10.3 — Larger alert lists and more accurate aircraft count
 
 - Allow up to 100 patterns per Alerts rule.
