@@ -26,7 +26,7 @@ class TestHeatmapSelectors(unittest.TestCase):
   import json, shutil, subprocess
   if not shutil.which('node'):self.skipTest('Node.js not installed')
   js=APP.read_text(encoding='utf-8')
-  init=js.split('// One-time migration:',1)[1].split('function setTheme(',1)[0]
+  init=js[js.index('// One-time migration:'):js.index('function setTheme(')]
   script="""
 const vm = require('node:vm');
 const init = """+json.dumps(init)+""";
