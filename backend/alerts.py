@@ -512,6 +512,38 @@ def check_receiver():
             'source':_last_good_url}
 
 
+def _tar1090_local_click_url(hexcode=None):
+    """Build a LAN-only tar1090 link without exposing or hardcoding home IPs.
+
+    Prefer the host's actual 192.168.x.x Wi-Fi/Ethernet address. Do not link
+    to loopback, Docker networks or Tailscale addresses on iOS.
+    """
+    if hexcode is not None and not re.fullmatch(r'[0-9a-fA-F]{6}',str(hexcode)):
+        return None
+    addresses = []
+    try:
+        for value in _local_addresses():
+            host = ipaddress.IPv4Address(value)
+            if host in ipaddress.IPv4Network('192.168.0.0/16'):
+                priority = 0
+            elif host in ipaddress.IPv4Network('10.0.0.0/8'):
+                priority = 1
+            elif host in ipaddress.IPv4Network('172.16.0.0/12'):
+                priority = 2
+            else:
+                continue
+            addresses.append((priority,int(host),str(host)))
+    except (OSError,ValueError):
+        return None
+    if not addresses:
+        return None
+    host = min(addresses)[2]
+    url = f'http://{host}:1099/map/'
+    if hexcode is not None:
+        url += f'?icao={str(hexcode).upper()}&noIsolation'
+    return url
+
+
 def deliver_pending(now=None, opener=urlopen):
     now=int(now if now is not None else time.time())
     with _lock, connect() as c:
@@ -525,6 +557,8 @@ def deliver_pending(now=None, opener=urlopen):
         if event['distance_km'] is not None:body+=f" · {event['distance_km']} km"
         if event['altitude_ft'] is not None:body+=f" · {event['altitude_ft']:,} ft"
         headers={'Title':event['rule_label']+' nearby','Priority':'3','Content-Type':'text/plain; charset=utf-8'}
+        click_url=_tar1090_local_click_url(event['hex'])
+        if click_url:headers['Click']=click_url
         if token:headers['Authorization']='Bearer '+token
         url=public['server']+'/'+public['topic']
         try:
@@ -543,6 +577,8 @@ def send_test(opener=urlopen):
         public,token=notifier(c)
     if not public['topic']:raise ValueError('Set an ntfy topic first')
     headers={'Title':'Airspace Analytics test','Priority':'3','Content-Type':'text/plain; charset=utf-8'}
+    click_url=_tar1090_local_click_url()
+    if click_url:headers['Click']=click_url
     if token:headers['Authorization']='Bearer '+token
     req=Request(public['server']+'/'+public['topic'],b'Alerts are connected.',headers=headers,method='POST')
     try:
