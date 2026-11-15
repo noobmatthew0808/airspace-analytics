@@ -14,6 +14,8 @@ class TestAlertsUI(unittest.TestCase):
   for field in ['alertReceiverForm','alertReceiverCheck','alertNtfyForm','alertTest','alertAdd',
                 'data-toggle','data-edit','alertHistory','alertApi']:
    self.assertIn(field,ui)
+  self.assertIn('maxlength="1800"',ui)
+  self.assertIn('aircraft seen (30s)',ui)
   self.assertNotIn('data-preset',ui)
   self.assertNotIn('alert-quick',ui)
 
