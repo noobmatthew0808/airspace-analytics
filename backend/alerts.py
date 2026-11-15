@@ -3,16 +3,18 @@ from __future__ import annotations
 
 import fnmatch
 from contextlib import contextmanager, closing
+import ipaddress
 import json
 import math
 import os
 import re
+import socket
 import sqlite3
 import threading
 import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler, ProxyHandler
 from urllib.parse import urlsplit
 
 STATE_DIR = Path(__file__).resolve().parents[1] / '.airspace-state'
@@ -26,12 +28,14 @@ DEFAULT_RECEIVER_URLS = (
     'http://127.0.0.1:1099/data/aircraft.json',
     'http://127.0.0.1:1099/map/aircraft.json',
     'http://127.0.0.1:8080/data/aircraft.json',
+    'http://127.0.0.1:8080/tar1090/data/aircraft.json',
 )
 FIELDS = frozenset(('type', 'registration', 'callsign', 'hex', 'operator', 'military'))
 GEO_HYSTERESIS_KM = 0.5
 ALT_HYSTERESIS_FT = 300
 _lock = threading.RLock()
 _worker_started = False
+_last_good_url = None
 _last_sample = {'time': None, 'aircraft': 0, 'error': 'Waiting for receiver', 'lat': None, 'lon': None}
 
 
@@ -160,6 +164,61 @@ def receiver_settings(c):
             'lon':float(cfg['receiver_lon']) if cfg.get('receiver_lon') else None}
 
 
+def _local_addresses():
+    """IPv4 addresses actually belonging to this Linux machine.
+
+    Docker may publish tar1090 to the Wi-Fi IP but not 127.0.0.1. Only
+    advertise/accept this machine's own private addresses, never another
+    LAN device or an arbitrary URL selected by a browser.
+    """
+    addresses = {'127.0.0.1'}
+    try:
+        for item in socket.getaddrinfo(socket.gethostname(), None,
+                                       family=socket.AF_INET, type=socket.SOCK_STREAM):
+            addresses.add(item[4][0])
+    except OSError:
+        pass
+    try:
+        # UDP connect chooses the local egress interface without sending data.
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
+            client.connect(('192.0.2.1', 9))  # TEST-NET address, not contacted
+            addresses.add(client.getsockname()[0])
+    except OSError:
+        pass
+    allowed = set()
+    for value in addresses:
+        try:
+            address = ipaddress.IPv4Address(value)
+            if (address.is_loopback or
+                (address.is_private and not address.is_link_local and
+                 not address.is_multicast and not address.is_unspecified)):
+                allowed.add(str(address))
+        except ipaddress.AddressValueError:
+            continue
+    return allowed
+
+
+def _receiver_url_allowed(url, addresses):
+    try:
+        u = urlsplit(url)
+        return (u.scheme == 'http' and u.hostname in (addresses | {'localhost'})
+                and u.port is not None and u.path.endswith('/aircraft.json')
+                and not (u.username or u.password or u.query or u.fragment))
+    except ValueError:
+        return False
+
+
+def _receiver_candidates(addresses):
+    # Preserve previous localhost probes, then add same-machine LAN probes.
+    urls = list(DEFAULT_RECEIVER_URLS)
+    paths = ('/map/data/aircraft.json', '/data/aircraft.json',
+             '/tar1090/data/aircraft.json', '/map/aircraft.json')
+    for host in sorted(addresses - {'127.0.0.1'}):
+        for port in (1099, 8080):
+            urls.extend(f'http://{host}:{port}{path}' for path in paths)
+    return tuple(dict.fromkeys(urls))
+
+
 def save_receiver(data):
     """Optional local feed URL / antenna location, stored only in alert state."""
     if not isinstance(data, dict): raise ValueError('Invalid receiver settings')
@@ -167,10 +226,8 @@ def save_receiver(data):
     if len(url)>240: raise ValueError('Receiver URL is too long')
     if url:
         u=urlsplit(url)
-        if (u.scheme!='http' or u.hostname not in ('localhost','127.0.0.1') or
-                not u.port or not u.path.endswith('/aircraft.json') or
-                u.username or u.password or u.query or u.fragment):
-            raise ValueError('Use a localhost http://127.0.0.1:PORT/.../aircraft.json URL')
+        if not _receiver_url_allowed(url, _local_addresses()):
+            raise ValueError('Use this PC\'s localhost or LAN address with an aircraft.json URL')
     raw_lat,raw_lon=data.get('lat'),data.get('lon')
     if (raw_lat in ('',None)) != (raw_lon in ('',None)):
         raise ValueError('Enter both antenna latitude and longitude, or leave both blank')
@@ -318,9 +375,16 @@ def process_snapshot(payload, receiver_lat, receiver_lon, now=None):
         _last_sample.update(time=now, aircraft=len(aircraft), error=None,lat=receiver_lat,lon=receiver_lon)
 
 
+class _NoReceiverRedirect(HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        return None
+
+
 def _get_json(url):
     request=Request(url,headers={'User-Agent':'AirspaceAnalytics-Alerts/1'})
-    with urlopen(request,timeout=3) as result:
+    # Do not follow a redirect to an untrusted website; never use an HTTP proxy
+    # to fetch loopback or the receiver's own LAN address.
+    with build_opener(ProxyHandler({}), _NoReceiverRedirect()).open(request,timeout=3) as result:
         if int(result.headers.get('Content-Length','0') or 0)>2_000_000:raise ValueError('Receiver response too large')
         raw=result.read(2_000_001)
         if len(raw)>2_000_000:raise ValueError('Receiver response too large')
@@ -328,14 +392,17 @@ def _get_json(url):
 
 
 def read_receiver():
+    global _last_good_url
     with _lock, connect() as c: stored=receiver_settings(c)
     custom=stored['url'] or os.environ.get('AIRSPACE_AIRCRAFT_URL','').strip()
-    urls=(custom,) if custom else DEFAULT_RECEIVER_URLS
-    err='Receiver URL unavailable'
+    addresses=_local_addresses()
+    urls=(custom,) if custom else _receiver_candidates(addresses)
+    if not custom and _last_good_url in urls:
+        urls=(_last_good_url,)+tuple(x for x in urls if x!=_last_good_url)
+    err='No aircraft feed available'
     for url in urls:
-        u=urlsplit(url)
-        if u.scheme!='http' or u.hostname not in ('127.0.0.1','localhost') or not u.port or not u.path.endswith('/aircraft.json'):
-            err='Receiver URL must use a localhost aircraft.json endpoint';continue
+        if not _receiver_url_allowed(url,addresses):
+            err='Receiver URL must point to this PC (localhost or its LAN IP)';continue
         try:
             a=_get_json(url)
             if not isinstance(a,dict) or not isinstance(a.get('aircraft'),list):raise ValueError('Not an aircraft.json response')
@@ -346,23 +413,28 @@ def read_receiver():
                 r=_get_json(url.replace('aircraft.json','receiver.json'))
             except (ValueError,OSError,URLError,HTTPError):
                 r={}
-            # Manual settings override the receiver's optional metadata. A missing
-            # location must NOT disable type, registration, or hex-only alerts.
+            # Manual settings override optional receiver metadata. Missing antenna
+            # coordinates should not disable type, registration and hex-only rules.
             lat=stored['lat'] if stored['lat'] is not None else r.get('lat',r.get('latitude',a.get('lat',os.environ.get('AIRSPACE_RECEIVER_LAT'))))
             lon=stored['lon'] if stored['lon'] is not None else r.get('lon',r.get('longitude',a.get('lon',os.environ.get('AIRSPACE_RECEIVER_LON'))))
             lat=float(lat) if lat not in (None,'') else None
             lon=float(lon) if lon not in (None,'') else None
             if lat is not None and not (-90<=lat<=90):raise ValueError('Invalid antenna latitude')
             if lon is not None and not (-180<=lon<=180):raise ValueError('Invalid antenna longitude')
+            _last_good_url=url
             return a,lat,lon
         except (ValueError,OSError,URLError,HTTPError,KeyError) as exc:
-            err=str(exc)[:180]
-    raise ValueError(err)
+            err=str(exc)[:150]
+    _last_good_url=None
+    if custom:raise ValueError('Receiver URL unreachable: '+err)
+    raise ValueError('No aircraft.json on this PC (localhost/LAN; ports 1099/8080): '+err)
 
 
 def check_receiver():
     sample,lat,lon=read_receiver()
-    return {'ok':True,'aircraft':len(sample['aircraft']), 'coordinates_available':lat is not None and lon is not None}
+    return {'ok':True,'aircraft':len(sample['aircraft']),
+            'coordinates_available':lat is not None and lon is not None,
+            'source':_last_good_url}
 
 
 def deliver_pending(now=None, opener=urlopen):

@@ -44,7 +44,7 @@ function renderAlertPageContents(){
  (d.ntfy.token_set?'<label class="alert-clear"><input type="checkbox" id="clearNtfyToken"> Clear token</label>':'')+'</div></form></details>'+
  '<details class="foldout alert-config" id="alertReceiver"><summary><span>Receiver setup <small>'+(receiver.lat!=null&&receiver.lon!=null?'Antenna located':'Optional setup')+'</small></span></summary>'+
  '<form id="alertReceiverForm" class="alert-config-content"><div class="alert-form-grid">'+
- '<label class="alert-field alert-wide">Aircraft feed URL <small>Leave blank for automatic local tar1090 detection</small><input name="url" type="url" value="'+ae(d.receiver_settings?.url||'')+'" placeholder="http://127.0.0.1:1099/map/data/aircraft.json"></label>'+
+ '<label class="alert-field alert-wide">Aircraft feed URL <small>Leave blank for automatic localhost and LAN detection</small><input name="url" type="url" value="'+ae(d.receiver_settings?.url||'')+'" placeholder="http://'+ae(location.hostname)+':1099/data/aircraft.json"></label>'+
  '<label class="alert-field">Antenna latitude<input name="lat" type="number" min="-90" max="90" step="any" value="'+ae(d.receiver_settings?.lat??'')+'" placeholder="Automatic"></label>'+
  '<label class="alert-field">Antenna longitude<input name="lon" type="number" min="-180" max="180" step="any" value="'+ae(d.receiver_settings?.lon??'')+'" placeholder="Automatic"></label>'+
  '</div><div class="alert-editor-buttons"><button type="submit" class="btn primary">Save receiver</button><button type="button" class="btn small" id="alertReceiverCheck">Test connection</button></div></form></details>'+
@@ -98,7 +98,7 @@ function bindAlerts(){
   }catch(err){notifyInline(err.message,true)}};
  document.querySelector('#alertReceiverCheck').onclick=async()=>{
   try{const result=await alertApi('/api/alerts/receiver/check',{});
-   notifyInline(result.aircraft+' aircraft in current snapshot'+(result.coordinates_available?' · antenna position available':' · antenna position missing (distance filters need coordinates)'));}
+   notifyInline(result.aircraft+' aircraft in current snapshot'+(result.coordinates_available?' · antenna position available':' · antenna position missing (distance filters need coordinates)')+(result.source?' · '+result.source:''));}
   catch(err){notifyInline(err.message,true)}};
  const form=document.querySelector('#alertNtfyForm');
  form.onsubmit=async e=>{e.preventDefault();const wasOpen=true;const obj=Object.fromEntries(new FormData(form));
