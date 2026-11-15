@@ -97,6 +97,62 @@ class AlertsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'up to 100'):
             alerts.validate_rule({'label':'Group of 101','field':'registration','pattern':valid+',G-XTRA'})
 
+    def test_ntfy_click_selects_exact_aircraft_on_home_and_tailscale(self):
+        self.rule()
+        alerts.save_notifier({
+            'topic':'plane-alerts',
+            'map_lan':'http://192.168.1.15:1099/map/',
+            'map_tailscale':'http://100.90.33.77:1099/map/',
+            'tap_route':'lan'
+        })
+        alerts.process_snapshot({'aircraft':[plane('a1b2c3')]},50,0,now=100)
+        response=Mock()
+        response.status=200
+        response.__enter__=Mock(return_value=response)
+        response.__exit__=Mock(return_value=None)
+        opener=Mock(return_value=response)
+        alerts.deliver_pending(now=100,opener=opener)
+        request=opener.call_args.args[0]
+        lan='http://192.168.1.15:1099/map/?icao=A1B2C3&noIsolation'
+        tailscale='http://100.90.33.77:1099/map/?icao=A1B2C3&noIsolation'
+        self.assertEqual(request.get_header('Click'),lan)
+        self.assertIn('view, Home Wi-Fi map, '+lan,request.get_header('Actions'))
+        self.assertIn('view, Tailscale map, '+tailscale,request.get_header('Actions'))
+        self.assertEqual(alerts.snapshot()['events'][0]['delivery'],'sent')
+
+    def test_ntfy_tailscale_preferred_and_test_notification(self):
+        alerts.save_notifier({'topic':'plane-alerts',
+            'map_lan':'http://192.168.1.15:1099/map/',
+            'map_tailscale':'http://100.90.33.77:1099/map/',
+            'tap_route':'tailscale'})
+        self.assertEqual(alerts._map_notification_headers(alerts.snapshot()['ntfy'],'abcdef')['Click'],
+                         'http://100.90.33.77:1099/map/?icao=ABCDEF&noIsolation')
+        response=Mock()
+        response.status=200
+        response.__enter__=Mock(return_value=response)
+        response.__exit__=Mock(return_value=None)
+        opener=Mock(return_value=response)
+        alerts.send_test(opener=opener)
+        request=opener.call_args.args[0]
+        self.assertEqual(request.get_header('Click'),'http://100.90.33.77:1099/map/')
+        self.assertIn('Home Wi-Fi map',request.get_header('Actions'))
+        self.assertIn('Tailscale map',request.get_header('Actions'))
+
+    def test_ntfy_map_url_validation_and_legacy_config(self):
+        invalid=['http://user:pass@192.168.1.15:1099/map/',
+                 'https://example.org:1099/map/',
+                 'http://192.168.1.15:1099/map/?icao=ABCDEF',
+                 'http://192.168.1.15:1099/unsafe/',
+                 'http://192.168.1.15:1099/map/\\r\\nInjected:bad']
+        for url in invalid:
+            with self.assertRaises(ValueError):
+                alerts.save_notifier({'topic':'ok','map_lan':url})
+        alerts.save_notifier({'topic':'existing','map_lan':'http://192.168.1.15:1099/map/'})
+        alerts.save_notifier({'topic':'updated'})
+        self.assertEqual(alerts.snapshot()['ntfy']['map_lan'],'http://192.168.1.15:1099/map/')
+        self.assertEqual(alerts._map_notification_headers(alerts.snapshot()['ntfy'],hexcode='~abcd12'),{})
+        self.assertEqual(alerts._map_notification_headers({'map_lan':'','map_tailscale':''},'abc123'),{})
+
     def test_invalid_rules(self):
         for value in ({'field':'zip','pattern':'A388'}, {'field':'type','pattern':'&bad'},
                       {'field':'type','pattern':'A388','min_ft':10000,'max_ft':5000},
