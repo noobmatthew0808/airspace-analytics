@@ -38,6 +38,11 @@ function renderAlertPageContents(){
  '<label class="alert-field">ntfy server<input name="server" type="url" required value="'+ae(d.ntfy.server)+'"></label>'+
  '<label class="alert-field">Topic<input name="topic" maxlength="80" value="'+ae(d.ntfy.topic)+'" placeholder="Existing ntfy topic"></label>'+
  '<label class="alert-field alert-wide">Access token <small>'+(d.ntfy.token_set?'Saved · blank to keep':'Optional')+'</small><input type="password" name="token" autocomplete="off" placeholder="Leave empty to keep saved token"></label>'+
+ '<label class="alert-field alert-wide">Home Wi-Fi tar1090 map <small>Opens without VPN when on your home network</small><input type="url" name="map_lan" maxlength="240" value="'+ae(d.ntfy.map_lan||'')+'" placeholder="http://192.168.x.x:1099/map/"></label>'+
+ '<label class="alert-field alert-wide">Tailscale tar1090 map <small>Use when connected away from home</small><input type="url" name="map_tailscale" maxlength="240" value="'+ae(d.ntfy.map_tailscale||'')+'" placeholder="http://100.x.x.x:1099/map/"></label>'+
+ '<label class="alert-field alert-wide">Tapping an alert opens<select name="tap_route">'+
+ '<option value="lan" '+(d.ntfy.tap_route!=='tailscale'?'selected':'')+'>Home Wi-Fi map</option>'+
+ '<option value="tailscale" '+(d.ntfy.tap_route==='tailscale'?'selected':'')+'>Tailscale map</option></select><small>Each alert also includes Home Wi-Fi and Tailscale map buttons for the other connection.</small></label>'+
  '</div><div class="alert-editor-buttons"><button class="btn primary" type="submit">Save notifications</button><button class="btn small" type="button" id="alertTest">Send test</button>'+
  (d.ntfy.token_set?'<label class="alert-clear"><input type="checkbox" id="clearNtfyToken"> Clear token</label>':'')+'</div></form></details>'+
  '<details class="foldout alert-config" id="alertReceiver"><summary><span>Receiver setup <small>'+(receiver.lat!=null&&receiver.lon!=null?'Antenna located':'Optional setup')+'</small></span></summary>'+

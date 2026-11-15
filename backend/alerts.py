@@ -141,6 +141,55 @@ def delete_rule(rule_id):
         if not result.rowcount: raise ValueError('Rule not found')
 
 
+def _map_base(raw, label):
+    """Only local/LAN/Tailnet tar1090 URLs are accepted; never fetched here."""
+    value=str(raw or '').strip()
+    if not value:return ''
+    if len(value)>240 or any(ord(char)<33 or ord(char)>126 for char in value):
+        raise ValueError(label+' must be a short plain URL')
+    try:
+        parsed=urlsplit(value)
+        host=parsed.hostname or ''
+        port=parsed.port
+    except ValueError:
+        raise ValueError(label+' must be a valid URL')
+    if (parsed.scheme not in ('http','https') or not host or port is None or
+        parsed.username or parsed.password or parsed.query or parsed.fragment or
+        parsed.path not in ('/map','/map/','/tar1090','/tar1090/')):
+        raise ValueError(label+' must be a local tar1090 /map/ URL with a port')
+    try:
+        address=ipaddress.ip_address(host)
+    except ValueError:
+        if not (re.fullmatch(r'[a-zA-Z0-9.-]{1,160}',host) and
+                (host=='localhost' or host.endswith(('.local','.ts.net')) or '.' not in host)):
+            raise ValueError(label+' must use a LAN or Tailscale hostname')
+    else:
+        if not (address.is_private or address.is_loopback or
+                address in ipaddress.ip_network('100.64.0.0/10')):
+            raise ValueError(label+' must use a LAN or Tailscale address')
+    return value.rstrip('/')+'/'
+
+
+def _map_notification_headers(settings, hexcode=None):
+    """Attach per-aircraft tar1090 links; both routes remain selectable in ntfy."""
+    suffix=''
+    if hexcode is not None:
+        if not re.fullmatch(r'[0-9a-fA-F]{6}',str(hexcode)):
+            return {}
+        suffix='?icao='+str(hexcode).upper()+'&noIsolation'
+    home=settings.get('map_lan','')
+    remote=settings.get('map_tailscale','')
+    primary=remote if settings.get('tap_route')=='tailscale' else home
+    primary=primary or home or remote
+    headers={}
+    if primary:headers['Click']=primary+suffix
+    actions=[]
+    if home:actions.append('view, Home Wi-Fi map, '+home+suffix)
+    if remote:actions.append('view, Tailscale map, '+remote+suffix)
+    if actions:headers['Actions']='; '.join(actions)
+    return headers
+
+
 def save_notifier(data):
     if not isinstance(data,dict): raise ValueError('Invalid notification configuration')
     base = str(data.get('server','https://ntfy.sh')).strip().rstrip('/')
@@ -151,9 +200,18 @@ def save_notifier(data):
     topic=str(data.get('topic','')).strip()
     if topic and not re.fullmatch(r'[A-Za-z0-9_-]{1,80}',topic):
         raise ValueError('Topic must contain letters, digits, hyphens or underscores')
+    map_values={}
+    for key,label in (('map_lan','Home Wi-Fi map'),('map_tailscale','Tailscale map')):
+        if key in data:map_values[key]=_map_base(data[key],label)
+    if 'tap_route' in data:
+        preferred=str(data['tap_route'])
+        if preferred not in ('lan','tailscale'):raise ValueError('Tap destination must be Home Wi-Fi or Tailscale')
+        map_values['tap_route']=preferred
     with _lock, connect() as c:
         c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',('server',base))
         c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',('topic',topic))
+        for key,value in map_values.items():
+            c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',(key,value))
         if 'token' in data:
             token=str(data['token']).strip()
             if len(token)>500: raise ValueError('Token too long')
@@ -245,7 +303,10 @@ def save_receiver(data):
 def notifier(c):
     cfg={row['key']:row['value'] for row in c.execute('SELECT key,value FROM config')}
     return {'server':cfg.get('server','https://ntfy.sh'), 'topic':cfg.get('topic',''),
-            'token_set':bool(cfg.get('token',''))}, cfg.get('token','')
+            'token_set':bool(cfg.get('token','')),
+            'map_lan':cfg.get('map_lan',''),
+            'map_tailscale':cfg.get('map_tailscale',''),
+            'tap_route':cfg.get('tap_route','lan')}, cfg.get('token','')
 
 
 def snapshot():
@@ -525,6 +586,7 @@ def deliver_pending(now=None, opener=urlopen):
         if event['distance_km'] is not None:body+=f" · {event['distance_km']} km"
         if event['altitude_ft'] is not None:body+=f" · {event['altitude_ft']:,} ft"
         headers={'Title':event['rule_label']+' nearby','Priority':'3','Content-Type':'text/plain; charset=utf-8'}
+        headers.update(_map_notification_headers(public,event['hex']))
         if token:headers['Authorization']='Bearer '+token
         url=public['server']+'/'+public['topic']
         try:
@@ -543,6 +605,7 @@ def send_test(opener=urlopen):
         public,token=notifier(c)
     if not public['topic']:raise ValueError('Set an ntfy topic first')
     headers={'Title':'Airspace Analytics test','Priority':'3','Content-Type':'text/plain; charset=utf-8'}
+    headers.update(_map_notification_headers(public))
     if token:headers['Authorization']='Bearer '+token
     req=Request(public['server']+'/'+public['topic'],b'Alerts are connected.',headers=headers,method='POST')
     try:
