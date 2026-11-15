@@ -228,8 +228,8 @@ def enrich_aircraft(aircraft):
             if not p.get('r') and row['registration']:p['r']=row['registration']
             if row['operator']:p['_operator']=row['operator']
             if row['category']:p['_aerodrome_category']=row['category']
-    except (ImportError,OSError,ValueError,sqlite3.Error):
-        pass  # Aerodrome may be unavailable while the receiver remains live.
+    except Exception:
+        pass  # Enrichment is optional; even Aerodrome's DataError must not interrupt alerts.
 
 
 def process_snapshot(payload, receiver_lat, receiver_lon, now=None):
