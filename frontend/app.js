@@ -161,7 +161,7 @@ if(!localStorage.getItem('airspace-v16-started')){
  localStorage.setItem('airspace-v16-started','1');persist();
 }
 if(state.filtersEnabled===undefined)state.filtersEnabled=false;
-if(!['year','month'].includes(state.heatScope))state.heatScope='year';
+if(!['year','month'].includes(state.heatScope))state.heatScope='month';
 
 function setTheme(theme){document.documentElement.dataset.theme=theme||'dark';state.theme=theme;persist()}
 setTheme('dark');
