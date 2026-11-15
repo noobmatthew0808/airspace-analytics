@@ -93,9 +93,9 @@ class AlertsTest(unittest.TestCase):
 
     def test_pattern_limit_100_and_reject_101(self):
         valid = ','.join(f'G-A{i:03d}' for i in range(100))
-        self.assertEqual(len(alerts.validate_rule({'field':'registration','pattern':valid})['pattern'].split(',')),100)
+        self.assertEqual(len(alerts.validate_rule({'label':'Group of 100','field':'registration','pattern':valid})['pattern'].split(',')),100)
         with self.assertRaisesRegex(ValueError,'up to 100'):
-            alerts.validate_rule({'field':'registration','pattern':valid+',G-XTRA'})
+            alerts.validate_rule({'label':'Group of 101','field':'registration','pattern':valid+',G-XTRA'})
 
     def test_invalid_rules(self):
         for value in ({'field':'zip','pattern':'A388'}, {'field':'type','pattern':'&bad'},
