@@ -2,7 +2,6 @@
 const ae = v => String(v??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const at = n => n==null?'Any':Number(n).toLocaleString('en-GB');
 const whenAlert = n => new Date(n*1000).toLocaleString('en-GB',{timeZone:'Europe/London',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
-const presets = [['Beluga','A3ST,A337'],['A380','A388'],['Boeing 747','B74*'],['A340','A34*']];
 const matchFields = [['type','Aircraft type'],['registration','Registration'],['callsign','Callsign'],['hex','ICAO hex'],['operator','Operator'],['military','Military']];
 let alertsData=null, alertsTimer=null, editingRule=null, alertsBusy=false;
 async function alertApi(path,body){
@@ -31,8 +30,7 @@ function renderAlertPageContents(){
  const host=document.querySelector('#page');if(!host||!alertsData)return;
  const d=alertsData,receiver=d.receiver||{},healthy=receiver.time&&!receiver.error&&Date.now()/1000-receiver.time<20;
  host.innerHTML='<div class="alert-page"><div class="page-heading"><h1 class="page-title">Alerts</h1><button class="btn small" id="alertAdd" type="button">+ Add rule</button></div>'+
- '<div class="alert-status"><span class="alert-status-dot '+(healthy?'online':'')+'"></span>'+(healthy?at(receiver.aircraft)+' aircraft · Receiver connected'+(receiver.lat!=null?' · Antenna set':''):'Receiver unavailable'+(receiver.error?' · '+ae(receiver.error):''))+'</div>'+
- '<div class="alert-quick">'+presets.map((p,i)=>'<button class="btn small" type="button" data-preset="'+i+'">+ '+p[0]+'</button>').join('')+'</div>'+
+ '<div class="alert-status"><span class="alert-status-dot '+(healthy?'online':'')+'"></span>'+(healthy?at(receiver.aircraft)+' aircraft · Receiver connected'+(receiver.lat!=null?' · Antenna set':'')+(receiver.source&&receiver.source.startsWith('Aerodrome')?' · Aerodrome samples':''):'Receiver unavailable'+(receiver.error?' · '+ae(receiver.error):''))+'</div>'+
  '<div id="alertEditor"></div><div id="alertFeedback" role="status" class="alert-feedback"></div>'+
  '<section class="alert-rules">'+(d.rules.length?d.rules.map(alertRule).join(''):'<div class="alert-empty">No rules configured yet.</div>')+'</section>'+
  '<details class="foldout alert-config" id="alertNtfy"><summary><span>Notifications <small>'+(d.ntfy.topic?'Configured':'Not configured')+'</small></span></summary>'+
@@ -83,7 +81,6 @@ function editAlert(rule){
 }
 function bindAlerts(){
  document.querySelector('#alertAdd').onclick=()=>editAlert(null);
- document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{const p=presets[Number(b.dataset.preset)];editAlert({label:p[0],field:'type',pattern:p[1],max_km:30,enabled:1})});
  document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>editAlert(alertsData.rules.find(r=>r.id===Number(b.dataset.edit))));
  document.querySelectorAll('[data-toggle]').forEach(b=>b.onchange=async()=>{
   const rule=alertsData.rules.find(r=>r.id===Number(b.dataset.toggle));if(!rule)return;

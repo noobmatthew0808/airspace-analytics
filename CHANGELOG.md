@@ -1,3 +1,12 @@
+# v1.10.2 — Aerodrome alert fallback and compact Alerts page (15 November 2026)
+
+- Continue preferring fresh tar1090 aircraft.json when available.
+- If live HTTP isn't reachable, read only newly recorded sightings from Aerodrome's existing SQLite history; calculate position/altitude conditions using antenna coordinates saved locally in Alerts.
+- Never copy aircraft history or write to Aerodrome; limit the recent-sightings query to 2,500 newest rows and ignore stale observations.
+- Track processed row IDs to prevent a single recorded outside-position from counting as multiple exits. The connection-test action never consumes an observation.
+- Remove Beluga/A380/Boeing 747/A340 shortcut buttons; all aircraft types are still configurable with Add rule.
+- Keep Traffic, heatmaps, settings, ntfy delivery, chart zoom and updater unchanged.
+
 # v1.10.1 — Receiver connection fix (15 November 2026)
 
 - Detect ADS-B aircraft.json on this Linux machine's LAN IP as well as localhost, including tar1090's /map/data and /data paths on ports 1099 and 8080.

@@ -36,7 +36,10 @@ ALT_HYSTERESIS_FT = 300
 _lock = threading.RLock()
 _worker_started = False
 _last_good_url = None
-_last_sample = {'time': None, 'aircraft': 0, 'error': 'Waiting for receiver', 'lat': None, 'lon': None}
+_last_live_scan_at = 0
+_aerodrome_cursor = 0
+_AERODROME_SOURCE = 'Aerodrome (10-second samples)'
+_last_sample = {'time': None, 'aircraft': 0, 'error': 'Waiting for receiver', 'lat': None, 'lon': None, 'source': None}
 
 
 @contextmanager
@@ -391,14 +394,74 @@ def _get_json(url):
         return json.loads(raw)
 
 
-def read_receiver():
-    global _last_good_url
+
+def _aerodrome_snapshot(lat, lon, consume=True):
+    """Fresh read-only Aerodrome observations, without duplicating history.
+
+    A primary-key DESC/LIMIT query avoids table scans on long-lived data. Only
+    newly observed rows are sent to the rearming state machine: polling the
+    same historical row must not count as two confirmed exits.
+    """
+    global _aerodrome_cursor
+    from . import data
+    now=time.time()
+    with closing(data.connection()) as db:
+        rows=db.execute(
+            'SELECT id,icao,callsign,aircraft_type,lat,lon,altitude,seen_at '
+            'FROM all_sightings ORDER BY id DESC LIMIT 2500'
+        ).fetchall()
+    newest_id=int(rows[0]['id']) if rows else 0
+    flights={}
+    for row in rows:
+        rid=int(row['id'])
+        if consume and rid<=_aerodrome_cursor: break
+        try: observed=float(row['seen_at'])
+        except (ValueError,TypeError): continue
+        age=now-observed
+        if age>STALE_SECONDS: break
+        if age< -5: continue
+        hexcode=str(row['icao'] or '').lower()
+        if not re.fullmatch(r'[0-9a-f]{6}',hexcode):continue
+        plane=flights.setdefault(hexcode,{'hex':hexcode,'seen':max(0,age)})
+        # Take newest available identity, while retaining a newer sample's
+        # observed position and altitude, and keeping missing values unknown.
+        if row['aircraft_type'] and not plane.get('t'):plane['t']=str(row['aircraft_type'])
+        if row['callsign'] and not plane.get('flight'):plane['flight']=str(row['callsign'])
+        if row['altitude'] is not None and not plane.get('_alt_set'):
+            try:
+                altitude=float(row['altitude'])
+                if math.isfinite(altitude):
+                    plane['alt_baro']=altitude
+                    plane['_alt_set']=True
+            except (ValueError,TypeError):pass
+        if 'seen_pos' not in plane and row['lat'] is not None and row['lon'] is not None:
+            try:
+                latitude,longitude=float(row['lat']),float(row['lon'])
+                if (math.isfinite(latitude) and math.isfinite(longitude) and
+                    -90<=latitude<=90 and -180<=longitude<=180):
+                    plane.update(lat=latitude,lon=longitude,seen_pos=max(0,age))
+            except (ValueError,TypeError):pass
+    if consume:_aerodrome_cursor=max(_aerodrome_cursor,newest_id)
+    for plane in flights.values():plane.pop('_alt_set',None)
+    return {'now':now,'aircraft':list(flights.values())},lat,lon
+
+
+def read_receiver(consume=True):
+    global _last_good_url, _last_live_scan_at
     with _lock, connect() as c: stored=receiver_settings(c)
     custom=stored['url'] or os.environ.get('AIRSPACE_AIRCRAFT_URL','').strip()
     addresses=_local_addresses()
     urls=(custom,) if custom else _receiver_candidates(addresses)
     if not custom and _last_good_url in urls:
         urls=(_last_good_url,)+tuple(x for x in urls if x!=_last_good_url)
+    # Once the live feed fails, use Aerodrome temporarily instead of trying
+    # many refused ports every three seconds. Retry the live feed each minute.
+    if (_last_good_url==_AERODROME_SOURCE and
+            time.time()-_last_live_scan_at < 60):
+        try:
+            return _aerodrome_snapshot(stored['lat'],stored['lon'],consume)
+        except Exception:
+            pass
     err='No aircraft feed available'
     for url in urls:
         if not _receiver_url_allowed(url,addresses):
@@ -426,12 +489,19 @@ def read_receiver():
         except (ValueError,OSError,URLError,HTTPError,KeyError) as exc:
             err=str(exc)[:150]
     _last_good_url=None
-    if custom:raise ValueError('Receiver URL unreachable: '+err)
-    raise ValueError('No aircraft.json on this PC (localhost/LAN; ports 1099/8080): '+err)
+    _last_live_scan_at=time.time()
+    try:
+        output=_aerodrome_snapshot(stored['lat'],stored['lon'],consume)
+        _last_good_url=_AERODROME_SOURCE
+        return output
+    except Exception:
+        if custom:raise ValueError('Receiver URL unreachable: '+err)
+        raise ValueError('Live feed unavailable, and no Aerodrome sightings accessible: '+err)
 
 
 def check_receiver():
-    sample,lat,lon=read_receiver()
+    # The Test connection button must not consume unseen database samples.
+    sample,lat,lon=read_receiver(consume=False)
     return {'ok':True,'aircraft':len(sample['aircraft']),
             'coordinates_available':lat is not None and lon is not None,
             'source':_last_good_url}
@@ -482,6 +552,7 @@ def loop():
         try:
             payload,lat,lon=read_receiver()
             process_snapshot(payload,lat,lon)
+            with _lock:_last_sample['source']=_last_good_url
         except Exception as exc:
             with _lock:_last_sample['error']=str(exc)[:180]
         try:deliver_pending()
