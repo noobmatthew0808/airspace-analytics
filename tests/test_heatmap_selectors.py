@@ -16,8 +16,32 @@ class TestHeatmapSelectors(unittest.TestCase):
   self.assertIn('delete state.heatYear;delete state.heatMonth;delete state.heatScope;',js)
   self.assertIn(":ukToday().slice(0,7);",js)
   self.assertIn("const mode=state.heatScope==='year'?'year':'month';",js)
+  self.assertIn("if(!['year','month'].includes(state.heatScope))state.heatScope='month';",js)
   self.assertIn("state.heatScope='year';persist();",js)
   self.assertIn("state.heatScope='month';persist();",js)
+
+ def test_startup_migration_does_not_override_month_default(self):
+  # Execute the actual initialization code, not just the calendar renderer.
+  # This catches the v1.10.4 regression where startup forced 'year'.
+  import json, shutil, subprocess
+  if not shutil.which('node'):self.skipTest('Node.js not installed')
+  js=APP.read_text(encoding='utf-8')
+  init=js.split('// One-time migration:',1)[1].split('function setTheme(',1)[0]
+  script="""
+const vm = require('node:vm');
+const init = """+json.dumps(init)+""";
+for (const marker of [null,'1']) {
+ const state = {};
+ const localStorage = {
+  getItem: () => marker,
+  setItem: () => {}
+ };
+ vm.runInNewContext(init,{state,localStorage,persist:()=>{}});
+ if(state.heatScope !== 'month')throw Error('Calendar startup default is '+state.heatScope);
+}
+"""
+  result=subprocess.run(['node','-e',script],capture_output=True,text=True,timeout=10)
+  self.assertEqual(result.returncode,0,result.stderr)
 
  def test_single_element_selector_never_uses_foreach(self):
   js=APP.read_text(encoding='utf-8')
