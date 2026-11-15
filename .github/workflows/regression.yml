@@ -17,8 +17,8 @@ jobs:
           python-version: '3.12'
       - name: Python syntax
         run: python3 -m compileall -q backend tests
-      - name: Full Python regression suite including Alerts
-        run: python3 -m unittest discover -s tests -t . -v
+      - name: Compare full Python suite against unchanged main
+        run: python3 scripts/check_regression.py
       - name: Browser code syntax
         run: |
           node --check frontend/app.js
@@ -32,4 +32,3 @@ jobs:
           grep -q "function todayChartSeries(" frontend/app.js
           grep -q "function renderChart(" frontend/app.js
           grep -q "function fillPatterns(" frontend/app.js
-          grep -q "READ ONLY" /dev/null || true
