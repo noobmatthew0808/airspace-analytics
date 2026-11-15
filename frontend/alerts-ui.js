@@ -30,7 +30,7 @@ function renderAlertPageContents(){
  const host=document.querySelector('#page');if(!host||!alertsData)return;
  const d=alertsData,receiver=d.receiver||{},healthy=receiver.time&&!receiver.error&&Date.now()/1000-receiver.time<20;
  host.innerHTML='<div class="alert-page"><div class="page-heading"><h1 class="page-title">Alerts</h1><button class="btn small" id="alertAdd" type="button">+ Add rule</button></div>'+
- '<div class="alert-status"><span class="alert-status-dot '+(healthy?'online':'')+'"></span>'+(healthy?at(receiver.aircraft)+' aircraft · Receiver connected'+(receiver.lat!=null?' · Antenna set':'')+(receiver.source&&receiver.source.startsWith('Aerodrome')?' · Aerodrome samples':''):'Receiver unavailable'+(receiver.error?' · '+ae(receiver.error):''))+'</div>'+
+ '<div class="alert-status"><span class="alert-status-dot '+(healthy?'online':'')+'"></span>'+(healthy?at(receiver.aircraft)+(receiver.source?.startsWith('Aerodrome')?' aircraft seen (30s)':' aircraft')+' · Receiver connected'+(receiver.lat!=null?' · Antenna set':'')+(receiver.source&&receiver.source.startsWith('Aerodrome')?' · Aerodrome samples':''):'Receiver unavailable'+(receiver.error?' · '+ae(receiver.error):''))+'</div>'+
  '<div id="alertEditor"></div><div id="alertFeedback" role="status" class="alert-feedback"></div>'+
  '<section class="alert-rules">'+(d.rules.length?d.rules.map(alertRule).join(''):'<div class="alert-empty">No rules configured yet.</div>')+'</section>'+
  '<details class="foldout alert-config" id="alertNtfy"><summary><span>Notifications <small>'+(d.ntfy.topic?'Configured':'Not configured')+'</small></span></summary>'+
@@ -59,7 +59,7 @@ function editAlert(rule){
  node.innerHTML='<form id="alertEditorForm" class="alert-editor"><div class="alert-editor-heading"><strong>'+title+'</strong><button type="button" class="btn small" id="alertCancel">Cancel</button></div>'+
  '<div class="alert-form-grid"><label class="alert-field">Name<input name="label" maxlength="50" required value="'+ae(r.label||'')+'" placeholder="A380 nearby"></label>'+
  '<label class="alert-field">Match by<select name="field" id="alertField">'+matchFields.map(f=>'<option value="'+f[0]+'" '+(r.field===f[0]?'selected':'')+'>'+f[1]+'</option>').join('')+'</select></label>'+
- '<label class="alert-field alert-wide" id="alertPatternHolder">Codes / pattern<input name="pattern" maxlength="400" required value="'+ae(r.pattern||'')+'" placeholder="A388 or G-* or BAW*"><small>Multiple values separated by commas · * is a wildcard</small></label>'+
+ '<label class="alert-field alert-wide" id="alertPatternHolder">Codes / pattern<input name="pattern" maxlength="1800" required value="'+ae(r.pattern||'')+'" placeholder="A388 or G-* or BAW*"><small>Up to 100 values separated by commas · * is a wildcard</small></label>'+
  '<label class="alert-field">Distance, km<input name="max_km" type="number" step="0.1" min="0.1" max="1000" value="'+ae(r.max_km??'')+'" placeholder="Any"></label>'+
  '<label class="alert-field">Min altitude, ft<input name="min_ft" type="number" min="-2000" max="70000" step="100" value="'+ae(r.min_ft??'')+'" placeholder="Any"></label>'+
  '<label class="alert-field">Max altitude, ft<input name="max_ft" type="number" min="-2000" max="70000" step="100" value="'+ae(r.max_ft??'')+'" placeholder="Any"></label>'+
@@ -95,7 +95,7 @@ function bindAlerts(){
   }catch(err){notifyInline(err.message,true)}};
  document.querySelector('#alertReceiverCheck').onclick=async()=>{
   try{const result=await alertApi('/api/alerts/receiver/check',{});
-   notifyInline(result.aircraft+' aircraft in current snapshot'+(result.coordinates_available?' · antenna position available':' · antenna position missing (distance filters need coordinates)')+(result.source?' · '+result.source:''));}
+   notifyInline(result.aircraft+(result.source?.startsWith('Aerodrome')?' aircraft seen in last 30 seconds':' aircraft in current snapshot')+(result.coordinates_available?' · antenna position available':' · antenna position missing (distance filters need coordinates)')+(result.source?' · '+result.source:''));}
   catch(err){notifyInline(err.message,true)}};
  const form=document.querySelector('#alertNtfyForm');
  form.onsubmit=async e=>{e.preventDefault();const wasOpen=true;const obj=Object.fromEntries(new FormData(form));
