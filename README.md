@@ -239,3 +239,23 @@ optional missing aircraft metadata. The only extra writable file is
 `.airspace-state/alerts.sqlite3` in this same project, holding rules, active
 state, notifications settings and recent event history—not duplicate aircraft
 observations. No extra container, package or service needs installing.
+
+## Alerts source fallback
+
+Alerts uses live local aircraft.json when available (about 3-second checks).
+If that network endpoint cannot be reached, Alerts automatically reads recent
+**new** sightings from the existing read-only Aerodrome database, so alert
+processing can continue at Aerodrome's 10-second recording resolution.
+It never writes to Aerodrome or copies its observations.
+
+To use distance rules, enter the **antenna's latitude and longitude** in the
+local **Alerts → Receiver setup** form and press Save receiver. These coordinates
+are saved in the local `.airspace-state/alerts.sqlite3` file, not committed to
+GitHub. There is no need to enter the web map address as the feed URL; leave
+that input blank for automatic discovery and database fallback.
+
+Type and registration rules don't require a position. Distance-limited rules
+need both an antenna location and a usable aircraft position. Rechecking the
+same Aerodrome observation does not rearm an aircraft; only new observations
+can confirm a departure. No additional service or database installation is
+required.

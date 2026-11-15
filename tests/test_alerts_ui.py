@@ -12,10 +12,10 @@ class TestAlertsUI(unittest.TestCase):
   assert "renderAlertsPage" in app
   ui=(ROOT/'frontend/alerts-ui.js').read_text()
   for field in ['alertReceiverForm','alertReceiverCheck','alertNtfyForm','alertTest','alertAdd',
-                'data-preset','data-toggle','data-edit','alertHistory','alertApi']:
+                'data-toggle','data-edit','alertHistory','alertApi']:
    self.assertIn(field,ui)
-  self.assertIn("['Boeing 747','B74*']",ui)
-  self.assertIn("['A340','A34*']",ui)
+  self.assertNotIn('data-preset',ui)
+  self.assertNotIn('alert-quick',ui)
 
  def test_optional_extra_database_not_aerodrome(self):
   alerts=(ROOT/'backend/alerts.py').read_text()
