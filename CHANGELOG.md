@@ -1,3 +1,11 @@
+# v1.10.1 — Receiver connection fix (15 November 2026)
+
+- Detect ADS-B aircraft.json on this Linux machine's LAN IP as well as localhost, including tar1090's /map/data and /data paths on ports 1099 and 8080.
+- Allow editing the receiver feed URL in Alerts using the machine's actual LAN IPv4 address, but reject other devices and external hosts.
+- Remember the most recently working feed path; show it on a successful connection test.
+- Skip HTTP proxies and external redirects for local receiver requests.
+- Add dedicated regression tests. No changes to Traffic, Aerodrome history, alert matching, ntfy delivery or the website updater.
+
 # v1.10.0 — Aircraft alerts (staged)
 
 - Open Receiver setup inside Alerts for auto-detected or manually configured local feed/antenna coordinates, with connection test.
