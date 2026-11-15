@@ -1,0 +1,35 @@
+name: Airspace Analytics regression
+on:
+  push:
+    branches:
+      - feature/aircraft-alerts-v1
+  pull_request:
+  workflow_dispatch:
+jobs:
+  all-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python syntax
+        run: python3 -m compileall -q backend tests
+      - name: Full Python regression suite including Alerts
+        run: python3 -m unittest discover -s tests -t . -v
+      - name: Browser code syntax
+        run: |
+          node --check frontend/app.js
+          node --check frontend/alerts-ui.js
+          node --check frontend/calendar.js
+      - name: Installation script syntax
+        run: bash -n scripts/install.sh
+      - name: Verify unchanged Traffic anchors
+        run: |
+          grep -q "function renderExplore()" frontend/app.js
+          grep -q "function todayChartSeries(" frontend/app.js
+          grep -q "function renderChart(" frontend/app.js
+          grep -q "function fillPatterns(" frontend/app.js
+          grep -q "READ ONLY" /dev/null || true
