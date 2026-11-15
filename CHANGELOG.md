@@ -1,3 +1,11 @@
+# v1.10.6 — Tap aircraft alerts to open selected tar1090 track (15 November 2026)
+
+- Add optional Home Wi-Fi and Tailscale tar1090 map URLs to local Alerts Notifications settings, with a preferred notification-tap route.
+- Attach ntfy Click and Home Wi-Fi/Tailscale view actions to each alert, selecting the individual aircraft by ICAO hex with ?icao=HEX&noIsolation.
+- Test notifications now include the same map shortcuts without requiring an aircraft.
+- No public access to the local receiver is enabled: home links work on the home LAN without VPN; remote Tailscale links require an active tailnet connection.
+- Preserve existing ntfy topic/token, alerts state, all stored Aerodrome observations, Traffic and updater.
+
 # v1.10.5 — Repair Activity calendar month default (15 November 2026)
 
 - Correct an existing startup migration that forced the Activity calendar to the year view after v1.10.4 initialized its month default.
