@@ -21,7 +21,7 @@ import sys
 import time
 import traceback
 
-from . import data
+from . import data, alerts
 
 BASE = Path(__file__).resolve().parents[1]
 STATIC = BASE / 'frontend'
@@ -130,6 +130,7 @@ class App(BaseHTTPRequestHandler):
         if path=='/api/config':
             return self.send_json({'version':VERSION,'timezone':'Europe/London',
                 'name':'Airspace Analytics','update_token_required':False})
+        if path=='/api/alerts': return self.send_json(alerts.snapshot())
         if path=='/api/health': return self.send_json(data.health())
         if path=='/api/overview': return self.send_json(data.overview())
         if path=='/api/filters': return self.send_json(data.filter_options())
@@ -180,8 +181,49 @@ class App(BaseHTTPRequestHandler):
     def do_POST(self):
         self._safe_run(self._post)
 
+    def alerts_post(self, path):
+        """Same-origin, trusted-LAN-only control plane for personal alert rules."""
+        if path not in ('/api/alerts/rule','/api/alerts/delete','/api/alerts/ntfy','/api/alerts/test','/api/alerts/receiver','/api/alerts/receiver/check'):
+            return self.send_json({'error':'Unknown endpoint'},404)
+        origin=self.headers.get('Origin','')
+        host=self.headers.get('Host','')
+        fetch_site=self.headers.get('Sec-Fetch-Site','')
+        if (origin and origin not in ('http://'+host,'https://'+host)) or fetch_site not in ('','same-origin','none'):
+            return self.send_json({'error':'Cross-origin alert request blocked'},403)
+        try:
+            remote=ipaddress.ip_address(self.client_address[0])
+            ranges=('127.0.0.0/8','10.0.0.0/8','172.16.0.0/12','192.168.0.0/16',
+                    '100.64.0.0/10','::1/128','fc00::/7')
+            if not any(remote in ipaddress.ip_network(prefix) for prefix in ranges):
+                return self.send_json({'error':'Alert settings are only available on your trusted network'},403)
+        except ValueError:
+            return self.send_json({'error':'Invalid client address'},403)
+        try:
+            length=int(self.headers.get('Content-Length','0'))
+        except ValueError:raise ValueError('Invalid request length')
+        if length<0 or length>alerts.API_MAX:raise ValueError('Request too large')
+        payload=json.loads(self.rfile.read(length)) if length else {}
+        if not isinstance(payload,dict):raise ValueError('Expected a JSON object')
+        if path=='/api/alerts/rule':
+            return self.send_json({'ok':True,'id':alerts.save_rule(payload)})
+        if path=='/api/alerts/delete':
+            alerts.delete_rule(payload.get('id'))
+            return self.send_json({'ok':True})
+        if path=='/api/alerts/ntfy':
+            alerts.save_notifier(payload)
+            return self.send_json({'ok':True})
+        if path=='/api/alerts/receiver':
+            alerts.save_receiver(payload)
+            return self.send_json({'ok':True})
+        if path=='/api/alerts/receiver/check':
+            return self.send_json(alerts.check_receiver())
+        if path=='/api/alerts/test':
+            return self.send_json(alerts.send_test())
+
     def _post(self):
         path, _=self.get_query()
+        if path.startswith('/api/alerts/'):
+            return self.alerts_post(path)
         if path not in ('/api/update/apply','/api/update/rollback'):
             return self.send_json({'error':'Unknown endpoint'},404)
         # One-click updates are limited to loopback, home-LAN and Tailscale
@@ -254,6 +296,7 @@ def run():
     port=int(os.environ.get('AIRSPACE_PORT','8088'))
     ThreadingHTTPServer.daemon_threads=True
     server=ThreadingHTTPServer((host,port),App)
+    alerts.start()
     print(f'Airspace Analytics v{VERSION} on http://{host}:{port}; Aerodrome DB {data.db_path()}',flush=True)
     try: server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt: pass

@@ -1,3 +1,4 @@
+import {renderAlertsPage} from './alerts-ui.js';
 /* Airspace Analytics: dependency-free, responsive client for Aerodrome's read-only API. */
 const $ = (q, root=document)=>root.querySelector(q);
 const $$ = (q, root=document)=>[...root.querySelectorAll(q)];
@@ -148,7 +149,7 @@ function icon(name,size=18){
  };
  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]||paths.grid}</svg>`;
 }
-const pages=[['explore','Traffic','chart'],['database','Database','database'],['settings','Settings','settings']];
+const pages=[['explore','Traffic','chart'],['alerts','Alerts','bell'],['database','Database','database'],['settings','Settings','settings']];
 const names={home:'Launcher',...Object.fromEntries(pages.map(x=>[x[0],x[1]]))};
 let currentPage='home',currentChart='line',currentAnalytics=null,latestOverview=null,healthInfo=null,activeTimer=null,renderId=0;
 const zoomHistory=[];
@@ -171,6 +172,7 @@ function shell(){
      <div class="topbar-left">
        <a class="top-icon-link" href="/" title="Home launcher" aria-label="Home">${icon('grid',19)}</a>
        <a class="top-nav-link" href="/analytics#explore" data-page="explore">Traffic</a>
+       <a class="top-nav-link" href="/analytics#alerts" data-page="alerts">Alerts</a>
        <strong id="topTitle" class="sr-only">Traffic</strong>
      </div>
      <div class="top-actions">
@@ -771,7 +773,7 @@ async function loadPage(){const fallback=location.pathname==='/analytics'?'explo
  $('#topTitle').textContent=names[currentPage];setMenu(false);
  window.scrollTo({top:0,behavior:'instant'});
  if(currentPage==='explore'&&followingToday&&state.start.slice(0,10)!==ukToday())setTodayWindow();
- const routes={home:renderHome,explore:renderExplore,database:renderDatabase,settings:renderSettings};
+ const routes={home:renderHome,explore:renderExplore,alerts:renderAlertsPage,database:renderDatabase,settings:renderSettings};
  try{await routes[currentPage]()}catch(e){$('#page').innerHTML=safeError(e)}
 }
 async function refreshStatus(){try{const h=await api('/api/health');setStatus(h)}catch{setStatus(null)}}

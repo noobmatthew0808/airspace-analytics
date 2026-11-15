@@ -59,10 +59,14 @@ class TestLocalAPI(unittest.TestCase):
    self.get('/api/database/rows?table=sqlite_master')
   self.assertEqual(cm.exception.code,400)
  def test_update_button_uses_configured_repository_only(self):
+  # Tests may run inside a real GitHub Actions checkout. Simulate an
+  # unconfigured remote explicitly; never queue a real updater action in CI.
+  from unittest.mock import patch
   url=f'http://127.0.0.1:{self.port}/api/update/apply'
-  req=Request(url, data=b'{}',method='POST', headers={'X-Update-Token':'not-the-secret','Content-Type':'application/json'})
-  with self.assertRaises(HTTPError) as cm:
-   urlopen(req,timeout=5)
-  self.assertEqual(cm.exception.code,400)  # no Git remote in isolated test server
+  req=Request(url, data=b'{}',method='POST', headers={'Content-Type':'application/json'})
+  with patch('backend.server.version_info', return_value={'configured':False}):
+   with self.assertRaises(HTTPError) as cm:
+    urlopen(req,timeout=5)
+  self.assertEqual(cm.exception.code,400)
 
 if __name__=='__main__':unittest.main()
