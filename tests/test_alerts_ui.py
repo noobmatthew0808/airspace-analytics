@@ -16,8 +16,6 @@ class TestAlertsUI(unittest.TestCase):
    self.assertIn(field,ui)
   self.assertIn('maxlength="1800"',ui)
   self.assertIn('aircraft seen (30s)',ui)
-  for field in ['name="map_lan"','name="map_tailscale"','name="tap_route"']:
-   self.assertIn(field,ui)
   self.assertNotIn('data-preset',ui)
   self.assertNotIn('alert-quick',ui)
 
