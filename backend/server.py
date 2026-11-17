@@ -21,7 +21,7 @@ import sys
 import time
 import traceback
 
-from . import data, alerts
+from . import data, alerts, healthchecks
 
 BASE = Path(__file__).resolve().parents[1]
 STATIC = BASE / 'frontend'
@@ -132,6 +132,7 @@ class App(BaseHTTPRequestHandler):
                 'name':'Airspace Analytics','update_token_required':False})
         if path=='/api/alerts': return self.send_json(alerts.snapshot())
         if path=='/api/health': return self.send_json(data.health())
+        if path=='/api/monitoring/healthchecks': return self.send_json(healthchecks.snapshot(refresh=q.get('refresh')=='1'))
         if path=='/api/overview': return self.send_json(data.overview())
         if path=='/api/filters': return self.send_json(data.filter_options())
         if path=='/api/analytics': return self.send_json(data.analyze(q))

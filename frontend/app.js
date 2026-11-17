@@ -718,15 +718,85 @@ function updateBox(){return `<div class="auth-box">
   <div class="setting-actions"><button class="btn" id="checkUpdates">${icon('refresh')} Check GitHub</button><button class="btn primary" id="applyUpdate">Update now</button><button class="btn" id="rollbackUpdate">Restore previous</button></div>
   <div class="tiny muted" id="updateProgress"></div>
  </div>`}
+
+function monitoringBox(){
+ return '<details class="foldout" id="healthchecksFold"><summary><span>'+icon('activity',17)+' View Healthchecks.io status and downtime</span>'+icon('chevron',17)+'</summary>'+
+  '<div class="hc-wrapper"><div class="hc-toolbar"><span class="tiny muted" id="hcCheckedAt">Open to load checks</span><button type="button" class="btn small" id="hcRefresh">'+icon('refresh',14)+' Refresh</button></div>'+
+  '<div id="hcDetails" aria-live="polite"><p class="tiny muted">Open to load the two monitors.</p></div></div></details>';
+}
+function hcDate(iso){
+ if(!iso)return 'Not recorded';
+ const d=new Date(iso);
+ return Number.isNaN(d.getTime())?'Not recorded':d.toLocaleString('en-GB',{timeZone:'Europe/London',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+}
+function hcDuration(value){
+ if(value===null||value===undefined)return '—';
+ const seconds=Number(value);
+ if(!Number.isFinite(seconds)||seconds<0)return '—';
+ const s=Math.floor(seconds),d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),sec=s%60;
+ if(d)return d+'d '+h+'h';
+ if(h)return h+'h '+m+'m';
+ if(m)return m+'m '+sec+'s';
+ return sec+'s';
+}
+function hcCheckCard(c){
+ const labels={up:'Up',grace:'Late',down:'Down',paused:'Paused',new:'Not started',not_found:'Unavailable',unknown:'Unknown'};
+ const tones={up:'aqua',grace:'warn',down:'red',paused:'warn'};
+ const state=String(c.status||'unknown'),tag=labels[state]||'Unknown',tone=tones[state]||'';
+ if(state==='not_found'){
+  return '<div class="hc-check"><div class="hc-check-top"><strong>'+esc(c.name)+'</strong><span class="chip">'+tag+'</span></div><p class="tiny muted">'+esc(c.note||'Check not available')+'</p></div>';
+ }
+ const stats=[
+  ['Last heartbeat',hcDate(c.last_ping)],
+  ['Next expected',hcDate(c.next_ping)],
+  ['Heartbeat interval',hcDuration(c.period_seconds)],
+  ['Grace period',hcDuration(c.grace_seconds)],
+  ['Pings recorded',c.ping_count===undefined||c.ping_count===null?'—':String(c.ping_count)]
+ ];
+ const incidents=Array.isArray(c.outages)?c.outages:[];
+ const incidentMarkup=incidents.length?incidents.map(x=>
+  '<div class="hc-incident"><div><strong>'+esc(hcDate(x.started_at))+'</strong><small class="muted">'+
+  (x.ongoing?'Ongoing outage':'Recovered '+esc(hcDate(x.ended_at)))+'</small></div><span>'+esc(hcDuration(x.duration_seconds))+'</span></div>'
+ ).join(''):'<p class="tiny muted">No outages found in the available history.</p>';
+ return '<details class="hc-check" data-hc-name="'+esc(c.name)+'"><summary class="hc-check-top"><strong>'+esc(c.name)+'</strong><span class="chip '+tone+'">'+esc(tag)+'</span>'+icon('chevron',15)+'</summary>'+
+  '<div class="hc-check-content"><div class="hc-metrics">'+stats.map(x=>'<div class="hc-metric"><small>'+esc(x[0])+'</small><strong>'+esc(x[1])+'</strong></div>').join('')+'</div>'+
+  '<div class="hc-section-title">Downtime history</div><div class="hc-incidents">'+incidentMarkup+'</div>'+
+  (c.history_error?'<p class="tiny muted">'+esc(c.history_error)+'</p>':'')+
+  '</div></details>';
+}
+let hcRequestActive=false;
+async function refreshHealthchecks(force=false){
+ const fold=$('#healthchecksFold'),container=$('#hcDetails');
+ if(!fold?.open||!container||hcRequestActive)return;
+ hcRequestActive=true;
+ const expandedChecks=new Set([...container.querySelectorAll('details.hc-check[open]')].map(el=>el.dataset.hcName));
+ if(force)container.innerHTML=loading('Refreshing monitoring history…');
+ try{
+  const d=await api('/api/monitoring/healthchecks',force?{refresh:1}:{});
+  if(currentPage!=='settings'||!$('#healthchecksFold')?.open)return;
+  const target=$('#hcDetails');
+  if(!target)return;
+  target.innerHTML=d.error?'<p class="notice error-note">'+esc(d.error)+'</p>':
+   '<div class="hc-list">'+(d.checks||[]).map(hcCheckCard).join('')+'</div><p class="tiny muted hc-footnote">'+esc(d.history_note||'')+'</p>';
+  for(const el of target.querySelectorAll('details.hc-check')){if(expandedChecks.has(el.dataset.hcName))el.open=true}
+  if($('#hcCheckedAt'))$('#hcCheckedAt').textContent='Last checked: '+hcDate(d.checked_at);
+ }catch(e){
+  if($('#hcDetails')&&$('#healthchecksFold')?.open)$('#hcDetails').innerHTML='<p class="notice error-note">'+esc(e.message||'Monitoring unavailable')+'</p>';
+ }finally{hcRequestActive=false}
+}
+
 async function renderSettings(){const rid=++renderId;
  $('#page').innerHTML=title('','Settings')+
  `<div class="panel">
  ${settingsRow('Launcher links','',`<details class="foldout" id="launcherEditor" ${launcherEditorExpanded?'open':''}><summary>Manage launcher links</summary>${settingsLinks()}</details>`)}
  ${settingsRow('Excluded days from averages','',averageExclusionSettings())}
  ${settingsRow('GitHub updates','',updateBox())}
+ ${settingsRow('Server monitoring','',monitoringBox())}
   ${settingsRow('Aerodrome database','',`<a id="databaseInfo" class="database-hitbox" href="/analytics#database" title="Open database" aria-label="Browse database">${loading()}</a>`)}
  </div>`;
  $('#launcherEditor').ontoggle=()=>{launcherEditorExpanded=$('#launcherEditor').open};
+ $('#healthchecksFold').addEventListener('toggle',()=>{if($('#healthchecksFold').open)refreshHealthchecks()});
+ $('#hcRefresh').onclick=()=>refreshHealthchecks(true);
  $$('.shortcut-edit-row').forEach(row=>row.addEventListener('toggle',()=>{if(row.open)$$('.shortcut-edit-row').forEach(other=>{if(other!==row)other.open=false});}));
  $('#addExcludedDay').onclick=()=>{const day=$('#excludeDate').value;if(!day)return;setExcludedAverageDays([...excludedAverageDays(),day]);renderSettings()};
  $$('[data-include-day]').forEach(b=>b.onclick=()=>{setExcludedAverageDays(excludedAverageDays().filter(day=>day!==b.dataset.includeDay));renderSettings()});
@@ -779,5 +849,5 @@ async function loadPage(){const fallback=location.pathname==='/analytics'?'explo
  try{await routes[currentPage]()}catch(e){$('#page').innerHTML=safeError(e)}
 }
 async function refreshStatus(){try{const h=await api('/api/health');setStatus(h)}catch{setStatus(null)}}
-function boot(){shell();window.addEventListener('hashchange',loadPage);loadPage();refreshStatus();api('/api/config').then(d=>$$('.versionValue').forEach(x=>x.textContent='v'+d.version)).catch(()=>{});activeTimer=setInterval(()=>{refreshStatus();checkTodayRollover()},60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkTodayRollover()})}
+function boot(){shell();window.addEventListener('hashchange',loadPage);loadPage();refreshStatus();api('/api/config').then(d=>$$('.versionValue').forEach(x=>x.textContent='v'+d.version)).catch(()=>{});activeTimer=setInterval(()=>{refreshStatus();checkTodayRollover();if(currentPage==='settings'&&$('#healthchecksFold')?.open)refreshHealthchecks()},60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkTodayRollover()})}
 boot();
