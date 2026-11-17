@@ -1,3 +1,12 @@
+# v1.10.8 — Read-only Healthchecks monitoring in Settings (17 November 2026)
+
+- Add a collapsible **Server monitoring** section inside Settings, showing the existing Ubuntu Server and ADSB.im Receiver Healthchecks.io statuses, last/next heartbeat, schedule, grace and recorded downtime intervals.
+- Retrieve status changes through Healthchecks.io's free read-only Management API v3 using a backend-only project key, with a 45-second cache and no browser-side credentials or additional dependencies.
+- Display only actual recorded down/up transitions; unknown history is never counted as uptime. History follows Healthchecks.io retention (current calendar month and two prior months).
+- Supports iPhone/desktop, manual refresh and an automatic refresh while Settings monitoring is open.
+- A check outside the read-only key's project appears as unavailable, **not down**.
+- No changes to Traffic charts, Alerts logic, aircraft data, Aerodrome, Docker, feeder services, notification delivery or existing Settings functions.
+
 # v1.10.7 — Local map opens selected aircraft from ntfy (15 November 2026)
 
 - Tapping a real Airspace Analytics ntfy aircraft notification now opens local tar1090 with the matched aircraft selected, centered and highlighted using its ICAO hex.
