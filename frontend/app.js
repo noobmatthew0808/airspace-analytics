@@ -769,7 +769,7 @@ async function refreshHealthchecks(force=false){
  const fold=$('#healthchecksFold'),container=$('#hcDetails');
  if(!fold?.open||!container||hcRequestActive)return;
  hcRequestActive=true;
- const expandedChecks=new Set($('details.hc-check[open]',container).map(el=>el.dataset.hcName));
+ const expandedChecks=new Set([...container.querySelectorAll('details.hc-check[open]')].map(el=>el.dataset.hcName));
  if(force)container.innerHTML=loading('Refreshing monitoring history…');
  try{
   const d=await api('/api/monitoring/healthchecks',force?{refresh:1}:{});
@@ -778,7 +778,7 @@ async function refreshHealthchecks(force=false){
   if(!target)return;
   target.innerHTML=d.error?'<p class="notice error-note">'+esc(d.error)+'</p>':
    '<div class="hc-list">'+(d.checks||[]).map(hcCheckCard).join('')+'</div><p class="tiny muted hc-footnote">'+esc(d.history_note||'')+'</p>';
-  $('details.hc-check',target).forEach(el=>{if(expandedChecks.has(el.dataset.hcName))el.open=true});
+  for(const el of target.querySelectorAll('details.hc-check')){if(expandedChecks.has(el.dataset.hcName))el.open=true}
   if($('#hcCheckedAt'))$('#hcCheckedAt').textContent='Last checked: '+hcDate(d.checked_at);
  }catch(e){
   if($('#hcDetails')&&$('#healthchecksFold')?.open)$('#hcDetails').innerHTML='<p class="notice error-note">'+esc(e.message||'Monitoring unavailable')+'</p>';
