@@ -750,14 +750,15 @@ function hcCheckCard(c){
   ['Last heartbeat',hcDate(c.last_ping)],
   ['Next expected',hcDate(c.next_ping)],
   ['Heartbeat interval',hcDuration(c.period_seconds)],
-  ['Grace period',hcDuration(c.grace_seconds)]
+  ['Grace period',hcDuration(c.grace_seconds)],
+  ['Pings recorded',c.ping_count===undefined||c.ping_count===null?'—':String(c.ping_count)]
  ];
  const incidents=Array.isArray(c.outages)?c.outages:[];
  const incidentMarkup=incidents.length?incidents.map(x=>
   '<div class="hc-incident"><div><strong>'+esc(hcDate(x.started_at))+'</strong><small class="muted">'+
   (x.ongoing?'Ongoing outage':'Recovered '+esc(hcDate(x.ended_at)))+'</small></div><span>'+esc(hcDuration(x.duration_seconds))+'</span></div>'
  ).join(''):'<p class="tiny muted">No outages found in the available history.</p>';
- return '<details class="hc-check"><summary class="hc-check-top"><strong>'+esc(c.name)+'</strong><span class="chip '+tone+'">'+esc(tag)+'</span>'+icon('chevron',15)+'</summary>'+
+ return '<details class="hc-check" data-hc-name="'+esc(c.name)+'"><summary class="hc-check-top"><strong>'+esc(c.name)+'</strong><span class="chip '+tone+'">'+esc(tag)+'</span>'+icon('chevron',15)+'</summary>'+
   '<div class="hc-check-content"><div class="hc-metrics">'+stats.map(x=>'<div class="hc-metric"><small>'+esc(x[0])+'</small><strong>'+esc(x[1])+'</strong></div>').join('')+'</div>'+
   '<div class="hc-section-title">Downtime history</div><div class="hc-incidents">'+incidentMarkup+'</div>'+
   (c.history_error?'<p class="tiny muted">'+esc(c.history_error)+'</p>':'')+
@@ -768,6 +769,7 @@ async function refreshHealthchecks(force=false){
  const fold=$('#healthchecksFold'),container=$('#hcDetails');
  if(!fold?.open||!container||hcRequestActive)return;
  hcRequestActive=true;
+ const expandedChecks=new Set($('details.hc-check[open]',container).map(el=>el.dataset.hcName));
  if(force)container.innerHTML=loading('Refreshing monitoring history…');
  try{
   const d=await api('/api/monitoring/healthchecks',force?{refresh:1}:{});
@@ -776,6 +778,7 @@ async function refreshHealthchecks(force=false){
   if(!target)return;
   target.innerHTML=d.error?'<p class="notice error-note">'+esc(d.error)+'</p>':
    '<div class="hc-list">'+(d.checks||[]).map(hcCheckCard).join('')+'</div><p class="tiny muted hc-footnote">'+esc(d.history_note||'')+'</p>';
+  $('details.hc-check',target).forEach(el=>{if(expandedChecks.has(el.dataset.hcName))el.open=true});
   if($('#hcCheckedAt'))$('#hcCheckedAt').textContent='Last checked: '+hcDate(d.checked_at);
  }catch(e){
   if($('#hcDetails')&&$('#healthchecksFold')?.open)$('#hcDetails').innerHTML='<p class="notice error-note">'+esc(e.message||'Monitoring unavailable')+'</p>';
