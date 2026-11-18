@@ -3,7 +3,7 @@ const vm=require('vm');
 const code=fs.readFileSync('frontend/live-terminal.js','utf8').replace(/^export /gm,'');
 const css=fs.readFileSync('frontend/live-terminal.css','utf8');
 const ctx={
- document:{hidden:false,addEventListener(){},getElementById(){return null}},
+ document:{hidden:false,addEventListener(){},getElementById(){return null},querySelector(){return null}},
  localStorage:{getItem(){return null},setItem(){}}
 };
 vm.createContext(ctx);vm.runInContext(code,ctx);
