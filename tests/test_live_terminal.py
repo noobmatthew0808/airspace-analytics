@@ -19,3 +19,9 @@ class TestLiveTerminal(unittest.TestCase):
             live_terminal.stream(handler)
             start.assert_not_called()
         self.assertEqual(handler.answer[1], 503)
+
+    def test_explanatory_footer_removed(self):
+        from pathlib import Path
+        js = (Path(__file__).resolve().parents[1] / 'frontend' / 'live-terminal.js').read_text()
+        self.assertNotIn('live-terminal-note', js)
+        self.assertIn('Docker permission denied', js)

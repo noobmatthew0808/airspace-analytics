@@ -1,3 +1,9 @@
+# v1.10.10 — Live terminal cleanup and Docker permission guidance
+
+- Removed the explanatory paragraph beneath the Live ADS-B terminal; other Live page elements and all other website pages are unchanged.
+- Improved the terminal header to identify Docker socket permission failures explicitly instead of only reporting that the terminal exited.
+- Documented the optional Linux service-user Docker permission fix. No permissions are changed automatically, and no feeders, databases, Docker containers, or other systemd services are modified.
+
 # v1.10.9 — Live ADS-B terminal
 
 - Added a Live ADS-B tab with a direct read-only stream of the existing viewadsb terminal (native ~500ms refresh, not 1s aircraft.json polling).
