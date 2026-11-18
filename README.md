@@ -318,3 +318,14 @@ Registration and aircraft type come directly from readsb's r/t fields when avail
 Aerodrome's existing route_cache remains preferred. The optional route enrichment uses the public batch routeset format already used by tar1090 (api.adsb.lol) to fill missed routes, with strict timeout, caching and backoff. This optional external request sends aircraft callsigns and positions, as tar1090's route feature does; the receiver still works offline. Only confirmed three-letter IATA routes such as LGW – MAD are displayed. If unavailable, the field shows a dash.
 
 Raw still shows the actual viewadsb PTY terminal frame, not a recreated table. It now automatically scales monospace font size to the width of the available screen (including rotation) rather than requiring horizontal scrolling. The text of a 132-column console will necessarily be small on narrow iPhones. Pretty still fits all 13 columns on-screen; clicking or tapping the whole heading cell toggles ascending and descending.
+
+
+## Live metadata source correction (v1.10.15)
+
+Pretty UI now first reads live aircraft.json and receiver.json directly from the already-working Ultrafeeder Docker container, at /run/readsb/aircraft.json and /run/readsb/receiver.json. These commands are fixed read-only Docker exec commands: no shell, restart, extra decoder or new container. If the files are unavailable, the previous validated same-host HTTP readsb feed is used instead.
+
+For registrations and aircraft types absent from readsb JSON, Pretty also consults tar1090's existing sharded aircraft database, prioritising /map/db2/ (matching tar1090's databaseFolder) and retaining /map/db/ as an older compatibility fallback. The requests run only while Pretty is being viewed and are cached and capped. Routes continue to use three-letter IATA codes. Source and distance in nautical miles come from current readsb data and receiver location.
+
+To diagnose an installation where fields are still missing, the read-only /api/live/details endpoint returns a metadata_status object with counts only: receiver_aircraft, matched_receiver_aircraft, tar1090_db_matches and receiver_location_available. For example, visit /api/live/details?items=4069CF:GCICF from the same website address. A zero matched_receiver_aircraft means no live decoder match was available for the requested hex; a false receiver_location_available explains a blank distance. No precise coordinates or database contents are returned in this diagnostic summary.
+
+Raw UI remains completely unchanged from the working prior version.

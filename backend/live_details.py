@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 import json
 import re
 import time
+import subprocess
 
 from . import data, alerts
 
@@ -146,19 +147,48 @@ def _candidate_feeds():
         candidates.extend(_LIVE_URLS)
     return tuple(dict.fromkeys(candidates))
 
+def _docker_json(filename):
+    """Read readsb's current JSON directly from the already-running Ultrafeeder.
+
+    Raw viewadsb already has working permission to this same Docker container.
+    The filename is fixed; no shell, new container, restart or user input.
+    """
+    if filename not in ('aircraft.json', 'receiver.json'):
+        raise ValueError('Unsupported readsb JSON file')
+    try:
+        process=subprocess.run(
+            ('docker','exec','ultrafeeder','cat','/run/readsb/'+filename),
+            capture_output=True,timeout=1.5,check=False)
+        if process.returncode or len(process.stdout)>1_500_000:
+            return {}
+        result=json.loads(process.stdout)
+        return result if isinstance(result,dict) else {}
+    except (OSError,ValueError,subprocess.TimeoutExpired):
+        return {}
+
+
+def _valid_aircraft_snapshot(value):
+    if not (isinstance(value,dict) and isinstance(value.get('aircraft'),list)):
+        return False
+    stamp=value.get('now')
+    # readsb writes a UNIX timestamp. Never serve an old disk snapshot.
+    return not isinstance(stamp,(float,int)) or abs(time.time()-stamp)<=30
+
+
 def _readsb():
-    """Get actual live tar1090 aircraft.json, including fields r,t,type,lat,lon."""
+    """Use the same Ultrafeeder decoder as the working Raw terminal first."""
     global _FEED_LAST_GOOD
+    # This removes dependency on which 1099/map proxy paths the user runs.
+    direct=_docker_json('aircraft.json')
+    if _valid_aircraft_snapshot(direct):
+        return direct
     for url in _candidate_feeds():
         # The Alerts URL validator ensures same-host HTTP feeds only.
         try:
             if not alerts._receiver_url_allowed(url,alerts._local_addresses()):
                 continue
             obj=_json(url,timeout=0.55)
-            if not (isinstance(obj,dict) and isinstance(obj.get('aircraft'),list)):
-                continue
-            now=obj.get('now')
-            if isinstance(now,(float,int)) and abs(time.time()-now)>30:
+            if not _valid_aircraft_snapshot(obj):
                 continue
             _FEED_LAST_GOOD=url
             return obj
@@ -168,18 +198,38 @@ def _readsb():
     return {}
 
 def _tar_db_roots():
-    """Local tar1090 static aircraft metadata shards (the source tar1090 uses)."""
+    """Find tar1090's actual db2 asset directory on same-host HTTP only.
+
+    tar1090's index.html uses databaseFolder = db2 (not db).
+    Keep the old db root as a compatibility fallback for custom installs.
+    """
     roots=[]
-    if _FEED_LAST_GOOD:
-        url=_FEED_LAST_GOOD
-        if '/data/aircraft.json' in url:
-            roots.append(url.split('/data/aircraft.json')[0].rstrip('/')+'/db')
-        if '/aircraft.json' in url:
-            roots.append(url.split('/aircraft.json')[0].rstrip('/')+'/db')
-    for url in _candidate_feeds():
-        if '/map/' in url:
-            roots.append(url.split('/map/')[0]+'/map/db')
-    return tuple(dict.fromkeys(roots))[:6]
+    # Prefer the known /map/ tar1090 proxy over unrelated loopback ports.
+    # This matters where Docker exposes the map only on the host LAN IP.
+    urls=sorted(_candidate_feeds(),key=lambda u:
+        (0 if '/map/' in u else 1,
+         0 if ':1099/' in u else 1,
+         0 if urlsplit(u).hostname not in ('localhost','127.0.0.1') else 1))
+    for url in urls:
+        try:
+            if not alerts._receiver_url_allowed(url,alerts._local_addresses()):
+                continue
+            parsed=urlsplit(url)
+            path=parsed.path
+            if '/data/aircraft.json' in path:
+                base=path.split('/data/aircraft.json')[0]
+            else:
+                base=path.rsplit('/aircraft.json',1)[0]
+            origin=parsed.scheme+'://'+parsed.netloc
+            # If aircraft.json is at /data/, tar1090 may still live at /map/.
+            prefixes=(base,base+'/map') if base in ('','/') else (base,)
+            for prefix in prefixes:
+                root=origin+prefix.rstrip('/')
+                roots.extend((root+'/db2',root+'/db'))
+        except (ValueError,TypeError):
+            continue
+    return tuple(dict.fromkeys(roots))[:12]
+
 
 def _shard(root,prefix,budget):
     """One static JSON shard; very small time and request budget per viewer."""
@@ -208,10 +258,11 @@ def _tar_aircraft_db(hexes):
     Its leaf entries are arrays [registration, aircraft_type, flags, ...].
     """
     found={}
-    # Avoid dozens of failed probes when the receiver is offline.
-    roots=_tar_db_roots() if _FEED_LAST_GOOD else ()
+    # HTTP db2 metadata is independent of how readsb JSON was read.
+    # Even when Docker supplies aircraft.json, tar1090 serves db2 locally.
+    roots=_tar_db_roots()
     if not roots:return found
-    budget=[45]  # limit on-demand disk/web requests, never bulk-sync a new DB
+    budget=[40]  # limit on-demand requests, never bulk-sync a new DB
     for hexcode in hexes:
         for root in roots:
             prefix=hexcode[:1]
@@ -319,6 +370,11 @@ def _receiver_position(feed=None):
             lat,lon=float(feed['lat']),float(feed['lon'])
             if -90<=lat<=90 and -180<=lon<=180:return lat,lon
         except (TypeError,ValueError,KeyError):pass
+    receiver=_docker_json('receiver.json')
+    try:
+        lat,lon=float(receiver['lat']),float(receiver['lon'])
+        if -90<=lat<=90 and -180<=lon<=180:return lat,lon
+    except (KeyError,TypeError,ValueError):pass
     urls=list(_RECEIVER_URLS)
     if _FEED_LAST_GOOD and _FEED_LAST_GOOD.endswith('/aircraft.json'):
         urls.insert(0,_FEED_LAST_GOOD[:-len('/aircraft.json')]+'/receiver.json')
@@ -408,7 +464,9 @@ def details(query):
              if isinstance(a,dict)}
     # tar1090 draws extra registrations/types from its local static db when
     # they aren't embedded in aircraft.json, so apply the same fallback here.
-    tar_db=_tar_aircraft_db(hexes)
+    missing_from_live=[code for code in hexes if
+                       not current.get(code,{}).get('r') or not current.get(code,{}).get('t')]
+    tar_db=_tar_aircraft_db(missing_from_live) if missing_from_live else {}
     lat,lon=_receiver_position(feed)
     for hexcode,callsign in items:
         plane=planes[hexcode]
@@ -446,6 +504,11 @@ def details(query):
         if callsign and not plane.get('route') and re.fullmatch(r'[A-Z]{3}[0-9][A-Z0-9]{0,4}',callsign):
             plane['route']=_lookup_from_aerodrome(callsign)
             count+=1
-    result={'aircraft':planes}
+    result={'aircraft':planes,
+            'metadata_status':{
+                'receiver_aircraft':len(current),
+                'matched_receiver_aircraft':sum(1 for code in hexes if code in current),
+                'tar1090_db_matches':len(tar_db),
+                'receiver_location_available':lat is not None and lon is not None}}
     if error:result['warning']=error
     return result
