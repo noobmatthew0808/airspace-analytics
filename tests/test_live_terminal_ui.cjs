@@ -3,7 +3,7 @@ const vm=require('vm');
 const code=fs.readFileSync('frontend/live-terminal.js','utf8').replace(/^export /gm,'');
 const css=fs.readFileSync('frontend/live-terminal.css','utf8');
 const ctx={
- document:{hidden:false,addEventListener(){},getElementById(){return null}},
+ document:{hidden:false,addEventListener(){},getElementById(){return null},querySelector(){return null}},
  localStorage:{getItem(){return null},setItem(){}}
 };
 vm.createContext(ctx);vm.runInContext(code,ctx);
@@ -44,5 +44,20 @@ check(!code.includes('live-cards')&&!code.includes('data-layout'),'No cards');
 check(code.includes("document.addEventListener('visibilitychange'"),'Stream paused on hidden browser tab');
 check(css.includes('overflow-x:hidden')&&css.includes('table-layout:fixed'),'Pretty table fits width without horizontal scrolling');
 check(css.includes('font-size:clamp(6px,1.87vw,7.7px)'),'Mobile font automatically adjusts');
-check(css.includes('.live-terminal-screen{white-space:pre;min-width:max-content'),'Raw original pre scroll preserved');
+check(css.includes('.live-terminal-screen{white-space:pre;min-width:max-content'),'Raw terminal text element unchanged');
+check(code.includes("tableHead.addEventListener('pointerup'"),'iOS pointer event makes heading tappable');
+check(code.includes('th[data-sort]'),'whole th cell is clickable');
+check(css.includes('touch-action:manipulation'),'Safari fast touch areas');
+check(css.includes('overflow-x:hidden'),'Raw horizontal overflow is hidden after fit');
+check(code.includes('fitRawToScreen()'),'Raw auto-fit is active');
+const rawPre={textContent:'',style:{},scrollWidth:840};
+const rawWrap={clientWidth:375};
+ctx.document.getElementById=id=>id==='live-terminal-screen'?rawPre:null;
+ctx.document.querySelector=()=>rawWrap;
+vm.runInContext("view='raw';",ctx);
+ctx.fitRawToScreen();
+check(Number.parseFloat(rawPre.style.fontSize)<12,'Raw auto-fit shrinks font');
+check(Number.parseFloat(rawPre.style.fontSize)*840/12<375,'Raw output fits 375px screen');
+ctx.rawRedraw();
+check(rawPre.textContent.includes(sample.trim()),'Raw original text is still rendered');
 console.log('Passed: Raw original, 13 columns, live parse, mobile fit, unit conversion, ascending/descending, source, route and stream lifecycle');

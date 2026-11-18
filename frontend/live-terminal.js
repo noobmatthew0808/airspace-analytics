@@ -70,6 +70,7 @@ const COLUMNS=[
 const NUMERIC=new Set(['alt','speed','distance','messages','seen','rssi','squawk']);
 let view='nice',aircraft=[],metadata={},sortKey=null,sortAsc=true;
 let metadataTimer=null,metadataRequest=null,fetching=false,lastMetadata=0,permissionDenied=false;
+let rawLastWidth=0,rawObserver=null,ignoreTapClickUntil=0;
 const esc=v=>String(v??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
 function parseLine(line){
  const part=(a,b)=>line.slice(a,b).trim();
@@ -123,7 +124,7 @@ function updateTableHead(){
  const head=document.getElementById('live-nice-head');
  if(!head)return;
  head.innerHTML='<tr>'+COLUMNS.map(([key,title])=>
-  '<th scope="col" data-field="'+key+'" aria-sort="'+
+  '<th scope="col" data-field="'+key+'" data-sort="'+key+'" aria-sort="'+
   (sortKey===key?(sortAsc?'ascending':'descending'):'none')+'">'+
   '<button type="button" class="live-head-button'+(sortKey===key?' chosen':'')+
   '" data-sort="'+key+'" title="Sort by '+esc(title)+'" aria-label="Sort by '+esc(title)+
@@ -147,10 +148,28 @@ function chooseSort(key){
  else{sortKey=key;sortAsc=true;}
  updateTableHead();updateTableRows();
 }
+function fitRawToScreen(){
+ // Keep the REAL untouched PTY text; only scale its font to the container.
+ // Need the full 132-column screen? On narrow phones this becomes tiny,
+ // but unlike clipping or reflowing it does not lose or misalign any fields.
+ const pre=document.getElementById('live-terminal-screen');
+ const wrap=document.querySelector('#live-raw .live-terminal-scroll');
+ if(!pre||!wrap||view!=='raw')return;
+ const width=wrap.clientWidth;
+ if(width<20)return;
+ pre.style.fontSize='12px';
+ // scrollWidth measures the ENTIRE monospace line, even when clipped.
+ const content=pre.scrollWidth;
+ const ratio=Math.min(1,Math.max(0.1,(width-3)/Math.max(content,1)));
+ const size=12*ratio;
+ pre.style.fontSize=size.toFixed(2)+'px';
+ rawLastWidth=width;
+}
 function rawRedraw(){
- // This line is copied from the original, working v1.10.10 viewer.
+ // Original v1.10.10 frame renderer, including cursor movement and spaces.
  const node=document.getElementById('live-terminal-screen');
  if(node)node.textContent=grid.map(row=>row.join('').replace(/ +$/,'')).join('\n').replace(/\n+$/,'')||'Waiting for viewadsb…';
+ fitRawToScreen();
 }
 function redraw(){
  drawPending=0;
@@ -166,6 +185,7 @@ function stopMetadata(){
 export function stopLiveTerminal(){
  if(source){source.close();source=null;}
  if(drawPending){cancelAnimationFrame(drawPending);drawPending=0;}
+ if(rawObserver){rawObserver.disconnect();rawObserver=null;}
  stopMetadata();
 }
 async function refreshMetadata(){
@@ -275,8 +295,6 @@ export function renderLiveTerminal(){
  document.getElementById('live-root').addEventListener('click',event=>{
   const mode=event.target.closest('[data-view]');
   if(mode){switchView(mode.dataset.view);return;}
-  const heading=event.target.closest('[data-sort]');
-  if(heading&&view==='nice')chooseSort(heading.dataset.sort);
  });
  const root=document.getElementById('live-root');
  root.querySelectorAll('[data-view]').forEach(button=>{
@@ -284,6 +302,29 @@ export function renderLiveTerminal(){
   button.classList.toggle('selected',active);
   button.setAttribute('aria-pressed',String(active));
  });
+ // Make the whole header cell a hit target; react on pointer release for
+ // iOS Safari where tiny buttons and live DOM updates can swallow the click.
+ const tableHead=document.getElementById('live-nice-head');
+ tableHead.addEventListener('pointerup',event=>{
+  if(event.pointerType==='mouse')return;
+  const heading=event.target.closest('th[data-sort]');
+  if(!heading)return;
+  event.preventDefault();
+  ignoreTapClickUntil=Date.now()+600;
+  chooseSort(heading.dataset.sort);
+ });
+ tableHead.addEventListener('click',event=>{
+  if(Date.now()<ignoreTapClickUntil)return;
+  const heading=event.target.closest('th[data-sort]');
+  if(heading)chooseSort(heading.dataset.sort);
+ });
+ // The original raw output is untouched; scale only its rendering to the
+ // current screen width, including device rotation.
+ const wrap=document.querySelector('#live-raw .live-terminal-scroll');
+ if(typeof ResizeObserver==='function'){
+  rawObserver=new ResizeObserver(()=>{if(view==='raw')fitRawToScreen();});
+  rawObserver.observe(wrap);
+ }
  updateTableHead();updateTableRows();
  connect();
 }

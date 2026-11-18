@@ -49,3 +49,27 @@
  .live-nice-table td[data-field="route"]{font-size:.94em;letter-spacing:-.12px}
  .live-nice-table td[data-field="registration"]{letter-spacing:-.1px}
 }
+
+
+/* v1.10.14: Raw remains unmodified text but auto-shrinks to phone width. */
+#live-root[data-view="raw"] .live-terminal-scroll{
+ overflow-x:hidden;
+ overscroll-behavior-x:none;
+}
+#live-root[data-view="raw"] .live-terminal-screen{
+ width:max-content;
+ max-width:none;
+}
+/* Give the whole header cell a dependable iOS touch target. */
+.live-nice-table th[data-sort]{
+ cursor:pointer;
+ touch-action:manipulation;
+ -webkit-tap-highlight-color:rgba(28,189,174,.25);
+}
+.live-head-button{
+ min-height:42px;
+ touch-action:manipulation;
+}
+@media(max-width:700px){
+ .live-head-button{min-height:45px;padding:6px 1px;}
+}

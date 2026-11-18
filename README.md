@@ -307,3 +307,14 @@ There are exactly two options at the top of Live ADS-B: **Raw UI** and **Pretty 
 The 500 ms raw receiver stream is the live source for both views. Registration, aircraft type, 3-letter IATA route, geographic distance (converted from km to nautical miles) and the readsb source classification are added by the existing on-demand local live/details endpoint. These extras may arrive after the initial live frame, and unknown details show a dash. Sources include ADS-B, MLAT, Mode S, TIS-B and ADS-R when readsb supplies them. Messages, seen-age and RSSI come from the original terminal stream. There are no other lookups or extra decoders.
 
 The browser still closes the on-demand terminal connection when the Live tab is left or Safari becomes hidden; the underlying Ultrafeeder/feeds continue running. This release does not modify any feeder, Aerodrome, installed systemd unit, Alert page or Traffic dashboard.
+
+
+## Live ADS-B: tar1090 data parity and Raw auto-fit (v1.10.14)
+
+The Live page's receiver metadata reuses Alerts' local aircraft.json discovery strategy. This includes the host LAN URL if loopback is unavailable (such as tar1090 served from the same Ubuntu laptop at port 1099 under /map/). These metadata requests run only while Pretty UI is viewed; the original ~500ms receiver terminal stream remains independent.
+
+Registration and aircraft type come directly from readsb's r/t fields when available; otherwise the backend reads the same local tar1090 db/prefix.js shards used by tar1090's dbloader, with short request limits and caching. Source uses readsb's type classification. Distance is calculated in nautical miles using the existing receiver coordinates or the local receiver.json.
+
+Aerodrome's existing route_cache remains preferred. The optional route enrichment uses the public batch routeset format already used by tar1090 (api.adsb.lol) to fill missed routes, with strict timeout, caching and backoff. This optional external request sends aircraft callsigns and positions, as tar1090's route feature does; the receiver still works offline. Only confirmed three-letter IATA routes such as LGW – MAD are displayed. If unavailable, the field shows a dash.
+
+Raw still shows the actual viewadsb PTY terminal frame, not a recreated table. It now automatically scales monospace font size to the width of the available screen (including rotation) rather than requiring horizontal scrolling. The text of a 132-column console will necessarily be small on narrow iPhones. Pretty still fits all 13 columns on-screen; clicking or tapping the whole heading cell toggles ascending and descending.

@@ -37,3 +37,97 @@ class TestLiveDetails(unittest.TestCase):
         self.assertEqual(live_details._source_name('tisb_icao'), 'TIS-B')
         self.assertEqual(live_details._source_name('adsr_icao'), 'ADS-R')
         self.assertEqual(live_details._source_name(None), '')
+
+    def test_local_receiver_probe_finds_lan_feed(self):
+        from unittest.mock import patch
+        with patch.object(live_details.alerts, 'snapshot',
+                          return_value={'receiver_settings': {'url': ''}}), \
+             patch.object(live_details.alerts, '_local_addresses',
+                          return_value={'127.0.0.1', '192.168.1.187'}):
+            urls=live_details._candidate_feeds()
+        self.assertTrue(any('192.168.1.187:1099/map/data/aircraft.json' in x for x in urls))
+
+    def test_feed_from_lan_not_just_loopback(self):
+        from unittest.mock import patch
+        import time
+        address='http://192.168.1.187:1099/map/data/aircraft.json'
+        previous=live_details._FEED_LAST_GOOD
+        try:
+            with patch.object(live_details,'_candidate_feeds',return_value=(address,)), \
+                 patch.object(live_details.alerts,'_receiver_url_allowed',return_value=True), \
+                 patch.object(live_details.alerts,'_local_addresses',
+                              return_value={'127.0.0.1','192.168.1.187'}), \
+                 patch.object(live_details,'_json',
+                              return_value={'now':time.time(),'aircraft':[{'hex':'4069CF','r':'G-CICF','t':'C42'}]}):
+                value=live_details._readsb()
+            self.assertEqual(value['aircraft'][0]['r'],'G-CICF')
+            self.assertEqual(live_details._FEED_LAST_GOOD,address)
+        finally:
+            live_details._FEED_LAST_GOOD=previous
+
+    def test_tar1090_sharded_db_uses_same_reg_and_type_as_map(self):
+        from unittest.mock import patch
+        previous=live_details._FEED_LAST_GOOD
+        try:
+            live_details._FEED_LAST_GOOD='http://192.168.1.187:1099/map/data/aircraft.json'
+            live_details._DB_SHARD_CACHE.clear()
+            def get_shard(url, timeout=None):
+                if url.endswith('/4.js'):
+                    return {'children':['40']}
+                if url.endswith('/40.js'):
+                    return {'69CF':['G-CICF','C42','0000']}
+                raise OSError('not found')
+            with patch.object(live_details,'_tar_db_roots',
+                              return_value=('http://127.0.0.1:1099/map/db',)), \
+                 patch.object(live_details,'_json',side_effect=get_shard):
+                info=live_details._tar_aircraft_db(['4069CF'])
+            self.assertEqual(info['4069CF']['registration'],'G-CICF')
+            self.assertEqual(info['4069CF']['aircraft_type'],'C42')
+        finally:
+            live_details._FEED_LAST_GOOD=previous
+            live_details._DB_SHARD_CACHE.clear()
+
+    def test_location_uses_existing_receiver_json(self):
+        from unittest.mock import patch
+        previous=live_details._FEED_LAST_GOOD
+        try:
+            live_details._FEED_LAST_GOOD='http://192.168.1.187:1099/map/data/aircraft.json'
+            with patch.object(live_details.alerts,'snapshot',
+                              return_value={'receiver_settings':{'lat':None,'lon':None}}), \
+                 patch.object(live_details.alerts,'_receiver_url_allowed',return_value=True), \
+                 patch.object(live_details.alerts,'_local_addresses',
+                              return_value={'127.0.0.1','192.168.1.187'}), \
+                 patch.object(live_details,'_json',
+                              return_value={'lat':50.82,'lon':0.24}):
+                self.assertEqual(live_details._receiver_position(),(50.82,0.24))
+        finally:
+            live_details._FEED_LAST_GOOD=previous
+
+    def test_tar_routeset_uses_three_letter_codes(self):
+        from unittest.mock import patch
+        import json
+        previous=live_details._ROUTE_API_RETRY_AFTER
+        class Response:
+            headers={}
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+            def read(self,n):return json.dumps([
+                {'callsign':'BAW758','_airports':[{'iata':'LHR'},{'iata':'EAP'}],
+                 'plausible':True}
+            ]).encode()
+        class Opener:
+            def open(self,request,timeout=2):
+                self.body=json.loads(request.data)
+                return Response()
+        opener=Opener()
+        try:
+            live_details._ROUTE_API_RETRY_AFTER=0
+            live_details._TAR_ROUTE_CACHE.clear()
+            with patch.object(live_details,'build_opener',return_value=opener):
+                routes=live_details._batch_tar_routes(
+                    [('40609C','BAW758')],{'40609C':{'lat':51.0,'lon':0.1}})
+            self.assertEqual(routes['BAW758'],'LHR – EAP')
+            self.assertEqual(opener.body['planes'][0]['callsign'],'BAW758')
+        finally:
+            live_details._ROUTE_API_RETRY_AFTER=previous
+            live_details._TAR_ROUTE_CACHE.clear()
