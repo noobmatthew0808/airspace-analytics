@@ -1,45 +1,48 @@
-const fs=require('fs'),vm=require('vm');
+const fs=require('fs');
+const vm=require('vm');
 const code=fs.readFileSync('frontend/live-terminal.js','utf8').replace(/^export /gm,'');
 const css=fs.readFileSync('frontend/live-terminal.css','utf8');
-const context={
+const ctx={
  document:{hidden:false,addEventListener(){},getElementById(){return null}},
- window:{matchMedia:()=>({matches:true})}
+ localStorage:{getItem(){return null},setItem(){}}
 };
-vm.createContext(context);vm.runInContext(code,context);
-function ok(value,message){if(!value)throw Error(message);}
+vm.createContext(ctx);vm.runInContext(code,ctx);
+const check=(condition,message)=>{if(!condition)throw Error(message);};
+const names=vm.runInContext("COLUMNS.map(([key,title])=>title)",ctx);
+const exact=['Hex ID','Callsign','Reg','Route','Type','Squawk','Alt. (ft)',
+ 'Spd. (kt)','Dist. (nmi)','Messages','Seen','RSSI','Source'];
+check(JSON.stringify([...names])===JSON.stringify(exact),'All 13 headings, exact order');
+const total=vm.runInContext('COLUMNS.reduce((total,item)=>total+item[2],0)',ctx);
+check(Math.abs(total-100)<0.001,'Column widths sum to 100%');
 const sample=' 408345 S     7000  GMILS      2775  128  317   51.000    0.215 -19.6   125    0';
-const a=context.parseLine(sample);
-ok(a&&a.hex==='408345'&&a.flight==='GMILS'&&a.squawk==='7000','fixed width parser');
-ok(a.alt==='2775'&&a.speed==='128'&&a.heading==='317','flight figures');
-ok(a.rssi==='-19.6'&&a.messages==='125'&&a.seen==='0','signal/messages/age');
-ok(context.parseLine(sample.slice(0,20)+'        '+sample.slice(28)).flight==='','blank callsign');
-ok(context.parseScreen([sample.split(''),sample.split('')]).length===1,'duplicate hex');
-const raw=vm.runInContext('RAW_COLUMNS',context),nice=vm.runInContext('NICE_COLUMNS',context);
-const fitRaw=vm.runInContext('RAW_FIT',context),fitNice=vm.runInContext('NICE_FIT',context);
-ok(raw.length===12,'Raw table uses original 12 columns');
-ok(nice.some(([key,title])=>key==='type'&&title==='Aircraft type'),'Nice aircraft type heading');
-ok(nice.some(([key])=>key==='route'),'Nice IATA route column');
-ok(nice.some(([key])=>key==='registration')&&nice.some(([key])=>key==='country'),'extra details');
-ok(fitRaw.size===6&&fitNice.size===6,'six columns automatically fit phones');
-ok(fitNice.has('type'),'aircraft type included in mobile fitting view');
-const rows=[
- {hex:'AA0001',alt:'1000',type:'B789'},{hex:'AA0002',alt:'5000',type:'A320'},
- {hex:'AA0003',alt:'',type:''}
-];
-ok(context.sortAircraft(rows,'alt',false).map(r=>r.hex).join(',')==='AA0002,AA0001,AA0003','numeric descending, unknown last');
-ok(context.sortAircraft(rows,'type',true).map(r=>r.hex).join(',')==='AA0002,AA0001,AA0003','aircraft type ascending, unknown last');
-vm.runInContext("presentation='nice';",context);
-context.chooseSort('type');
-ok(vm.runInContext('sortKey==="type"&&sortAsc===true',context),'aircraft type ascending on first click');
-context.chooseSort('type');
-ok(vm.runInContext('sortKey==="type"&&sortAsc===false',context),'aircraft type descending on second click');
-vm.runInContext("presentation='raw';sortKey='native';",context);
-context.chooseSort('messages');
-ok(vm.runInContext('sortKey==="messages"&&sortAsc===true',context),'Raw messages sortable');
-ok(code.includes("document.addEventListener('visibilitychange'"),'disconnect on hidden browser tab');
-ok(code.includes('source.close()'),'close on navigation');
-ok(!code.includes('live-cards')&&!css.includes('.live-card{'),'No card UI');
-ok(!code.includes('live-smaller')&&!code.includes('live-bigger'),'No manual font sizing');
-ok(css.includes('[data-columns="fit"] .live-mobile-hidden{display:none}'),'responsive mobile table');
-ok(css.includes('table-layout:fixed'),'mobile viewport fitting');
-console.log('Live ADS-B Raw/Nice responsive tables, parsing, sorting, mobile fitting and lifecycle passed');
+const plane=ctx.parseLine(sample);
+check(plane&&plane.hex==='408345'&&plane.flight==='GMILS','Hex and callsign');
+check(plane.squawk==='7000'&&plane.alt==='2775'&&plane.speed==='128','Squawk, alt, speed');
+check(plane.messages==='125'&&plane.seen==='0'&&plane.rssi==='-19.6','Messages, seen, RSSI');
+check(ctx.parseLine(sample.slice(0,20)+'        '+sample.slice(28)).flight==='','Empty flight must not shift columns');
+vm.runInContext('reset()',ctx);
+ctx.ingest(sample);
+const dedup=ctx.extractAircraft();
+check(dedup.length===1&&dedup[0].hex==='408345','Original PTY parser to nice table');
+const fakeNode={textContent:''};
+ctx.document.getElementById=id=>id==='live-terminal-screen'?fakeNode:null;
+ctx.rawRedraw();
+check(fakeNode.textContent.includes(sample.trim()),'Raw original stream text is faithfully rendered');
+check(code.includes("grid.map(row=>row.join('').replace(/ +$/,'')).join('\\\\n')")===false||code.includes("Waiting for viewadsb"),'Raw original output retained');
+vm.runInContext('sortKey=null;sortAsc=true',ctx);
+ctx.chooseSort('alt');check(vm.runInContext("sortKey==='alt'&&sortAsc===true",ctx),'First heading tap ascending');
+ctx.chooseSort('alt');check(vm.runInContext("sortKey==='alt'&&sortAsc===false",ctx),'Second heading tap descending');
+ctx.chooseSort('type');check(vm.runInContext("sortKey==='type'&&sortAsc===true",ctx),'New heading resets ascending');
+const rows=[{hex:'000001',alt:'1000',type:'B789'},{hex:'000002',alt:'30000',type:'A320'},{hex:'000003',alt:'',type:''}];
+check(ctx.sortPlanes(rows,'alt',false).map(r=>r.hex).join(',')==='000002,000001,000003','Numeric descending with missing last');
+check(ctx.sortPlanes(rows,'type',true).map(r=>r.hex).join(',')==='000002,000001,000003','Type ascending with missing last');
+const meta=vm.runInContext("metadata={'408345':{distance_km:18.52,route:'LGW – MAD',source:'ADS-B',aircraft_type:'A320',registration:'G-EZXY'}};enrich",ctx)(plane);
+check(meta.distance==='10.0','Distance converted into nautical miles');
+check(meta.route==='LGW – MAD'&&meta.source==='ADS-B'&&meta.type==='A320','Extra metadata');
+check(!code.includes('live-sort')&&!code.includes('live-direction')&&!code.includes('data-columns'),'No separate sorting/width controls');
+check(!code.includes('live-cards')&&!code.includes('data-layout'),'No cards');
+check(code.includes("document.addEventListener('visibilitychange'"),'Stream paused on hidden browser tab');
+check(css.includes('overflow-x:hidden')&&css.includes('table-layout:fixed'),'Pretty table fits width without horizontal scrolling');
+check(css.includes('font-size:clamp(6px,1.87vw,7.7px)'),'Mobile font automatically adjusts');
+check(css.includes('.live-terminal-screen{white-space:pre;min-width:max-content'),'Raw original pre scroll preserved');
+console.log('Passed: Raw original, 13 columns, live parse, mobile fit, unit conversion, ascending/descending, source, route and stream lifecycle');

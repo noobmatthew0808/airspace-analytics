@@ -176,6 +176,18 @@ def _lookup_from_aerodrome(callsign):
     finally:
         _ROUTE_SLOT.release()
 
+def _source_name(value):
+    """readsb aircraft.json position source, separate from aircraft model ('t')."""
+    code = str(value or '').lower().strip()
+    if code.startswith('adsb'): return 'ADS-B'
+    if code.startswith('mlat'): return 'MLAT'
+    if code.startswith('mode_s'): return 'Mode S'
+    if code.startswith('tisb'): return 'TIS-B'
+    if code.startswith('adsr'): return 'ADS-R'
+    if code in ('other', 'unknown'): return ''
+    return ''
+
+
 def details(query):
     items=parse_items(query.get('items',''))
     if not items:
@@ -214,6 +226,9 @@ def details(query):
         live=current.get(hexcode,{})
         if live.get('r'):plane['registration']=str(live['r'])
         if live.get('t'):plane['aircraft_type']=str(live['t'])
+        # Source is supplied by readsb, not by the flight-route resolver.
+        source=_source_name(live.get('type'))
+        if source:plane['source']=source
         if lat is not None and lon is not None:
             try:
                 plat,plon=live['lat'],live['lon']
