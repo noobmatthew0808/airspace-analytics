@@ -1,3 +1,12 @@
+# v1.10.14 — Match tar1090's local aircraft details and fit Raw automatically
+
+- Reuse the same local tar1090/readsb aircraft.json feed that Alerts discovers, including same-host LAN addresses. Previous Live metadata looked only at loopback ports, leaving registration, distance and Source blank when tar1090 showed them.
+- When readsb does not embed a registration/type, use tar1090's own on-host read-only aircraft database shards (db/4.js and deeper) as a bounded fallback, without downloading or installing another database.
+- Obtain receiver coordinates from the configured location or the working feed's receiver.json and compute distance in nautical miles. Preserve three-letter IATA airport routes; optional, time-limited batched requests to tar1090's existing public routeset format fill missing routes, with caching and backoff. No external route service is required to view raw aircraft.
+- Raw UI remains the genuine original v1.10.10 terminal output but scales font automatically to the screen width, eliminating sideways scrolling. On narrow phones the fixed-width console may be very small.
+- Pretty UI keeps the exact 13-column compact table and header-only sorting. The entire heading cell now accepts touch/pointer input on iOS, toggling ascending then descending.
+- No new collectors/databases, no change to other pages or to the existing ADS-B services.
+
 # v1.10.13 — Restore real Raw and build exact compact Pretty
 
 - **Raw UI** restored to the working v1.10.10 terminal display: exact PTY redraw text in the original scrolling pre element. No sorting or layout controls in Raw. Raw/Pretty is the only mode toggle.
