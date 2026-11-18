@@ -29,3 +29,11 @@ class TestLiveDetails(unittest.TestCase):
         with patch.object(live_details,'_json') as lookup:
             self.assertEqual(live_details._lookup_from_aerodrome('G-ABCD'),'')
             lookup.assert_not_called()
+
+    def test_readsb_source_labels(self):
+        self.assertEqual(live_details._source_name('adsb_icao'), 'ADS-B')
+        self.assertEqual(live_details._source_name('mlat'), 'MLAT')
+        self.assertEqual(live_details._source_name('mode_s'), 'Mode S')
+        self.assertEqual(live_details._source_name('tisb_icao'), 'TIS-B')
+        self.assertEqual(live_details._source_name('adsr_icao'), 'ADS-R')
+        self.assertEqual(live_details._source_name(None), '')

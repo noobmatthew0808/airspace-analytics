@@ -57,29 +57,20 @@ function ingest(s){
  }
 }
 
-
-// Raw remains the real viewadsb feed. Nice displays the SAME screen data
-// with optional read-only Aerodrome and readsb enrichment.
-const RAW_COLUMNS=[
- ['hex','Hex'],['mode','Mode'],['squawk','Sqwk'],['flight','Flight'],
- ['alt','Alt'],['speed','Spd'],['heading','Hdg'],['posA','Dist / Lat'],
- ['posB','Dir / Lon'],['rssi','RSSI'],['messages','Msgs'],['seen','Seen']
+/* RAW: render the actual v1.10.10 terminal screen without any alteration.
+   NICE: table uses that same stream, plus existing optional metadata.
+   Both streams close when the Live page is not in view. */
+const COLUMNS=[
+ ['hex','Hex ID',7.6],['flight','Callsign',10],['registration','Reg',7.2],
+ ['route','Route',11.8],['type','Type',6.6],['squawk','Squawk',6.7],
+ ['alt','Alt. (ft)',8],['speed','Spd. (kt)',7],['distance','Dist. (nmi)',9.5],
+ ['messages','Messages',7.9],['seen','Seen',5.4],['rssi','RSSI',6.2],
+ ['source','Source',6.1]
 ];
-const NICE_COLUMNS=[
- ['flight','Flight'],['type','Aircraft type'],['route','Route'],
- ['alt','Altitude'],['distance','Distance'],['seen','Seen'],
- ['registration','Registration'],['country','Country'],['hex','Hex'],
- ['squawk','Squawk'],['speed','Speed'],['heading','Heading'],
- ['messages','Messages'],['rssi','RSSI'],['mode','Mode'],['posA','Lat / Dist'],['posB','Lon / Dir']
-];
-const NUMERIC=new Set(['alt','speed','heading','distance','posA','posB','rssi','messages','seen']);
-const RAW_FIT=new Set(['hex','flight','alt','posA','messages','seen']);
-const NICE_FIT=new Set(['flight','type','route','alt','distance','seen']);
-let aircraft=[],metadata={},presentation='raw',mobileColumns='fit',sortKey='native',sortAsc=true;
-let metadataTimer=null,metadataRequest=null,fetching=false,lastMetadata=0;
-let distanceHeader=false,permissionDenied=false;
-const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const label=(value)=>String(value??'').trim()?safe(value):'—';
+const NUMERIC=new Set(['alt','speed','distance','messages','seen','rssi','squawk']);
+let view='nice',aircraft=[],metadata={},sortKey=null,sortAsc=true;
+let metadataTimer=null,metadataRequest=null,fetching=false,lastMetadata=0,permissionDenied=false;
+const esc=v=>String(v??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
 function parseLine(line){
  const part=(a,b)=>line.slice(a,b).trim();
  const hex=part(0,7).replace(/^~/,'').toUpperCase();
@@ -89,120 +80,83 @@ function parseLine(line){
   posA:part(47,54),posB:part(55,63),rssi:part(64,69),
   messages:part(70,75),seen:part(78,83)};
 }
-function parseScreen(screen){
- const lines=screen.map(row=>Array.isArray(row)?row.join(''):String(row));
- const header=lines.find(row=>/\bHex\b.*\bMode\b.*\bSqwk\b/.test(row));
- distanceHeader=Boolean(header&&/\bDist\b/.test(header));
- const found=new Map();
- for(const line of lines){
-  const row=parseLine(line);
+function extractAircraft(){
+ // Consume exactly the same terminal frame that is visible in Raw.
+ const rows=new Map();
+ for(const line of grid){
+  const row=parseLine(line.join(''));
   if(!row)continue;
-  const existing=found.get(row.hex);
-  if(!existing||Number(row.seen||999)<=Number(existing.seen||999))found.set(row.hex,row);
+  const existing=rows.get(row.hex);
+  if(!existing||Number(row.seen||999)<=Number(existing.seen||999))rows.set(row.hex,row);
  }
- return [...found.values()];
+ return [...rows.values()];
 }
-function enhanced(row){
- const info=metadata[row.hex]||{};
- return {...row,
-  type:info.aircraft_type||'',
-  registration:info.registration||'',
-  country:info.country||'',
-  route:info.route||'',
-  distance:info.distance_km!==undefined&&info.distance_km!==null?
-    String(info.distance_km):distanceHeader?row.posA:''
+function enrich(raw){
+ const data=metadata[raw.hex]||{};
+ const km=Number(data.distance_km);
+ const nmi=data.distance_km!==undefined&&data.distance_km!==null&&Number.isFinite(km)
+   ?(km/1.852).toFixed(1):'';
+ return {
+  hex:raw.hex,flight:raw.flight,registration:data.registration||'',
+  route:data.route||'',type:data.aircraft_type||'',squawk:raw.squawk,
+  alt:raw.alt,speed:raw.speed,distance:nmi,
+  messages:raw.messages,seen:raw.seen,rssi:raw.rssi,source:data.source||''
  };
 }
-function sortAircraft(list,key=sortKey,ascending=sortAsc){
- if(key==='native')return [...list];
- return [...list].sort((a,b)=>{
-  const left=String(a[key]??'').trim(),right=String(b[key]??'').trim();
-  if(!left||!right)return !left&&!right?a.hex.localeCompare(b.hex):!left?1:-1;
-  let compare;
+function sortPlanes(rows,key=sortKey,ascending=sortAsc){
+ if(!key)return [...rows];
+ const direction=ascending?1:-1;
+ return [...rows].sort((left,right)=>{
+  const a=String(left[key]??'').trim(),b=String(right[key]??'').trim();
+  // Missing values always appear after known values.
+  if(!a||!b)return !a&&!b?left.hex.localeCompare(right.hex):!a?1:-1;
+  let c;
   if(NUMERIC.has(key)){
-   const x=Number(left),y=Number(right);
-   compare=Number.isFinite(x)&&Number.isFinite(y)?x-y:left.localeCompare(right,undefined,{numeric:true});
-  }else compare=left.localeCompare(right,undefined,{numeric:true});
-  return (ascending?1:-1)*compare||a.hex.localeCompare(b.hex);
+   const n=Number(a),m=Number(b);
+   c=Number.isFinite(n)&&Number.isFinite(m)?n-m:a.localeCompare(b,undefined,{numeric:true});
+  }else c=a.localeCompare(b,undefined,{numeric:true});
+  return direction*c||left.hex.localeCompare(right.hex);
  });
 }
-function columns(){
- const raw=presentation==='raw',fields=raw?RAW_COLUMNS:NICE_COLUMNS;
- return fields.map(([key,name])=>[key,
-  key==='posA'?(distanceHeader?(raw?'Dist':'Terminal distance'):'Latitude'):
-  key==='posB'?(distanceHeader?(raw?'Dir':'Receiver direction'):'Longitude'):name]);
+function value(v){return String(v??'').trim()?esc(v):'—';}
+function updateTableHead(){
+ const head=document.getElementById('live-nice-head');
+ if(!head)return;
+ head.innerHTML='<tr>'+COLUMNS.map(([key,title])=>
+  '<th scope="col" data-field="'+key+'" aria-sort="'+
+  (sortKey===key?(sortAsc?'ascending':'descending'):'none')+'">'+
+  '<button type="button" class="live-head-button'+(sortKey===key?' chosen':'')+
+  '" data-sort="'+key+'" title="Sort by '+esc(title)+'" aria-label="Sort by '+esc(title)+
+  (sortKey===key?(sortAsc?', ascending':', descending'):'')+'">'+esc(title)+
+  (sortKey===key?(sortAsc?' ↑':' ↓'):'')+'</button></th>').join('')+'</tr>';
 }
-function phoneName(key,name){
- const compact={type:'Type',alt:'Alt',distance:'Dist',registration:'Reg',messages:'Msgs',heading:'Hdg'};
- return compact[key]||name;
-}
-function status(message,connected=false){
- const node=document.getElementById('live-terminal-state');
- const led=document.getElementById('live-terminal-led');
- if(node)node.textContent=message;
- if(led)led.classList.toggle('active',connected);
-}
-function paint(){
- const head=document.getElementById('live-table-head');
- const body=document.getElementById('live-table-body');
- const count=document.getElementById('live-count');
+function updateTableRows(){
+ const tbody=document.getElementById('live-nice-rows');
+ const count=document.getElementById('live-nice-count');
  if(count)count.textContent=aircraft.length+' aircraft';
- if(!head||!body)return;
- const raw=presentation==='raw',visible=columns(),fit=raw?RAW_FIT:NICE_FIT;
- const list=sortAircraft(raw?aircraft:aircraft.map(enhanced));
- head.innerHTML='<tr>'+visible.map(([key,name])=>
-  '<th scope="col" data-col="'+safe(key)+'" class="'+(fit.has(key)?'':'live-mobile-hidden')+'" aria-sort="'+
-    (sortKey===key?(sortAsc?'ascending':'descending'):'none')+'">'+
-   '<button type="button" class="live-heading'+(sortKey===key?' selected':'')+'" data-sort="'+safe(key)+'" aria-label="Sort by '+safe(name)+'">'+
-    '<span class="live-long-label">'+safe(name)+'</span><span class="live-short-label">'+safe(phoneName(key,name))+'</span>'+
-    (sortKey===key?(sortAsc?' ↑':' ↓'):'')+'</button></th>').join('')+'</tr>';
- if(!list.length){
-  body.innerHTML='<tr><td class="live-empty" colspan="'+visible.length+'">Waiting for aircraft…</td></tr>';
-  return;
- }
- body.innerHTML=list.map(row=>'<tr>'+visible.map(([key])=>
-  '<td class="'+(fit.has(key)?'':'live-mobile-hidden')+'" data-col="'+safe(key)+'" title="'+safe(row[key]??'')+'">'+
-   label(row[key])+'</td>').join('')+'</tr>').join('');
+ if(!tbody)return;
+ const ordered=sortPlanes(aircraft.map(enrich));
+ tbody.innerHTML=ordered.length?ordered.map(a=>
+  '<tr>'+COLUMNS.map(([key])=>
+  '<td data-field="'+key+'" title="'+esc(a[key]||'')+'">'+value(a[key])+'</td>').join('')+'</tr>'
+ ).join(''):'<tr><td colspan="13" class="live-nice-empty">Waiting for aircraft…</td></tr>';
 }
-function renderSortSelect(){
- const select=document.getElementById('live-sort');
- if(!select)return;
- select.innerHTML='<option value="native">Receiver order</option>'+
-  columns().map(([key,name])=>'<option value="'+safe(key)+'">'+safe(name)+'</option>').join('');
- select.value=sortKey;
- const direction=document.getElementById('live-direction');
- if(direction)direction.textContent=sortAsc?'↑ Ascending':'↓ Descending';
+function chooseSort(key){
+ if(!COLUMNS.some(([name])=>name===key))return;
+ if(sortKey===key)sortAsc=!sortAsc;
+ else{sortKey=key;sortAsc=true;}
+ updateTableHead();updateTableRows();
 }
-function chooseSort(key,toggle=true){
- const valid=columns().some(([field])=>field===key);
- if(key!=='native'&&!valid)return;
- if(key===sortKey&&toggle&&key!=='native')sortAsc=!sortAsc;
- else if(key!==sortKey){sortKey=key;sortAsc=true;}
- renderSortSelect();paint();
-}
-function showMode(){
- const root=document.getElementById('live-terminal-panel');
- if(!root)return;
- root.dataset.presentation=presentation;
- root.dataset.columns=mobileColumns;
- const valid=columns().some(([key])=>key===sortKey);
- if(sortKey!=='native'&&!valid){sortKey='native';sortAsc=true;}
- root.querySelectorAll('[data-presentation]').forEach(button=>{
-  const active=button.dataset.presentation===presentation;
-  button.classList.toggle('selected',active);
-  button.setAttribute('aria-pressed',String(active));
- });
- root.querySelectorAll('[data-columns]').forEach(button=>{
-  const active=button.dataset.columns===mobileColumns;
-  button.classList.toggle('selected',active);
-  button.setAttribute('aria-pressed',String(active));
- });
- renderSortSelect();paint();
- if(presentation==='nice')refreshMetadata();
+function rawRedraw(){
+ // This line is copied from the original, working v1.10.10 viewer.
+ const node=document.getElementById('live-terminal-screen');
+ if(node)node.textContent=grid.map(row=>row.join('').replace(/ +$/,'')).join('\n').replace(/\n+$/,'')||'Waiting for viewadsb…';
 }
 function redraw(){
- drawPending=0;aircraft=parseScreen(grid);paint();
- if(presentation==='nice'&&aircraft.length&&Date.now()-lastMetadata>6500&&!fetching)refreshMetadata();
+ drawPending=0;
+ if(view==='raw'){rawRedraw();return;}
+ aircraft=extractAircraft();updateTableRows();
+ if(aircraft.length&&Date.now()-lastMetadata>7000&&!fetching)refreshMetadata();
 }
 function stopMetadata(){
  if(metadataTimer){clearInterval(metadataTimer);metadataTimer=null;}
@@ -215,32 +169,63 @@ export function stopLiveTerminal(){
  stopMetadata();
 }
 async function refreshMetadata(){
- if(presentation!=='nice'||fetching||!aircraft.length||document.hidden||!document.getElementById('live-terminal-panel'))return;
+ if(view!=='nice'||fetching||document.hidden||!aircraft.length||!document.getElementById('live-root'))return;
  fetching=true;lastMetadata=Date.now();
  const controller=new AbortController();metadataRequest=controller;
- const request=aircraft.slice(0,100).map(a=>a.hex+':'+a.flight).join(',');
+ const ids=aircraft.slice(0,100).map(a=>a.hex+':'+a.flight).join(',');
  try{
-  const response=await fetch('/api/live/details?items='+encodeURIComponent(request),{signal:controller.signal,cache:'no-store'});
-  if(!response.ok)throw Error('Metadata temporarily unavailable');
+  const response=await fetch('/api/live/details?items='+encodeURIComponent(ids),{
+   cache:'no-store',signal:controller.signal
+  });
+  if(!response.ok)throw Error('Metadata unavailable');
   const data=await response.json();
   if(metadataRequest!==controller)return;
   metadata=data.aircraft||{};
-  paint();
+  updateTableRows();
  }catch(error){
-  if(error.name!=='AbortError')console.warn('Live ADS-B enrichment unavailable');
+  // Extra lookups must never interrupt the real viewadsb feed.
+  if(error.name!=='AbortError')console.warn('Live aircraft details unavailable');
  }finally{
   if(metadataRequest===controller)metadataRequest=null;
   fetching=false;
  }
 }
+function status(message,active=false){
+ const label=document.getElementById('live-terminal-state');
+ const led=document.getElementById('live-terminal-led');
+ if(label)label.textContent=message;
+ const nice=document.getElementById('live-nice-state');
+ if(nice)nice.textContent=message;
+ if(led)led.classList.toggle('active',active);
+}
+function switchView(mode){
+ if(mode!== 'raw'&&mode!=='nice')return;
+ view=mode;
+ const root=document.getElementById('live-root');
+ if(!root)return;
+ root.dataset.view=view;
+ root.querySelectorAll('[data-view]').forEach(button=>{
+  const active=button.dataset.view===view;
+  button.classList.toggle('selected',active);
+  button.setAttribute('aria-pressed',String(active));
+ });
+ try{localStorage.setItem('airspace-live-preferred-ui',view);}catch{}
+ if(view==='raw'){
+  if(metadataRequest){metadataRequest.abort();metadataRequest=null;fetching=false;}
+  rawRedraw();
+ }else{
+  aircraft=extractAircraft();
+  updateTableHead();updateTableRows();refreshMetadata();
+ }
+}
 function connect(){
- if(source||document.hidden||!document.getElementById('live-terminal-panel'))return;
+ if(source||document.hidden||!document.getElementById('live-root'))return;
  reset();aircraft=[];metadata={};permissionDenied=false;lastMetadata=0;
- paint();status('Connecting…');
- const current=new EventSource('/api/live/terminal');source=current;
- current.onopen=()=>{if(source===current)status('Connected',true);};
- current.onmessage=event=>{
-  if(source!==current)return;
+ rawRedraw();updateTableRows();status('Connecting…');
+ const feed=new EventSource('/api/live/terminal');source=feed;
+ feed.onopen=()=>{if(feed===source)status('Connected',true);};
+ feed.onmessage=event=>{
+  if(feed!==source)return;
   try{
    const chunk=JSON.parse(event.data);
    if(typeof chunk!=='string')return;
@@ -249,56 +234,56 @@ function connect(){
    }
    ingest(chunk);
    if(!drawPending)drawPending=requestAnimationFrame(redraw);
-  }catch{status('Unrecognised terminal data');}
+  }catch{status('Invalid terminal data');}
  };
- current.addEventListener('stopped',event=>{
-  if(source!==current)return;
-  current.close();source=null;stopMetadata();
+ feed.addEventListener('stopped',event=>{
+  if(feed!==source)return;
+  feed.close();source=null;stopMetadata();
   let message={};try{message=JSON.parse(event.data);}catch{}
-  status(permissionDenied?'Docker permission denied — check Linux permissions':message.error||'Terminal stopped');
+  status(permissionDenied?'Docker permission denied — check Linux permissions':message.error||'Terminal exited');
  });
- current.onerror=()=>{if(source===current)status('Disconnected — reconnecting');};
+ feed.onerror=()=>{if(feed===source)status('Disconnected — reconnecting');};
  metadataTimer=setInterval(refreshMetadata,8000);
 }
 document.addEventListener('visibilitychange',()=>{
- if(!document.getElementById('live-terminal-panel'))return;
+ if(!document.getElementById('live-root'))return;
  if(document.hidden){stopLiveTerminal();status('Paused — tab hidden');}
  else connect();
 });
 export function renderLiveTerminal(){
- stopLiveTerminal();reset();aircraft=[];metadata={};
- presentation='raw';mobileColumns='fit';sortKey='native';sortAsc=true;
+ stopLiveTerminal();reset();aircraft=[];metadata={};sortKey=null;sortAsc=true;
+ try{view=localStorage.getItem('airspace-live-preferred-ui')==='raw'?'raw':'nice';}
+ catch{view='nice';}
  document.getElementById('page').innerHTML=
- '<div class="page-heading"><h1 class="page-title">Live ADS-B</h1></div>'+
- '<section id="live-terminal-panel" class="live-terminal-panel">'+
+ '<div id="live-root" data-view="'+view+'">'+
+ '<div class="live-page-title"><h1 class="page-title">Live ADS-B</h1>'+
+ '<div class="live-switch" role="group" aria-label="Live aircraft display">'+
+ '<button type="button" data-view="raw">Raw UI</button>'+
+ '<button type="button" data-view="nice">Pretty UI</button></div></div>'+
+ '<section id="live-raw" class="live-terminal-panel">'+
  '<div class="live-terminal-top"><span class="live-terminal-led" id="live-terminal-led"></span>'+
- '<strong>ultrafeeder / viewadsb</strong><span id="live-terminal-state">Connecting…</span>'+
- '<span class="live-count" id="live-count">0 aircraft</span></div>'+
- '<div class="live-toolbar"><div class="live-segment" role="group" aria-label="Aircraft table style">'+
- '<button type="button" data-presentation="raw">Raw</button>'+
- '<button type="button" data-presentation="nice">Nice</button></div>'+
- '<div class="live-segment live-columns" role="group" aria-label="Visible columns">'+
- '<button type="button" data-columns="fit">Fit screen</button>'+
- '<button type="button" data-columns="all">All columns</button></div></div>'+
- '<div class="live-sortbar"><label for="live-sort">Sort</label>'+
- '<select id="live-sort"><option value="native">Receiver order</option></select>'+
- '<button type="button" id="live-direction">↑ Ascending</button></div>'+
- '<div class="live-table-scroll" tabindex="0" role="region" aria-label="Live aircraft list">'+
- '<table class="live-table"><thead id="live-table-head"></thead>'+
- '<tbody id="live-table-body"></tbody></table></div></section>';
- const panel=document.getElementById('live-terminal-panel');
- panel.addEventListener('click',event=>{
-  const mode=event.target.closest('[data-presentation]');
-  if(mode){presentation=mode.dataset.presentation;showMode();return;}
-  const width=event.target.closest('[data-columns]');
-  if(width){mobileColumns=width.dataset.columns;showMode();return;}
+ '<strong>ultrafeeder / viewadsb</strong><span id="live-terminal-state">Connecting…</span></div>'+
+ '<div class="live-terminal-scroll" role="region" aria-label="Original viewadsb terminal" tabindex="0">'+
+ '<pre id="live-terminal-screen" class="live-terminal-screen">Connecting to local terminal…</pre></div></section>'+
+ '<section id="live-nice" class="live-nice-panel">'+
+ '<div class="live-nice-top"><span id="live-nice-count">0 aircraft</span><span id="live-nice-state">Connecting…</span></div>'+
+ '<div class="live-nice-table-wrap" role="region" aria-label="Live aircraft table">'+
+ '<table class="live-nice-table"><colgroup>'+
+ COLUMNS.map(([key,,percent])=>'<col data-col="'+key+'" style="width:'+percent+'%">').join('')+
+ '</colgroup><thead id="live-nice-head"></thead><tbody id="live-nice-rows"></tbody></table></div>'+
+ '</section></div>';
+ document.getElementById('live-root').addEventListener('click',event=>{
+  const mode=event.target.closest('[data-view]');
+  if(mode){switchView(mode.dataset.view);return;}
   const heading=event.target.closest('[data-sort]');
-  if(heading)chooseSort(heading.dataset.sort);
+  if(heading&&view==='nice')chooseSort(heading.dataset.sort);
  });
- document.getElementById('live-sort').addEventListener('change',event=>chooseSort(event.target.value,false));
- document.getElementById('live-direction').addEventListener('click',()=>{
-  if(sortKey==='native')return;
-  sortAsc=!sortAsc;chooseSort(sortKey,false);
+ const root=document.getElementById('live-root');
+ root.querySelectorAll('[data-view]').forEach(button=>{
+  const active=button.dataset.view===view;
+  button.classList.toggle('selected',active);
+  button.setAttribute('aria-pressed',String(active));
  });
- showMode();connect();
+ updateTableHead();updateTableRows();
+ connect();
 }

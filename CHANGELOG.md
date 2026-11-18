@@ -1,3 +1,11 @@
+# v1.10.13 — Restore real Raw and build exact compact Pretty
+
+- **Raw UI** restored to the working v1.10.10 terminal display: exact PTY redraw text in the original scrolling pre element. No sorting or layout controls in Raw. Raw/Pretty is the only mode toggle.
+- **Pretty UI** redesigned as a **single** compact HTML table with exactly the user's 13 columns (Hex ID, Callsign, Reg, Route, Type, Squawk, Alt. (ft), Spd. (kt), Dist. (nmi), Messages, Seen, RSSI, Source), all visible on mobile. Responsive text, compact row height, fixed percentage column widths and no horizontal scrolling.
+- Tap any Pretty heading for ascending, tap again for descending. Removed the entire separate Sort toolbar, Fit/All selector, cards and font sizing controls.
+- Readsb's existing position-source metadata now supplies the Source column; convert the existing distance-km field to nautical miles for Pretty. Preserve 3-letter IATA airport codes in Route, and leave unavailable values unknown.
+- Original 500ms live feed and existing on-demand lifecycle remain unchanged. No changes to other pages, Aerodrome, Docker/feeder services or databases.
+
 # v1.10.12 — Live ADS-B is table-only on every device
 
 - Both **Raw** and **Nice** modes are proper sortable website tables, not cards and not a console-text block. Raw keeps all 12 original `viewadsb` columns and their actual native stream; Nice adds the aircraft **type** column alongside registration, country, route (three-letter IATA), distance and message counts.
