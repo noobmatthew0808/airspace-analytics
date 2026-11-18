@@ -1,3 +1,11 @@
+# v1.10.11 — Mobile-friendly Live ADS-B with Raw/Nice toggle
+
+- Add **Nice UI** aircraft cards for phones and sortable table for desktop, alongside the existing **Raw UI** viewadsb console. Raw view adds smaller mobile typography, horizontal scrolling and text size buttons; the original 500 ms terminal stream is preserved unchanged.
+- Nice UI includes registration, country, squawk, route, distance, messages and signal strength. Routes display **IATA three-letter codes only** (such as `LGW – MAD`). A missing code, unknown aircraft or unresolved route stays blank instead of inventing a value.
+- Reuse the local readsb `aircraft.json`, Aerodrome's read-only `seen_aircraft` and `route_cache`, its shipped airport ICAO→IATA map, and (for uncached airline callsigns) Aerodrome's existing route-resolver HTTP endpoint. Metadata is requested approximately every eight seconds only while Live is visible; the live PTY screen still refreshes on every original terminal redraw.
+- Close the on-demand terminal stream and metadata requests whenever the browser tab is hidden, the device locks, or the visitor navigates away. Ultrafeeder continues decoding independently.
+- No new collectors, persistent databases, pip/npm packages or changed feeder/systemd configuration. Traffic, Alerts, Settings and other features unchanged.
+
 # v1.10.10 — Live terminal cleanup and Docker permission guidance
 
 - Removed the explanatory paragraph beneath the Live ADS-B terminal; other Live page elements and all other website pages are unchanged.
