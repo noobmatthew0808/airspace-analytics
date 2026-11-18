@@ -1,3 +1,11 @@
+# v1.10.12 — Live ADS-B is table-only on every device
+
+- Both **Raw** and **Nice** modes are proper sortable website tables, not cards and not a console-text block. Raw keeps all 12 original `viewadsb` columns and their actual native stream; Nice adds the aircraft **type** column alongside registration, country, route (three-letter IATA), distance and message counts.
+- Tap any heading (including **Aircraft type**) once to sort ascending, again to sort descending. Each view has a `Sort` dropdown for fields hidden in the compact mobile view, plus a direction control. Default `Receiver order` preserves the original incoming order.
+- On phones **Fit screen** automatically presents six high-value table columns with readable text and no zoom controls. Optional **All columns** exposes the complete horizontal scrolling table, retaining a sticky first column. This applies to Raw and Nice.
+- Raw uses restrained terminal-inspired mono styling; Nice is the same live table with the site's standard styling. No change to the stream's ~500ms refresh cadence, metadata enrichment implementation, service permissions, database or other website tabs.
+- Website connections still pause when Safari is backgrounded or the user leaves Live; Ultrafeeder continues running.
+
 # v1.10.11 — Mobile-friendly Live ADS-B with Raw/Nice toggle
 
 - Add **Nice UI** aircraft cards for phones and sortable table for desktop, alongside the existing **Raw UI** viewadsb console. Raw view adds smaller mobile typography, horizontal scrolling and text size buttons; the original 500 ms terminal stream is preserved unchanged.
