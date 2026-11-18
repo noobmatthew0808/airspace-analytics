@@ -74,16 +74,17 @@ export function renderLiveTerminal(){
  '<strong>ultrafeeder / viewadsb</strong><span id="live-terminal-state">Connecting…</span></div>'+
  '<div class="live-terminal-scroll" role="region" aria-label="Live aircraft terminal" tabindex="0">'+
  '<pre class="live-terminal-screen" id="live-terminal-screen">Connecting to local terminal…</pre></div></section>'+
- '<p class="live-terminal-note">This displays the real read-only terminal rather than a slower copy of aircraft.json. Scroll horizontally on mobile for all columns. The normal viewadsb terminal does not include flight routes.</p>';
+ '';
  const label=document.getElementById('live-terminal-state'),led=document.getElementById('live-terminal-led');
+ let permissionDenied=false;
  const feed=new EventSource('/api/live/terminal');source=feed;
  feed.onopen=()=>{if(source!==feed)return;label.textContent='Connected';led.classList.add('active');};
- feed.onmessage=event=>{if(source!==feed)return;try{ingest(JSON.parse(event.data));if(!drawPending)drawPending=requestAnimationFrame(redraw);}catch{label.textContent='Invalid terminal output';}};
+ feed.onmessage=event=>{if(source!==feed)return;try{const chunk=JSON.parse(event.data);if(/permission denied/i.test(chunk)&&/docker/i.test(chunk)){permissionDenied=true;led.classList.remove('active');label.textContent='Docker permission denied — Linux setup required';}ingest(chunk);if(!drawPending)drawPending=requestAnimationFrame(redraw);}catch{label.textContent='Invalid terminal output';}};
  feed.addEventListener('stopped',event=>{
   if(source!==feed)return;
   feed.close();source=null;led.classList.remove('active');
   let d={};try{d=JSON.parse(event.data);}catch{}
-  label.textContent=d.error||'Terminal exited — check Docker permissions';
+  label.textContent=permissionDenied?'Docker access denied — check Linux service permissions':(d.error||'Terminal exited — check Docker permissions');
  });
  feed.onerror=()=>{if(source!==feed)return;led.classList.remove('active');label.textContent='Disconnected — reconnecting';};
 }

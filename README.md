@@ -266,3 +266,17 @@ required.
 **Live ADS-B** in the analytics header streams the real curses terminal from `docker exec -e TERM=xterm -t ultrafeeder viewadsb` through read-only same-origin SSE. Terminal redraws appear as produced, normally every 500 ms. This does not poll readsb's 1-second JSON or use a second SDR, and no ADS-B services or the Aerodrome database are changed. On mobile the original terminal can be scrolled horizontally.
 
 The Airspace Analytics service user needs Docker permissions without sudo for this tab. Docker membership grants substantial host privileges and is not configured by this feature. If unavailable, the Live view shows a connection error; existing features still operate. ADS-B broadcasts do not include departure/destination, so stock viewadsb cannot show them without a separate route lookup.
+
+
+## Live terminal: Docker socket permission denied (v1.10.10)
+
+If Live ADS-B shows `permission denied while trying to connect to the docker API`, the website's systemd user cannot access `/var/run/docker.sock`. This is **not** an SDR decoder failure; a GitHub website-only update cannot change that Linux permission.
+
+One optional way to allow the website service account to use Docker is:
+
+```bash
+sudo usermod -aG docker "$(systemctl show -p User --value airspace-analytics.service)"
+sudo systemctl restart airspace-analytics.service
+```
+
+**Security:** Docker group membership effectively provides root-equivalent privileges to that Linux user, including the web service and its update scripts. Only do this on a trusted local host if you accept the extra privilege. The website itself deliberately does not add itself to Docker or modify these permissions. A dedicated local viewer relay could be designed instead to avoid giving the web service general Docker access.
