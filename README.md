@@ -259,3 +259,10 @@ need both an antenna location and a usable aircraft position. Rechecking the
 same Aerodrome observation does not rearm an aircraft; only new observations
 can confirm a departure. No additional service or database installation is
 required.
+
+
+## Live ADS-B terminal (v1.10.9)
+
+**Live ADS-B** in the analytics header streams the real curses terminal from `docker exec -e TERM=xterm -t ultrafeeder viewadsb` through read-only same-origin SSE. Terminal redraws appear as produced, normally every 500 ms. This does not poll readsb's 1-second JSON or use a second SDR, and no ADS-B services or the Aerodrome database are changed. On mobile the original terminal can be scrolled horizontally.
+
+The Airspace Analytics service user needs Docker permissions without sudo for this tab. Docker membership grants substantial host privileges and is not configured by this feature. If unavailable, the Live view shows a connection error; existing features still operate. ADS-B broadcasts do not include departure/destination, so stock viewadsb cannot show them without a separate route lookup.
