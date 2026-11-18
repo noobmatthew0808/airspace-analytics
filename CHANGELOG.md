@@ -1,3 +1,12 @@
+# v1.10.15 — Fix live metadata from the existing Ultrafeeder and tar1090
+
+- Preserve Raw UI exactly as currently working: no frontend JS, CSS, terminal rendering, timing or layout changes.
+- Read current aircraft.json and receiver.json directly from the already-running Ultrafeeder container, with fixed read-only Docker commands, using access already available to the website's Raw tab. Fall back to same-host HTTP if container JSON is unavailable or stale.
+- Correct aircraft registration/type lookup to use tar1090's db2 directory (as configured by upstream tar1090), not only the previously incorrect db path; retain older db installations as fallback.
+- Continue using readsb source classification, three-letter IATA routes and distances in nmi, including direct receiver.json coordinates. Look up tar1090 shards only for aircraft missing r/t in the live JSON.
+- Include small non-sensitive metadata availability counts in the details API response for diagnosis if a specific local installation differs. No receiver addresses/coordinates or secrets are exposed in these counts.
+- No modifications to Ultrafeeder, other feeders, Aerodrome, Traffic, Alerts, historical data, or Raw/Pretty UI controls.
+
 # v1.10.14 — Match tar1090's local aircraft details and fit Raw automatically
 
 - Reuse the same local tar1090/readsb aircraft.json feed that Alerts discovers, including same-host LAN addresses. Previous Live metadata looked only at loopback ports, leaving registration, distance and Source blank when tar1090 showed them.

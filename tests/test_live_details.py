@@ -53,7 +53,8 @@ class TestLiveDetails(unittest.TestCase):
         address='http://192.168.1.187:1099/map/data/aircraft.json'
         previous=live_details._FEED_LAST_GOOD
         try:
-            with patch.object(live_details,'_candidate_feeds',return_value=(address,)), \
+            with patch.object(live_details,'_docker_json',return_value={}), \
+                 patch.object(live_details,'_candidate_feeds',return_value=(address,)), \
                  patch.object(live_details.alerts,'_receiver_url_allowed',return_value=True), \
                  patch.object(live_details.alerts,'_local_addresses',
                               return_value={'127.0.0.1','192.168.1.187'}), \
@@ -131,3 +132,61 @@ class TestLiveDetails(unittest.TestCase):
         finally:
             live_details._ROUTE_API_RETRY_AFTER=previous
             live_details._TAR_ROUTE_CACHE.clear()
+
+    def test_docker_json_uses_fixed_read_only_file(self):
+        import json
+        from unittest.mock import Mock, patch
+        result=Mock(returncode=0,stdout=json.dumps({'aircraft':[]}).encode())
+        with patch.object(live_details.subprocess,'run',return_value=result) as run:
+            self.assertEqual(live_details._docker_json('aircraft.json'),{'aircraft':[]})
+        self.assertEqual(run.call_args.args[0],
+            ('docker','exec','ultrafeeder','cat','/run/readsb/aircraft.json'))
+        with self.assertRaises(ValueError):
+            live_details._docker_json('../etc/passwd')
+
+    def test_docker_json_is_used_for_live_aircraft_before_urls(self):
+        import time
+        live={'now':time.time(),'aircraft':[
+            {'hex':'398603','flight':'HOP51BV','type':'adsb_icao','lat':50.98,'lon':0.2}]}
+        from unittest.mock import patch
+        with patch.object(live_details,'_docker_json',return_value=live), \
+             patch.object(live_details,'_candidate_feeds') as candidates:
+            self.assertEqual(live_details._readsb()['aircraft'][0]['hex'],'398603')
+            candidates.assert_not_called()
+
+    def test_tar1090_real_db2_not_db_prioritized(self):
+        from unittest.mock import patch
+        url='http://192.168.1.187:1099/map/data/aircraft.json'
+        with patch.object(live_details,'_candidate_feeds',return_value=(url,)), \
+             patch.object(live_details.alerts,'_receiver_url_allowed',return_value=True), \
+             patch.object(live_details.alerts,'_local_addresses',
+                          return_value={'127.0.0.1','192.168.1.187'}):
+            roots=live_details._tar_db_roots()
+        self.assertEqual(roots[0],'http://192.168.1.187:1099/map/db2')
+        self.assertIn('http://192.168.1.187:1099/map/db',roots)
+
+    def test_db2_shards_fill_aircraft_registration_and_type(self):
+        from unittest.mock import patch
+        live_details._DB_SHARD_CACHE.clear()
+        def mock_json(url,timeout=None):
+            if url.endswith('/4.js'):return {'children':['40']}
+            if url.endswith('/40.js'):return {'69CF':['G-CICF','C42','0000']}
+            raise OSError('unknown shard')
+        with patch.object(live_details,'_tar_db_roots',
+                          return_value=('http://192.168.1.187:1099/map/db2',)), \
+             patch.object(live_details,'_json',side_effect=mock_json):
+            info=live_details._tar_aircraft_db(['4069CF'])
+        self.assertEqual(info['4069CF']['registration'],'G-CICF')
+        self.assertEqual(info['4069CF']['aircraft_type'],'C42')
+        live_details._DB_SHARD_CACHE.clear()
+
+    def test_docker_receiver_coords_fallback(self):
+        from unittest.mock import patch
+        with patch.object(live_details.alerts,'snapshot',
+                          return_value={'receiver_settings':{'lat':None,'lon':None}}), \
+             patch.object(live_details,'_docker_json',
+                          return_value={'lat':50.82514,'lon':0.24566}), \
+             patch.object(live_details,'_json') as http:
+            self.assertEqual(live_details._receiver_position(),
+                             (50.82514,0.24566))
+            http.assert_not_called()
