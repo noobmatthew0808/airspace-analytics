@@ -1,0 +1,9 @@
+.live-terminal-panel{background:#080b10;color:#e4edf5;border:1px solid var(--line);border-radius:14px;overflow:hidden;margin:16px 0 0}
+.live-terminal-top{background:#111a25;border-bottom:1px solid #293a4a;padding:11px 16px;display:flex;align-items:center;gap:12px;min-height:45px;font-size:12px}
+.live-terminal-top strong{font-size:13px}.live-terminal-top span:last-child{color:#9cafbb}
+.live-terminal-led{width:8px;height:8px;flex-shrink:0;border-radius:50%;background:#657788}
+.live-terminal-led.active{background:#27d5aa;box-shadow:0 0 0 4px #27d5aa24}
+.live-terminal-scroll{overflow:auto;max-height:75vh;min-height:420px;overscroll-behavior:contain}
+.live-terminal-screen{white-space:pre;min-width:max-content;margin:0;padding:15px 18px;background:#080b10;color:#e4edf5;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;letter-spacing:0;tab-size:8}
+.live-terminal-note{color:var(--muted);font-size:12px;margin-top:12px}
+@media(max-width:700px){.live-terminal-scroll{max-height:72vh;min-height:360px}.live-terminal-screen{font-size:11px;padding:12px}.live-terminal-top{padding:11px}}

@@ -1,3 +1,9 @@
+# v1.10.9 — Live ADS-B terminal
+
+- Added a Live ADS-B tab with a direct read-only stream of the existing viewadsb terminal (native ~500ms refresh, not 1s aircraft.json polling).
+- Separated stream from Alerts, Traffic and Aerodrome; closes viewer when leaving the page and limits concurrent viewers.
+- Requires website user Docker access; does not change permissions, install software or restart feeders. Routes need separate enrichment.
+
 # v1.10.8 — Read-only Healthchecks monitoring in Settings (17 November 2026)
 
 - Add a collapsible **Server monitoring** section inside Settings, showing the existing Ubuntu Server and ADSB.im Receiver Healthchecks.io statuses, last/next heartbeat, schedule, grace and recorded downtime intervals.
