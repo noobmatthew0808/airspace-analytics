@@ -280,3 +280,12 @@ sudo systemctl restart airspace-analytics.service
 ```
 
 **Security:** Docker group membership effectively provides root-equivalent privileges to that Linux user, including the web service and its update scripts. Only do this on a trusted local host if you accept the extra privilege. The website itself deliberately does not add itself to Docker or modify these permissions. A dedicated local viewer relay could be designed instead to avoid giving the web service general Docker access.
+
+
+## Live ADS-B: Raw and Nice (v1.10.11)
+
+Use the **Nice UI / Raw UI** toggle on the Live ADS-B page. On phones, Nice UI defaults to readable aircraft cards; desktop defaults to a table. Both have a sort selector/direction, and all table headers can be tapped to sort. Raw UI is the genuine `viewadsb` curses output with smaller mobile text, horizontal swipe and A−/A+ sizing. The real terminal updates on its own ~500ms redraw cadence; neither mode creates another receiver or collector.
+
+The table and cards show all available live terminal fields plus **registration, registration country, estimated ground distance in km, and flight route**. Registration/type come from your existing local readsb aircraft feed when available, falling back to the read-only Aerodrome `seen_aircraft` registry. Country comes from Aerodrome. Distance is calculated from receiver coordinates and current received positions when both are known; otherwise it is marked unavailable. Route codes come from existing read-only Aerodrome `route_cache` records or Aerodrome's already installed callsign route resolver, converted using `/opt/aerodrome/static/airports.json` (which includes 3-letter IATA codes). A small backup mapping covers common airports in case the local airport file is missing. A route is shown as `LGW – MAD` **only when both endpoints have valid IATA codes**. An unavailable or ambiguous route is shown as `—`; route data isn't transmitted over ADS-B and can be stale.
+
+Extra aircraft details are requested on-demand every ~8 seconds, independent of the raw terminal's native redraw timing. Navigating away or putting Safari in the background stops the website viewer and aborts its metadata requests; when you return, it reconnects. Your existing Ultrafeeder and alert workers keep running 24/7. All database access by Airspace Analytics remains read-only; Aerodrome may populate its *own* route cache when its existing route-resolver endpoint is called. No extra network service or database is added to the website.

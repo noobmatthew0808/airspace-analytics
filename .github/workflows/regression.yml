@@ -26,6 +26,7 @@ jobs:
           node --check frontend/app.js
           node --check frontend/alerts-ui.js
           node --check frontend/live-terminal.js
+          node tests/test_live_terminal_ui.cjs
           node --check frontend/calendar.js
       - name: Installation script syntax
         run: bash -n scripts/install.sh

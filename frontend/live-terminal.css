@@ -1,8 +1,55 @@
-.live-terminal-panel{background:#080b10;color:#e4edf5;border:1px solid var(--line);border-radius:14px;overflow:hidden;margin:16px 0 0}
-.live-terminal-top{background:#111a25;border-bottom:1px solid #293a4a;padding:11px 16px;display:flex;align-items:center;gap:12px;min-height:45px;font-size:12px}
-.live-terminal-top strong{font-size:13px}.live-terminal-top span:last-child{color:#9cafbb}
-.live-terminal-led{width:8px;height:8px;flex-shrink:0;border-radius:50%;background:#657788}
-.live-terminal-led.active{background:#27d5aa;box-shadow:0 0 0 4px #27d5aa24}
-.live-terminal-scroll{overflow:auto;max-height:75vh;min-height:420px;overscroll-behavior:contain}
-.live-terminal-screen{white-space:pre;min-width:max-content;margin:0;padding:15px 18px;background:#080b10;color:#e4edf5;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;letter-spacing:0;tab-size:8}
-@media(max-width:700px){.live-terminal-scroll{max-height:72vh;min-height:360px}.live-terminal-screen{font-size:11px;padding:12px}.live-terminal-top{padding:11px}}
+/* Only Live ADS-B is affected. Traffic, Alerts and Settings retain their CSS. */
+.live-terminal-panel{border:1px solid var(--line);border-radius:14px;overflow:hidden;margin:15px 0;background:var(--panel)}
+.live-terminal-top{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:12px 15px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:12px}
+.live-terminal-top strong{color:var(--text);font-size:13px}.live-terminal-top #live-terminal-state{color:var(--muted)}
+.live-count{margin-left:auto;color:var(--muted);white-space:nowrap}
+.live-terminal-led{width:8px;height:8px;flex-shrink:0;border-radius:50%;background:#627383}
+.live-terminal-led.active{background:#30d2ab;box-shadow:0 0 0 4px #30d2ab22}
+.live-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding:11px 14px}
+.live-segment{display:flex;align-items:center;gap:3px;padding:3px;border-radius:10px;background:var(--panel2)}
+.live-segment button{border:0;background:transparent;border-radius:8px;color:var(--muted);font-size:12px;font-weight:700;padding:8px 11px;white-space:nowrap}
+.live-segment button.selected{background:var(--panel3);color:var(--aqua)}
+.live-sortbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line);color:var(--muted);font-size:12px}
+.live-sortbar label{font-weight:650}
+.live-sortbar select,.live-sortbar>button{border:1px solid var(--line2);background:var(--panel2);color:var(--text);padding:8px;border-radius:8px;font-size:12px}
+.live-sortbar select{min-width:140px;max-width:200px}.live-sortbar button{white-space:nowrap}
+.live-table-scroll{overflow:auto;max-height:74vh;overscroll-behavior:contain}
+.live-table{border-collapse:separate;border-spacing:0;font-size:12px;font-variant-numeric:tabular-nums;width:100%;white-space:nowrap}
+.live-table thead{position:sticky;top:0;z-index:1;background:var(--panel2)}
+.live-table th{text-align:left;border-bottom:1px solid var(--line)}
+.live-heading{padding:12px 10px;border:0;background:transparent;color:var(--muted);font-size:12px;font-weight:720;white-space:nowrap;min-width:100%;text-align:left}
+.live-heading.selected{color:var(--aqua)}.live-table td{padding:10px;border-bottom:1px solid var(--line)}
+.live-table tbody tr:nth-child(even){background:var(--panel2)}
+.live-cards{padding:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(255px,1fr));gap:10px}
+.live-card{min-width:0;padding:13px 14px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;font-variant-numeric:tabular-nums}
+.live-card-top{display:flex;justify-content:space-between;gap:9px}
+.live-card-top>div{display:flex;flex-direction:column;min-width:0;gap:3px}
+.live-card-top strong{font-size:17px;line-height:1.2;color:var(--text);overflow-wrap:anywhere}
+.live-card-top small{color:var(--muted);font-size:11px}
+.live-age{background:#30cba618;color:var(--aqua);padding:4px 8px;border-radius:15px;white-space:nowrap;font-size:11px}
+.live-route{margin:12px 0 9px;font-size:14px;font-weight:750;color:var(--aqua);min-height:19px}
+.live-card-main{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:9px 0 12px;border-bottom:1px solid var(--line)}
+.live-card-main>div{min-width:0;display:flex;flex-direction:column;gap:3px}
+.live-card-main small{color:var(--muted);font-size:10px}
+.live-card-main b{font-size:12px;color:var(--text);white-space:nowrap}
+.live-card-extra{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px 6px;padding:12px 0 1px;font-size:10px;color:var(--muted)}
+.live-card-extra span{display:flex;flex-direction:column;gap:2px;min-width:0}
+.live-card-extra b{font-size:11px;color:var(--text);font-weight:680;overflow-wrap:anywhere}
+.live-empty{text-align:center;padding:35px 12px;color:var(--muted);grid-column:1/-1}
+.live-rawbar{padding:9px 12px;display:flex;align-items:center;gap:9px;color:var(--muted);font-size:11px;background:var(--panel2)}
+.live-rawbar span{margin-right:auto}
+.live-rawbar button{border:1px solid var(--line);border-radius:7px;background:var(--panel3);color:var(--text);font-size:12px;padding:5px 9px}
+.live-terminal-scroll{overflow:auto;max-height:73vh;min-height:360px;overscroll-behavior:contain;touch-action:pan-x pan-y;background:#080b10}
+.live-terminal-screen{white-space:pre;min-width:max-content;margin:0;padding:12px;background:#080b10;color:#e4edf5;font:10px/1.5 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;tab-size:8;letter-spacing:0}
+.live-terminal-panel[data-presentation="raw"] .live-sortbar,.live-terminal-panel[data-presentation="raw"] .live-layout,.live-terminal-panel[data-presentation="raw"] .live-cards,.live-terminal-panel[data-presentation="raw"] .live-table-scroll{display:none}
+.live-terminal-panel[data-presentation="nice"] .live-rawbar,.live-terminal-panel[data-presentation="nice"] .live-terminal-scroll{display:none}
+.live-terminal-panel[data-layout="cards"] .live-table-scroll{display:none}
+.live-terminal-panel[data-layout="table"] .live-cards{display:none}
+@media(max-width:700px){
+ .live-terminal-top{padding:10px 11px}.live-toolbar{padding:10px 11px;gap:7px}
+ .live-segment button{padding:7px 9px;font-size:11px}
+ .live-sortbar{padding:9px 11px}.live-sortbar select{min-width:100px;flex:1}
+ .live-cards{grid-template-columns:minmax(0,1fr);padding:9px;gap:9px}
+ .live-card{padding:12px}.live-terminal-scroll{min-height:330px;max-height:71vh}
+ .live-terminal-screen{padding:10px}
+}
