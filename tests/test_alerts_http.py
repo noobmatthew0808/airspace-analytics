@@ -43,6 +43,28 @@ class AlertsAPITest(unittest.TestCase):
   self.assertNotIn('never-expose-this',json.dumps(state))
   self.call('/api/alerts/delete',{'id':rule['id']})
   self.assertEqual(len(self.call('/api/alerts')['rules']),0)
+ def test_backup_api_keys_saved_locally_and_not_returned(self):
+  key1='fia_MOCK_PRIVATE_KEY_FOR_HTTP_TEST'
+  key2='adsblol_MOCK_PRIVATE_KEY_FOR_HTTP_TEST'
+  self.assertTrue(self.call('/api/alerts/flyitaly',{'key':key1})['ok'])
+  self.assertTrue(self.call('/api/alerts/adsblol',{'key':key2})['ok'])
+  state=self.call('/api/alerts')
+  self.assertTrue(state['flyitaly']['key_set'])
+  self.assertTrue(state['adsblol']['key_set'])
+  self.assertNotIn(key1,json.dumps(state))
+  self.assertNotIn(key2,json.dumps(state))
+  self.call('/api/alerts/flyitaly',{'clear':True})
+  self.call('/api/alerts/adsblol',{'clear':True})
+  state=self.call('/api/alerts')
+  self.assertFalse(state['flyitaly']['key_set'])
+  self.assertFalse(state['adsblol']['key_set'])
+
+ def test_network_only_without_distance_rejected(self):
+  with self.assertRaises(HTTPError) as error:
+   self.call('/api/alerts/rule',{'field':'military','backup_apis':True,
+                                'network_only':True})
+  self.assertEqual(error.exception.code,400)
+
  def test_cross_origin_and_invalid_rule(self):
   with self.assertRaises(HTTPError) as error:
    self.call('/api/alerts/rule',{'field':'type','pattern':'A388'},origin='https://evil.example')
