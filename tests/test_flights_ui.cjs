@@ -88,3 +88,49 @@ test('new table retains FR24 links, Google Sheets writes, secondary local button
  assert.match(source,/flights-highlight/);
  assert.match(source,/renderFlightsPage/);
 });
+
+
+test('LGW highlight is current flying route only, never historical itinerary',async()=>{
+ const {flightStatusTestHelpers:h}=await exportsPromise;
+ assert.equal(h.isCurrentGatwick({status:'Flying LGW – VIE',route:'LGW – VIE'}),true);
+ assert.equal(h.isCurrentGatwick({status:'Flying VIE – LGW',route:'VIE – LGW'}),true);
+ assert.equal(h.isCurrentGatwick({status:'Flying',route:''}),false);
+ assert.equal(h.isCurrentGatwick({status:'At LGW',route:'LGW – VIE'}),false);
+ assert.equal(h.isCurrentGatwick({status:'N/A',route:'LGW – VIE'}),false);
+ assert.doesNotMatch(source,/lgw\(origin\)\|\|lgw\(destination\)/);
+});
+
+test('local last-seen is relative and Aerodrome-only, not network hex',async()=>{
+ const {flightStatusTestHelpers:h}=await exportsPromise;
+ const now=1795200000;
+ assert.equal(h.relativeLocalSeen(now-50,now),'Seen just now');
+ assert.equal(h.relativeLocalSeen(now-120,now),'Seen 2m ago');
+ assert.equal(h.relativeLocalSeen(now-7200,now),'Seen 2h ago');
+ assert.equal(h.relativeLocalSeen(now-86400*4,now),'Seen 4d ago');
+ assert.equal(h.relativeLocalSeen(null,now),'');
+ assert.match(source,/:8000\/aircraft\//);
+ assert.match(source,/local_last_seen_at/);
+ assert.match(source,/local_hex/);
+});
+
+test('Who, Edit and Delete show in mobile row; no large provider footer',()=>{
+ assert.match(source,/flights-mobile-meta-row/);
+ assert.match(source,/flights-mobile-person/);
+ assert.match(source,/flights-mobile-actions/);
+ assert.match(source,/data-edit-flight/);
+ assert.match(source,/data-delete-flight/);
+ assert.doesNotMatch(source,/flights-table-bottom/);
+ const css=fs.readFileSync('frontend/flights.css','utf8');
+ assert.match(css,/flights-mobile-meta-row\{display:table-row\}/);
+ assert.match(css,/flights-filter-strip\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+ assert.match(css,/flights-table-wrap\{overflow-x:hidden\}/);
+ assert.match(source,/flights-source-credit/);
+});
+
+test('original filtered-reg copy and Google Sheet editing still present',()=>{
+ assert.match(source,/filterFlightRows/);
+ assert.match(source,/Copy Reg/);
+ assert.match(source,/action:selectedFlightId\?'update':'create'/);
+ assert.match(source,/action:'delete'/);
+ assert.match(source,/getCurrentRegistration/);
+});
