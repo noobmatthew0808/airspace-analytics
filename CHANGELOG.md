@@ -1,3 +1,13 @@
+# v1.10.18 — Tidy Alerts setup and reserve adsb.lol as an independent API
+
+- A compact mobile-first Alerts editor groups aircraft identity, distance/altitude limits and **two** source controls. The controls are **Backup APIs** (default OFF: enrich aircraft detected locally, using configured FlyItalyADSB and/or adsb.lol APIs) and **Also alert for network-only aircraft** (default OFF: permit provider detections without local reception; requires a kilometre distance limit). Local Ultrafeeder never waits for external data.
+- Retire RSSI as an alert requirement and remove it from the interface. The old schema column is kept for safe upgrade but no longer evaluated; on rule saves it is cleared. This avoids failing a previously saved rule silently because it had an obsolete RSSI requirement.
+- Move the prior full-length notification, receiver, API and recent-alert areas behind a collapsed **Configuration & Logs** foldout. Every section, including **Recent alerts**, is now a compact, independently collapsible heading.
+- Under **APIs**, provide separate FlyItalyADSB and adsb.lol panels with fixed, read-only HTTPS endpoints, private key Save, Test, Remove and Show/Hide typed-key controls. The UI clearly reports **Key saved** / **Connected** and reports provider aircraft counts and errors without returning stored keys. Existing FlyItaly keys remain in local private state, unchanged.
+- Add the optional adsb.lol feeder-key API provider, ready for use when the receiver becomes eligible. Poll every 30 seconds only if a key and rule opt-in exist; convert the provider's nautical-mile radius to the site's kilometres. Rate-limit backoff, source freshness and independent pollers preserve the existing local performance.
+- Deduplicate network aircraft by ICAO hex across both providers, preferring fresher positions. Preserve local-first triggering and one event per rule+aircraft, network-only source labels, ntfy priority 3, local tar1090 links for local aircraft, and Aerodrome as read-only fallback.
+- Regression tests cover multi-network matching, legacy settings and notifications, server-side API-key redaction, RSSI retirement and the collapsible mobile interface. No updates to Traffic, Live ADS-B, adsb.im, Ultrafeeder or other feeder services.
+
 # v1.10.17 — Optional FlyItalyADSB network backup and local RSSI alerts
 
 - New optional FlyItalyADSB API integration on the Alerts page. Save or remove a key privately in the existing permission-restricted local alert-state database; only `key_set`, connection status, quotas, and errors appear in API responses. Never store credentials in GitHub or browser JavaScript.
