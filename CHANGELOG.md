@@ -1,3 +1,10 @@
+# v1.10.16 — Fix Alerts live aircraft source selection (20 November 2026)
+
+- Prefer the verified live Ultrafeeder readsb feed at `http://127.0.0.1:1090/data/aircraft.json` before older localhost tar1090 ports. Also discover port 1090 on same-machine LAN addresses; retain the existing URL restrictions, overrides and Aerodrome fallback.
+- Preserve the existing 3-second matching loop, registration/type/altitude/position filters, per-airframe deduplication and ntfy delivery. No Docker permissions, receiver configuration, feeder, database schema, frontend or Traffic/Live UI changes.
+- When live readsb does not include `dbFlags`, continue classifying military aircraft via the existing read-only Aerodrome `seen_aircraft.category` lookup. Unknown classifications and missing positions remain unknown rather than being fabricated.
+- Test live feed selection, registration/type alerts, military category enrichment, old port discovery and Aerodrome fallback. A saved custom feed URL still takes precedence: if it points at an obsolete endpoint, update it in Alerts → Receiver setup to the working port 1090 URL or clear it for automatic discovery.
+
 # v1.10.15 — Fix live metadata from the existing Ultrafeeder and tar1090
 
 - Preserve Raw UI exactly as currently working: no frontend JS, CSS, terminal rendering, timing or layout changes.
