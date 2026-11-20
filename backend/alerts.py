@@ -24,6 +24,9 @@ STALE_SECONDS = 30
 LOST_SECONDS = 600
 API_MAX = 12 * 1024
 DEFAULT_RECEIVER_URLS = (
+    # Ultrafeeder publishes readsb JSON on port 1090; prefer the confirmed
+    # on-host HTTP endpoint without granting the website access to Docker.
+    'http://127.0.0.1:1090/data/aircraft.json',
     'http://127.0.0.1:1099/map/data/aircraft.json',
     'http://127.0.0.1:1099/data/aircraft.json',
     'http://127.0.0.1:1099/map/aircraft.json',
@@ -217,7 +220,7 @@ def _receiver_candidates(addresses):
     paths = ('/map/data/aircraft.json', '/data/aircraft.json',
              '/tar1090/data/aircraft.json', '/map/aircraft.json')
     for host in sorted(addresses - {'127.0.0.1'}):
-        for port in (1099, 8080):
+        for port in (1090, 1099, 8080):
             urls.extend(f'http://{host}:{port}{path}' for path in paths)
     return tuple(dict.fromkeys(urls))
 
