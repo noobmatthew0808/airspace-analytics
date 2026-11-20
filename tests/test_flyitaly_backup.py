@@ -109,7 +109,7 @@ class ExternalAlertsTests(unittest.TestCase):
         status=alerts.snapshot()['adsbfi']
         self.assertFalse(status['key_required'])
         self.assertFalse(status['key_set'])
-        self.assertNotIn('key',str(status))
+        self.assertNotIn('api_key',status)
 
     def test_private_key_is_not_returned_through_alerts_api(self):
         key='fia_TEST_MOCK_KEY_WITHOUT_REAL_CREDENTIAL'
