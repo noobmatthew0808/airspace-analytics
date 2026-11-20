@@ -77,14 +77,14 @@ test('date parser accepts original ISO and DD/MM/YYYY SheetDB values',async()=>{
  assert.equal(h.yearFromRow({date:'03/08/2025'}),'2025');
 });
 
-test('new table retains FR24 links, Google Sheets writes, secondary local buttons',()=>{
+test('one-row table keeps FR24, SheetDB editing and optional local aircraft links',()=>{
  assert.match(source,/www\.flightradar24\.com\/data\/aircraft\//);
- assert.match(source,/data-edit-flight/);
- assert.match(source,/data-delete-flight/);
+ assert.match(source,/flightsManageEdit/);
+ assert.match(source,/flightsManageDelete/);
  assert.match(source,/action:'delete'/);
  assert.match(source,/action:selectedFlightId\?'update':'create'/);
  assert.match(source,/\/api\/flights\/records/);
- assert.match(source,/Local aircraft map/);
+ assert.match(source,/Live local map/);
  assert.match(source,/flights-highlight/);
  assert.match(source,/renderFlightsPage/);
 });
@@ -113,18 +113,25 @@ test('local last-seen is relative and Aerodrome-only, not network hex',async()=>
  assert.match(source,/local_hex/);
 });
 
-test('Who, Edit and Delete show in mobile row; no large provider footer',()=>{
- assert.match(source,/flights-mobile-meta-row/);
- assert.match(source,/flights-mobile-person/);
- assert.match(source,/flights-mobile-actions/);
- assert.match(source,/data-edit-flight/);
- assert.match(source,/data-delete-flight/);
+test('one row per flight with visible Who and global Edit/Delete chooser',()=>{
+ assert.doesNotMatch(source,/flights-mobile-meta-row/);
+ assert.doesNotMatch(source,/flights-details-row/);
+ assert.doesNotMatch(source,/data-edit-flight/);
+ assert.doesNotMatch(source,/data-delete-flight/);
+ assert.match(source,/flights-cell-who/);
+ assert.match(source,/flightsManageBar/);
+ assert.match(source,/flightsManageEdit/);
+ assert.match(source,/flightsManageDelete/);
+ assert.match(source,/flights-selectable/);
+ assert.doesNotMatch(source,/flightsDatabase/);
+ assert.doesNotMatch(source,/flights-source-credit/);
+ assert.doesNotMatch(source,/Live from Google Sheets/);
  assert.doesNotMatch(source,/flights-table-bottom/);
  const css=fs.readFileSync('frontend/flights.css','utf8');
- assert.match(css,/flights-mobile-meta-row\{display:table-row\}/);
- assert.match(css,/flights-filter-strip\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
- assert.match(css,/flights-table-wrap\{overflow-x:hidden\}/);
- assert.match(source,/flights-source-credit/);
+ assert.match(css,/\.flights-table \.fc-who\{display:table-column!important/);
+ assert.match(css,/\.flights-table \.flights-cell-who\{display:table-cell!important/);
+ assert.match(css,/\.flights-table-wrap\{overflow-x:hidden\}/);
+ assert.match(source,/flightsDetailsContent/);
 });
 
 test('original filtered-reg copy and Google Sheet editing still present',()=>{
