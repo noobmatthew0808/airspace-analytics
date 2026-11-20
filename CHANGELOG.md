@@ -1,3 +1,11 @@
+# v1.10.19 — Compact classic Alerts editor, keyless adsb.fi backup and one switch
+
+- Restore the small, familiar add/edit alert form. Name and Match by are aligned to an equal-height two-column row, then Codes/pattern and one aligned row of Distance, Min altitude and Max altitude. Remove the large explanatory section panels and the extra network-only checkbox.
+- **Backup APIs** is now the only per-rule source switch. OFF (default) = local Ultrafeeder only. ON = local immediate matching plus independent external API enrichment; if a distance is specified, recently seen network aircraft may trigger within that radius. An unlimited-distance rule cannot generate network-only alerts. Existing alert definitions, statuses, history and ntfy settings remain intact.
+- Add **adsb.fi** to Configuration & Logs → APIs. Its public v3 geographic API requires **no key** and uses nautic-mile radii, converted from website kilometres. Include a separate no-key **Test connection** button, with timestamp/error/aircraft count. adsb.fi feeder-only global snapshots are authorised automatically by the receiver's public IP; we avoid downloading a huge global dataset. Display source attribution.
+- The local three-second alert worker is unchanged. The three optional external caches run independently at rate-conscious intervals, without remote calls in the local worker; offline providers never stop local alerts. Existing FlyItalyADSB and adsb.lol private-key fields and status remain unchanged.
+- Added regression coverage for one-switch semantics, legacy SQLite fields, API redaction, keyless provider URL and NM conversion, source attribution, short mobile editor layout and HTTP routes. No ADSB.im/receiver/feed changes, and no modifications to Traffic, Live ADS-B or Aerodrome.
+
 # v1.10.18 — Tidy Alerts setup and reserve adsb.lol as an independent API
 
 - A compact mobile-first Alerts editor groups aircraft identity, distance/altitude limits and **two** source controls. The controls are **Backup APIs** (default OFF: enrich aircraft detected locally, using configured FlyItalyADSB and/or adsb.lol APIs) and **Also alert for network-only aircraft** (default OFF: permit provider detections without local reception; requires a kilometre distance limit). Local Ultrafeeder never waits for external data.
