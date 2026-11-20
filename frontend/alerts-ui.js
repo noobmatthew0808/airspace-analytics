@@ -145,10 +145,12 @@ export async function renderAlertsPage(){
   try{if(!document.querySelector('#alertEditorForm')&&!document.querySelector('#alertNtfyForm:focus-within')&&!document.querySelector('#alertReceiverForm:focus-within')&&!document.querySelector('#alertFlyItalyForm:focus-within')){
    const ntfyOpen=document.querySelector('#alertNtfy')?.open;
    const receiverOpen=document.querySelector('#alertReceiver')?.open;
+  const flyItalyOpen=document.querySelector('#alertFlyItaly')?.open;
    const historyOpen=document.querySelector('#alertHistory')?.open;
    await refreshAlerts();
    if(ntfyOpen)document.querySelector('#alertNtfy').open=true;
    if(receiverOpen)document.querySelector('#alertReceiver').open=true;
+  if(flyItalyOpen)document.querySelector('#alertFlyItaly').open=true;
    if(historyOpen===false)document.querySelector('#alertHistory').open=false;
   }}catch{}
   alertsTimer=setTimeout(poll,10000);
