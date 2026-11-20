@@ -115,7 +115,7 @@ class LiveStatusTests(unittest.TestCase):
 
     def test_fresh_local_aircraft_with_cached_route_is_flying(self):
         local={'hex':'407abc','r':'G-WUKU','flight':'EZY76','alt_baro':33000,
-               'gs':400,'seen':0,'seen_pos':2,'lat':51.2,'lon':0}
+               'gs':400,'seen':0,'seen_pos':2,'lat':51.2,'lon':0,'_source':'Your antenna'}
         with patch.object(flights_live,'_local_planes',return_value=[local]):
             with patch.object(flights_live,'_routes',return_value={'EZY76':'LGW – BTS'}):
                 data=flights_live.snapshot('G-WUKU',network_fetch=lambda regs:[])
