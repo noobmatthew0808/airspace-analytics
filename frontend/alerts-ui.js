@@ -33,7 +33,7 @@ function eventCard(e){
 }
 function providerCard(p,d){
  const info=d[p.id]||{},saved=!!info.key_set,connected=!!info.connected;
- const subtitle=saved?(connected?'Connected':(info.error?'Needs attention':'Key saved · not connected')):'No key saved';
+ const subtitle=saved?(connected?'Live data fresh':(info.error?'Needs attention':(info.last_success?'Key saved · last test succeeded':'Key saved · not tested'))):'No key saved';
  return '<details class="foldout alert-config alert-provider" id="alert-'+p.id+'"><summary><span>'+ae(p.name)+' <small>'+ae(subtitle)+'</small></span></summary>'+
   '<form class="alert-config-content alert-provider-form" data-provider="'+p.id+'" autocomplete="off">'+
   '<div class="alert-provider-endpoint"><span>API endpoint (fixed)</span><code>'+ae(p.url)+'</code></div>'+
@@ -43,7 +43,7 @@ function providerCard(p,d){
   '<button class="btn small" type="button" data-test-provider="'+p.id+'">Test connection</button>'+
   '<button class="btn small alert-delete" type="button" data-remove-provider="'+p.id+'" '+(saved?'':'disabled')+'>Remove key</button></div>'+
   '<p class="alert-provider-note">'+ae(p.hint)+'</p>'+
-  (saved?'<p class="alert-provider-note"><strong>Saved ✓</strong> · '+(connected?'Live connection verified':'Not connected yet')+
+  (saved?'<p class="alert-provider-note"><strong>Saved ✓</strong> · '+(connected?'Live data fresh':(info.last_success?'Last API test succeeded':'Connection not tested'))+
   (info.last_success?' · Last success '+whenAlert(info.last_success):'')+
   (info.aircraft!=null?' · '+at(info.aircraft)+' aircraft':'')+
   (info.plan?' · Plan '+ae(info.plan):'')+
