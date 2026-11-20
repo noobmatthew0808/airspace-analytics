@@ -432,10 +432,8 @@ export async function renderFlightsPage(){
   '<div class="flights-table-wrap"><table class="flights-table">'+
   '<colgroup><col class="fc-date"><col class="fc-route"><col class="fc-flight"><col class="fc-airline"><col class="fc-aircraft"><col class="fc-reg"><col class="fc-who"><col class="fc-actions"></colgroup>'+
   '<thead><tr><th>Date</th><th>Route</th><th>Flight</th><th class="flights-cell-airline">Airline</th>'+
-  '<th class="flights-cell-aircraft">Aircraft</th><th>Registration / live</th><th class="flights-cell-who">Who</th><th class="flights-cell-more">⋯</th></tr></thead>'+
+  '<th class="flights-cell-aircraft">Aircraft</th><th>Reg / Live</th><th class="flights-cell-who">Who</th><th class="flights-cell-more">⋯</th></tr></thead>'+
   '<tbody id="flightsTableBody"><tr><td colspan="8" class="flights-empty">Loading your Google Sheet…</td></tr></tbody></table></div>'+
-  '<div class="flights-table-bottom"><small id="flightsLiveTimestamp">Live status checks run separately</small>'+
-  '<a href="https://adsb.fi/" target="_blank" rel="noopener noreferrer">Live aircraft data: adsb.fi</a></div>'+
   '</section>'+modalHtml()+'</div>';
  document.getElementById('flightsAdd').onclick=()=>showModal();
  document.getElementById('flightsRefresh').onclick=()=>loadFlights(true).catch(e=>feedback(e.message,true));
