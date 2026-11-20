@@ -691,8 +691,11 @@ def deliver_pending(now=None, opener=urlopen):
         body=f"{event['callsign'] or event['registration'] or event['hex']} · {event['aircraft_type'] or 'Aircraft'}"
         if event['distance_km'] is not None:body+=f" · {event['distance_km']} km"
         if event['altitude_ft'] is not None:body+=f" · {event['altitude_ft']:,} ft"
-        headers={'Title':event['rule_label']+' nearby','Priority':'3','Content-Type':'text/plain; charset=utf-8'}
-        click_url=_tar1090_local_click_url(event['hex'])
+        network=event['source']=='FlyItalyADSB'
+        headers={'Title':event['rule_label']+(' (network)' if network else '')+' nearby',
+                 'Priority':'3','Content-Type':'text/plain; charset=utf-8'}
+        # A network-only aircraft may not exist on the LOCAL tar1090 map.
+        click_url=None if network else _tar1090_local_click_url(event['hex'])
         if click_url:headers['Click']=click_url
         if token:headers['Authorization']='Bearer '+token
         url=public['server']+'/'+public['topic']
@@ -727,13 +730,36 @@ def loop():
     while True:
         try:
             payload,lat,lon=read_receiver()
-            process_snapshot(payload,lat,lon)
+            process_snapshot(payload,lat,lon,external=flyitaly.aircraft())
             with _lock:_last_sample['source']=_last_good_url
         except Exception as exc:
             with _lock:_last_sample['error']=str(exc)[:180]
         try:deliver_pending()
         except Exception as exc:print('[alerts] ntfy:',str(exc)[:180],flush=True)
         time.sleep(POLL_SECONDS)
+
+
+def flyitaly_loop():
+    """Independent network polling: never block the local 3-second alert worker."""
+    while True:
+        interval=20
+        try:
+            with _lock, connect() as c:
+                key=_flyitaly_key(c)
+                receiver=receiver_settings(c)
+                rows=c.execute('SELECT max_km FROM rules WHERE enabled=1 AND use_flyitaly=1').fetchall()
+            if key and rows and receiver['lat'] is not None and receiver['lon'] is not None:
+                # Always use km. 500 km is within the provider's Free plan.
+                radius=min(500.,max(75.,*(float(row['max_km'] or 100) for row in rows)))
+                try:flyitaly.fetch(key,receiver['lat'],receiver['lon'],radius)
+                except ValueError:pass   # Status is visible without exposing keys
+                interval=12
+            else:
+                flyitaly.clear()
+        except Exception:
+            # Optional network failure must never affect the local alerts.
+            pass
+        time.sleep(interval)
 
 
 def start():
@@ -743,3 +769,5 @@ def start():
         _worker_started=True
         Thread=threading.Thread(target=loop,name='airspace-alerts',daemon=True)
         Thread.start()
+        threading.Thread(target=flyitaly_loop,name='airspace-flyitaly',
+                         daemon=True).start()
