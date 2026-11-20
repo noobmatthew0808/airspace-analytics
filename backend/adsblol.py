@@ -32,6 +32,13 @@ def clear():
     with _lock:
         _state.update(aircraft=[],last_success=None,last_error=None,last_count=0,retry_after=0)
 
+
+def discard_aircraft():
+    """Stop using stale network traffic but retain last successful API test."""
+    with _lock:
+        _state['aircraft']=[]
+
+
 def status(key_set=False):
     with _lock:
         return {'key_set':bool(key_set),'connected':bool(_state['last_success'] and
