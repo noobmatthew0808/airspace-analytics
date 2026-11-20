@@ -12,6 +12,18 @@ A private, responsive, self-hosted ADS-B analytics homepage and historical explo
 
 ![Project](https://img.shields.io/badge/Backend-Python%20stdlib-31dfc1) ![Frontend](https://img.shields.io/badge/Frontend-Vanilla%20JS%20%2B%20SVG-6795ff) ![Database](https://img.shields.io/badge/Database-Aerodrome%20SQLite%20(read--only)-cb8efa)
 
+## v1.10.21 Flights refinements
+
+The phone layout now fits **four flight columns** without horizontal scrolling, with **Who, Edit, Delete and More** shown on a tidy second line for each flight. The seven original multi-select filters form an aligned two-row grid on phones. Date, route, code, registration and all SheetDB data remain unchanged.
+
+**Gatwick highlight applies only to the aircraft's current live flight route** (when the real-time route contains LGW/EGKK). It never highlights an earlier LGW journey stored in your Sheet.
+
+**Last seen locally** is separate from worldwide tracking. Beside the registration, `Seen Xm ago` links to `http://<host>:8000/aircraft/<ICAO hex>`, using solely the registration's latest `seen_aircraft.last_seen_at` and hex in the read-only Aerodrome database. If your receiver never saw it, there's no invented time or link. The FR24 registration link is unchanged.
+
+Global status lookups rotate across the accessible documented registration endpoints from **adsb.fi, FlyItalyADSB and adsb.lol**, using the existing keys already saved in Alerts. Missing credentials skip that service automatically; one bounded provider lookup is selected per 35-second cycle with cache aging and backoff. Already cached nearby API sightings are still considered. Remote errors never block the Google Sheets flight records. No additional API setup is necessary for the keyless adsb.fi source.
+
+The bottom data-source footer has been removed. Providers are credited in a small `ⓘ` control beside the Sheet status. All Google Sheets operations, filters, FR24 aircraft links, registration search and four filtered statistics remain exactly as before.
+
 ## Personal Flights tab (v1.10.20)
 
 The independent **Flights** tab brings the complete personal Flight Tracker from the user's supplied `live-main 2.zip` into Airspace Analytics. Its original GitHub Pages project does **not** need to be deleted or migrated.
