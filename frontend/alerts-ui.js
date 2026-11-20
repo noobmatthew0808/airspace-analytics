@@ -39,7 +39,7 @@ function providerCard(p,d){
    (connected?'Connected · no key needed':(info.last_success?'Previously tested · no key':(info.error?'Needs attention · no key':'No key required')))+
    '</small></span></summary><div class="alert-config-content">'+
    '<div class="alert-provider-endpoint"><span>API endpoint</span><code>'+ae(p.url)+'</code></div>'+
-   '<p class="alert-provider-note">Free public aircraft API. No key to enter. Contributor access uses your feeder IP.</p>'+
+   '<p class="alert-provider-note">Free public aircraft API. No key to enter. Contributor access uses your feeder IP. <a href="https://adsb.fi/" target="_blank" rel="noopener noreferrer">adsb.fi</a></p>'+
    '<div class="alert-editor-buttons"><button class="btn small primary" id="alertAdsbfiTest" type="button">Test connection</button></div>'+
    (info.last_success?'<p class="alert-provider-note">Last success: '+whenAlert(info.last_success)+' · '+at(info.aircraft)+' aircraft</p>':'')+
    (info.error?'<p class="alert-provider-note">'+ae(info.error)+'</p>':'')+
