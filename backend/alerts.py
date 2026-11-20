@@ -133,11 +133,10 @@ def validate_rule(data):
     # Legacy column now stores the global Backup APIs option; RSSI retired.
     min_rssi = None
     use_flyitaly = int(bool(data.get('backup_apis',data.get('use_flyitaly',False))))
-    network_only = int(bool(data.get('network_only',False)))
-    if network_only and not use_flyitaly:
-        raise ValueError('Enable Backup APIs before enabling network-only alerts')
-    if network_only and max_km is None:
-        raise ValueError('Network-only alerts require a maximum distance')
+    # Single Backup APIs checkbox: when on, local aircraft gain API enrichment.
+    # With an explicit radius the same rule can also match network aircraft.
+    # Without a radius, only locally received aircraft may trigger.
+    network_only = int(bool(use_flyitaly and max_km is not None))
     return {'label': label, 'field':field,'pattern':pattern, 'max_km': max_km,
             'min_ft':min_ft, 'max_ft':max_ft, 'enabled':int(bool(data.get('enabled',True))),
             'use_flyitaly':use_flyitaly,'network_only':network_only,'min_rssi':min_rssi}
@@ -513,7 +512,7 @@ def process_snapshot(payload, receiver_lat, receiver_lon, now=None, external=Non
             hexcode=str(original.get('hex','')).lower().strip()
             if not re.fullmatch(r'~?[a-f0-9]{6}',hexcode):continue
             for rule in rules:
-                if network_only and not (rule['use_flyitaly'] and rule['network_only']):
+                if network_only and not (rule['use_flyitaly'] and rule['max_km'] is not None):
                     continue
                 plane=(original if network_only or not rule['use_flyitaly'] else
                        _merge_external(original,extra.get(hexcode)))
