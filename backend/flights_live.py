@@ -1,8 +1,8 @@
-"""Read-only, best-effort live status for registrations in the personal flight log.
+"""Read-only status and local Aerodrome last-seen history for the personal flight log.
 
-Uses (1) this antenna's existing readsb JSON, (2) already cached network
-aircraft data and (3) one bounded adsb.fi registration batch at most every
-90 seconds. No tracker API can write to Google Sheets or delay flight log CRUD.
+Local receiver + read-only Aerodrome sightings take priority. Global registration
+lookup rotates among configured providers with strict per-provider freshness,
+backoff and one bounded lookup per cycle. Never writes to Google Sheets.
 """
 from __future__ import annotations
 
@@ -20,10 +20,17 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHand
 from . import alerts, adsbfi, adsblol, flyitaly, data, live_details
 
 _CACHE_LOCK=threading.Lock()
+# Keep the original adsb.fi cache shape for existing callers and regressions.
 _REMOTE={'updated':0.,'aircraft':[],'error':None}
+_OTHER_REMOTE={
+    'FlyItalyADSB':{'updated':0.,'aircraft':[],'error':None},
+    'adsb.lol':{'updated':0.,'aircraft':[],'error':None},
+}
+_ROTATION={'at':0.,'cursor':0,'retry_until':{}}
 MAX_BYTES=1_750_000
 MAX_REGS=80
-MIN_REMOTE_PERIOD=30
+MIN_REMOTE_PERIOD=35
+MAX_CACHED_AGE=40
 AIRPORT_FILE=Path('/opt/aerodrome/static/airports.json')
 # Airport reference fallback for common UK airports when Aerodrome isn't mounted.
 COMMON_AIRPORTS=(
@@ -50,50 +57,105 @@ class _NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def _lookup_network(regs,opener=None):
-    """Provider's documented public /v2/registration endpoint; 1 batch call."""
+def _lookup_provider(regs,provider='adsb.fi',key='',opener=None):
+    """Bounded global registration lookup; all endpoints verified from official docs.
+
+    One call for adsb.fi and adsb.lol; FlyItaly uses batches of at most 50.
+    No credentials are included in URLs, errors or responses.
+    """
     if opener is None:opener=build_opener(ProxyHandler({}),_NoRedirect()).open
-    # Use only reasonable, encoded registration values and never a raw URL from UI.
-    codes=[str(r).strip().upper() for r in regs if re.fullmatch(r'[A-Z0-9-]{2,16}',str(r).strip().upper())]
+    codes=list(dict.fromkeys(str(r).strip().upper() for r in regs
+        if re.fullmatch(r'[A-Z0-9-]{2,16}',str(r).strip().upper())))[:MAX_REGS]
     if not codes:return []
-    url='https://opendata.adsb.fi/api/v2/registration/'+','.join(codes[:MAX_REGS])
-    request=Request(url,headers={'Accept':'application/json',
-                                  'User-Agent':'AirspaceAnalytics-FlightLog/1'})
+    configurations={
+        'adsb.fi':('https://opendata.adsb.fi/api/v2/registration/',MAX_REGS,{}),
+        'adsb.lol':('https://api.adsb.lol/v2/reg/',MAX_REGS,{'X-API-Key':key}),
+        'FlyItalyADSB':('https://api.flyitalyadsb.com/v2/reg/',50,{'X-Api-Key':key}),
+    }
+    if provider not in configurations:raise ValueError('Unknown aircraft source')
+    if provider!='adsb.fi' and not key:raise ValueError('API key unavailable')
+    prefix,limit,auth=configurations[provider]
+    aircraft=[]
+    for start in range(0,len(codes),limit):
+        batch=codes[start:start+limit]
+        request=Request(prefix+','.join(batch),headers={
+            'Accept':'application/json','User-Agent':'AirspaceAnalytics-FlightLog/2',**auth})
+        try:
+            with opener(request,timeout=6) as response:
+                if int(response.headers.get('Content-Length','0') or 0)>MAX_BYTES:
+                    raise ValueError('Network aircraft response too large')
+                raw=response.read(MAX_BYTES+1)
+                if len(raw)>MAX_BYTES:raise ValueError('Network aircraft response too large')
+            payload=json.loads(raw)
+            if not isinstance(payload,dict) or not isinstance(payload.get('ac'),list):
+                raise ValueError('Unexpected aircraft response')
+            when=payload.get('now')
+            if not isinstance(when,(int,float)) or not math.isfinite(when):
+                raise ValueError('Missing network timestamp')
+            if when>1e11:when/=1000
+            delta=time.time()-when
+            if not -10<=delta<=50:raise ValueError('Stale network aircraft response')
+            for record in payload['ac'][:500]:
+                if not isinstance(record,dict):continue
+                p=dict(record)
+                for field in ('seen','seen_pos'):
+                    v=p.get(field)
+                    if isinstance(v,(int,float)) and math.isfinite(v) and 0<=v<=120:
+                        p[field]=v+max(0,delta)
+                    else:p.pop(field,None)
+                p['_source']=provider
+                aircraft.append(p)
+        except HTTPError as error:
+            if error.code==404:continue  # valid request; no matching aircraft
+            if error.code==429:raise ValueError('API rate limited') from None
+            raise ValueError(provider+' HTTP '+str(error.code)) from None
+        except (URLError,OSError,TimeoutError):
+            raise ValueError(provider+' currently unavailable') from None
+        except (json.JSONDecodeError,UnicodeDecodeError):
+            raise ValueError('Invalid aircraft response from '+provider) from None
+    return aircraft
+
+
+def _lookup_network(regs,opener=None):
+    """Backwards-compatible keyless adsb.fi lookup for callers and tests."""
+    return _lookup_provider(regs,'adsb.fi',opener=opener)
+
+
+def _configured_keys():
+    """Read existing Alerts configuration; never expose key material to client."""
     try:
-        with opener(request,timeout=6) as response:
-            if int(response.headers.get('Content-Length','0') or 0)>MAX_BYTES:
-                raise ValueError('Network response too large')
-            raw=response.read(MAX_BYTES+1)
-            if len(raw)>MAX_BYTES:raise ValueError('Network response too large')
-        response=json.loads(raw)
-        if not isinstance(response,dict) or not isinstance(response.get('ac'),list):
-            raise ValueError('Unexpected network aircraft response')
-        when=response.get('now')
-        if not isinstance(when,(int,float)) or not math.isfinite(when):
-            raise ValueError('No snapshot timestamp')
-        if when>1e11:when/=1000
-        delta=time.time()-when
-        if delta>50 or delta<-10:raise ValueError('Old network snapshot')
-        planes=[]
-        for aircraft in response['ac'][:500]:
-            if not isinstance(aircraft,dict):continue
-            plane=dict(aircraft)
-            for agefield in ('seen','seen_pos'):
-                v=plane.get(agefield)
-                if isinstance(v,(int,float)) and math.isfinite(v) and 0<=v<=120:
-                    plane[agefield]=v+max(0,delta)
-                else:plane.pop(agefield,None)
-            plane['_source']='adsb.fi'
-            planes.append(plane)
-        return planes
-    except HTTPError as error:
-        # Not-found means nobody in this batch is currently broadcasting.
-        if error.code==404:return []
-        raise ValueError(f'adsb.fi HTTP {error.code}') from None
-    except (URLError,OSError,TimeoutError):
-        raise ValueError('Network aircraft positions unavailable') from None
-    except (json.JSONDecodeError,UnicodeDecodeError):
-        raise ValueError('Invalid network aircraft data') from None
+        with alerts._lock,alerts.connect() as db:
+            return {'FlyItalyADSB':alerts._flyitaly_key(db),
+                    'adsb.lol':alerts._adsblol_key(db)}
+    except (OSError,ValueError):
+        return {'FlyItalyADSB':'','adsb.lol':''}
+
+
+def _local_last_seen(registrations):
+    """Most recent *own receiver* Aerodrome sighting and ICAO per registration.
+
+    One read-only, bounded batch query. Remote aircraft never populate this.
+    """
+    keys=list(dict.fromkeys(normal_reg(x) for x in registrations if normal_reg(x)))
+    if not keys:return {}
+    output={}
+    try:
+        with closing(data.connection()) as db:
+            rows=db.execute(
+                "SELECT icao,registration,last_seen_at FROM seen_aircraft "
+                "WHERE UPPER(REPLACE(REPLACE(TRIM(registration),'-',''),' ','')) IN ("+
+                ','.join('?' for _ in keys)+") ORDER BY last_seen_at DESC LIMIT 250",
+                keys).fetchall()
+        for row in rows:
+            name=normal_reg(row['registration'])
+            icao=str(row['icao'] or '').strip().lower()
+            stamp=row['last_seen_at']
+            if name in keys and name not in output and re.fullmatch(r'[a-f0-9]{6}',icao):
+                if isinstance(stamp,(int,float)) and 0<stamp<=time.time()+120:
+                    output[name]={'hex':icao,'last_seen_at':int(stamp)}
+    except (OSError,ValueError,TypeError,Exception):
+        return {}  # Aerodrome may be temporarily updating; optional only
+    return output
 
 
 @lru_cache(maxsize=1)
@@ -190,34 +252,62 @@ def snapshot(value='',network_fetch=_lookup_network):
             raise ValueError('Invalid registration')
         if token not in registrations:registrations.append(token)
     targets={normal_reg(x):x for x in registrations}
-    if not targets:return {'aircraft':{},'source':'Local receiver + adsb.fi','checked_at':int(time.time())}
+    if not targets:
+        return {'aircraft':{},'checked_at':int(time.time())}
 
+    # All local data is independent of external API quotas.
     local=_local_planes()
+    local_history=_local_last_seen(registrations)
     others=[dict(p,_source=p.get('_network_source') or 'Backup API')
             for p in adsbfi.aircraft()+adsblol.aircraft()+flyitaly.aircraft()
             if isinstance(p,dict)]
-    # One registration batch per 90s maximum across all visitors.
+
+    # The already-running alert workers poll geographically (near Polegate).
+    # This registration-specific lookup handles other airports worldwide.
+    configured=_configured_keys() if network_fetch is _lookup_network else {}
+    provider_keys={'adsb.fi':'',**{k:v for k,v in configured.items() if v}}
     with _CACHE_LOCK:
         now=time.monotonic()
-        if now-_REMOTE['updated']>=MIN_REMOTE_PERIOD:
-            _REMOTE['updated']=now  # even errors cause backoff
-            try:
-                _REMOTE['aircraft']=network_fetch(registrations)
-                _REMOTE['error']=None
+        if network_fetch is _lookup_network:
+            if now-_ROTATION['at']>=MIN_REMOTE_PERIOD:
+                eligible=[key for key in ('adsb.fi','FlyItalyADSB','adsb.lol')
+                          if key in provider_keys and now>=_ROTATION['retry_until'].get(key,0)]
+                if eligible:
+                    provider=eligible[_ROTATION['cursor']%len(eligible)]
+                    _ROTATION['cursor']+=1
+                    _ROTATION['at']=now
+                    selected=_REMOTE if provider=='adsb.fi' else _OTHER_REMOTE[provider]
+                    selected['updated']=now
+                    try:
+                        selected['aircraft']=_lookup_provider(registrations,provider,provider_keys[provider])
+                        selected['error']=None
+                    except (OSError,ValueError) as error:
+                        selected.update(aircraft=[],error=str(error)[:110])
+                        # Back off failed provider instead of burning its quota.
+                        _ROTATION['retry_until'][provider]=time.monotonic()+(
+                            900 if 'rate limit' in str(error).lower() else 150)
+        elif now-_REMOTE['updated']>=MIN_REMOTE_PERIOD:
+            # Keep old injection point for deterministic offline regressions.
+            _REMOTE['updated']=now
+            try:_REMOTE.update(aircraft=network_fetch(registrations),error=None)
             except (OSError,ValueError) as error:
-                _REMOTE['aircraft']=[]
-                _REMOTE['error']=str(error)[:150]
-        # An HTTP result's 'seen' fields describe its age at fetch time.
-        # Age cached aircraft again on every request; never treat an old
-        # network position as live just because the server retained the JSON.
-        elapsed=max(0.0,time.monotonic()-_REMOTE['updated'])
-        remote=[dict(p) for p in _REMOTE['aircraft']]
-        for plane in remote:
-            for field in ('seen','seen_pos'):
-                age=plane.get(field)
-                if isinstance(age,(int,float)) and math.isfinite(age):
-                    plane[field]=age+elapsed
-        error=_REMOTE['error']
+                _REMOTE.update(aircraft=[],error=str(error)[:110])
+
+        # Age *every* provider's cached aircraft. Each plane must be freshly
+        # detected even if its provider was last used in another rotation slot.
+        remote=[]
+        for provider,stored in [('adsb.fi',_REMOTE),*_OTHER_REMOTE.items()]:
+            elapsed=max(0.,time.monotonic()-stored['updated'])
+            if stored['updated']<=0 or elapsed>MAX_CACHED_AGE:continue
+            for source in stored['aircraft']:
+                plane=dict(source)
+                for field in ('seen','seen_pos'):
+                    age=plane.get(field)
+                    if isinstance(age,(int,float)) and math.isfinite(age):
+                        plane[field]=age+elapsed
+                plane.setdefault('_source',provider)
+                remote.append(plane)
+
     seen={}
     for plane in remote+others+local:
         if not _active(plane):continue
@@ -227,33 +317,32 @@ def snapshot(value='',network_fetch=_lookup_network):
     route_map=_routes([c for c in calls if re.fullmatch(r'[A-Z]{3}[0-9][A-Z0-9]{0,4}',c)])
     output={}
     for key,registration in targets.items():
+        history=local_history.get(key,{})
         plane=seen.get(key)
+        result={'status':'N/A','route':'','source':'','hex':'','at_airport':'',
+                'local_hex':history.get('hex',''),
+                'local_last_seen_at':history.get('last_seen_at')}
         if plane is None:
-            output[registration]={'status':'N/A','route':'','source':'','hex':'','at_airport':''}
+            output[registration]=result
             continue
         flight=str(plane.get('flight') or '').strip().upper()
         route=route_map.get(flight,'')
         altitude=plane.get('alt_baro')
-        status='N/A'
         airport=''
+        status='N/A'
         if altitude=='ground':
             airport=airport_for_ground(plane) or ''
             status='At '+airport if airport else 'Ground'
         else:
-            gs=plane.get('gs')
-            pos_age=plane.get('seen_pos')
-            fresh_position=isinstance(pos_age,(int,float)) and 0<=pos_age<=35
-            has_altitude=isinstance(altitude,(int,float)) and altitude>=2000
-            moving=isinstance(gs,(int,float)) and gs>=80
-            if fresh_position and (has_altitude or moving):
-                status='Flying '+route if route else 'Flying'
-            elif has_altitude or moving:
-                status='Flying '+route if route else 'Flying'
+            speed=plane.get('gs')
+            high=isinstance(altitude,(int,float)) and altitude>=2000
+            moving=isinstance(speed,(int,float)) and speed>=80
+            if high or moving:status='Flying '+route if route else 'Flying'
         hexcode=str(plane.get('hex') or '').lower().strip()
         if not re.fullmatch(r'[a-f0-9]{6}',hexcode):hexcode=''
-        output[registration]={'status':status,'route':route if status.startswith('Flying') else '',
-            'source':str(plane.get('_source',''))[:30],'hex':hexcode,
-            'at_airport':airport,'callsign':flight,'updated_seconds_ago':plane.get('seen')}
-    return {'aircraft':output,'source':'Your antenna + available network APIs',
-            'checked_at':int(time.time()),
-            **({'warning':error} if error else {})}
+        result.update(status=status,route=route if status.startswith('Flying') else '',
+                      source=str(plane.get('_source',''))[:30],hex=hexcode,
+                      at_airport=airport,callsign=flight,
+                      updated_seconds_ago=plane.get('seen'))
+        output[registration]=result
+    return {'aircraft':output,'checked_at':int(time.time())}

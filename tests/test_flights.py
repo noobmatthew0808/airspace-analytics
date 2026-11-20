@@ -2,7 +2,9 @@
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+import sqlite3
+import json
+from unittest.mock import patch, Mock, MagicMock
 from urllib.error import URLError
 
 from backend import flights_log, flights_live
@@ -97,7 +99,14 @@ class SheetDBTests(unittest.TestCase):
 class LiveStatusTests(unittest.TestCase):
     def setUp(self):
         self.old=dict(flights_live._REMOTE)
+        self.old_other={k:dict(v) for k,v in flights_live._OTHER_REMOTE.items()}
+        self.old_rotation={'at':flights_live._ROTATION['at'],
+                           'cursor':flights_live._ROTATION['cursor'],
+                           'retry_until':dict(flights_live._ROTATION['retry_until'])}
         flights_live._REMOTE.update(updated=0,aircraft=[],error=None)
+        for value in flights_live._OTHER_REMOTE.values():
+            value.update(updated=0.,aircraft=[],error=None)
+        flights_live._ROTATION.update(at=0.,cursor=0,retry_until={})
         # Other tests exercise the same production API caches; fixtures must
         # not accidentally inherit their aircraft and claim they are live.
         self.provider_patches=[
@@ -111,6 +120,11 @@ class LiveStatusTests(unittest.TestCase):
         for provider in reversed(self.provider_patches):provider.stop()
         flights_live._REMOTE.clear()
         flights_live._REMOTE.update(self.old)
+        for name,value in self.old_other.items():
+            flights_live._OTHER_REMOTE[name].clear()
+            flights_live._OTHER_REMOTE[name].update(value)
+        flights_live._ROTATION.clear()
+        flights_live._ROTATION.update(self.old_rotation)
 
     def test_registration_with_parentheses_matches_current_airframe(self):
         self.assertEqual(flights_live.current_registration('G-OLD (G-WUKU)'),'G-WUKU')
@@ -158,6 +172,70 @@ class LiveStatusTests(unittest.TestCase):
             flights_live._REMOTE['updated']=time.monotonic()-65
             second=flights_live.snapshot('G-WUKU',network_fetch=lambda regs:[])
         self.assertEqual(second['aircraft']['G-WUKU']['status'],'N/A')
+
+    def test_local_history_is_read_only_and_returns_newest_hex(self):
+        db=sqlite3.connect(':memory:')
+        db.row_factory=sqlite3.Row
+        db.execute('CREATE TABLE seen_aircraft(icao TEXT,registration TEXT,last_seen_at INTEGER)')
+        now=int(time.time())
+        db.executemany('INSERT INTO seen_aircraft VALUES (?,?,?)',[
+            ('4080f7','G-WUKU',now-50),
+            ('4080f8','G-WUKU',now-100),
+            ('400001','G-EZBH',now-3600)])
+        with patch.object(flights_live.data,'connection',return_value=db):
+            found=flights_live._local_last_seen(['G-WUKU','g-ezbh','G-UNKNOWN'])
+        self.assertEqual(found['GWUKU']['hex'],'4080f7')
+        self.assertEqual(found['GWUKU']['last_seen_at'],now-50)
+        self.assertEqual(found['GEZBH']['hex'],'400001')
+        self.assertNotIn('GUNKNOWN',found)
+
+    def test_untracked_aircraft_still_has_last_local_sighting(self):
+        with patch.object(flights_live,'_local_planes',return_value=[]):
+            with patch.object(flights_live,'_local_last_seen',
+                              return_value={'GWUKU':{'hex':'4080f7','last_seen_at':1234567890}}):
+                result=flights_live.snapshot('G-WUKU',network_fetch=lambda regs:[])
+        self.assertEqual(result['aircraft']['G-WUKU']['status'],'N/A')
+        self.assertEqual(result['aircraft']['G-WUKU']['local_hex'],'4080f7')
+        self.assertEqual(result['aircraft']['G-WUKU']['local_last_seen_at'],1234567890)
+
+    def test_batched_providers_use_only_known_hosts_and_no_key_leaks(self):
+        def fake(req,timeout=6):
+            calls.append(req)
+            content=json.dumps({'now':time.time(),'ac':[{
+                'hex':'4080f7','r':'G-WUKU','alt_baro':32000,'seen':1}]}).encode()
+            obj=MagicMock()
+            obj.headers={}
+            obj.read.return_value=content
+            obj.__enter__=Mock(return_value=obj)
+            obj.__exit__=Mock(return_value=None)
+            return obj
+        calls=[]
+        for provider,key,endpoint in [
+            ('adsb.fi','','https://opendata.adsb.fi/api/v2/registration/'),
+            ('FlyItalyADSB','dummy-secret','https://api.flyitalyadsb.com/v2/reg/'),
+            ('adsb.lol','dummy-secret','https://api.adsb.lol/v2/reg/')]:
+            with self.subTest(provider=provider):
+                planes=flights_live._lookup_provider(['G-WUKU'],provider,key,opener=fake)
+                self.assertEqual(planes[0]['_source'],provider)
+                req=calls[-1]
+                self.assertTrue(req.full_url.startswith(endpoint))
+                self.assertNotIn('dummy-secret',req.full_url)
+                self.assertEqual(req.get_header('X-api-key'),
+                                 'dummy-secret' if key else None)
+
+    def test_global_api_queries_rotate_across_saved_sources(self):
+        used=[]
+        with patch.object(flights_live,'_local_planes',return_value=[]):
+            with patch.object(flights_live,'_local_last_seen',return_value={}):
+                with patch.object(flights_live,'_configured_keys',return_value={
+                    'FlyItalyADSB':'test-secret','adsb.lol':'other-secret'}):
+                    with patch.object(flights_live,'_lookup_provider',
+                                      side_effect=lambda regs,provider,key:used.append(provider) or []):
+                        for _ in range(4):
+                            flights_live._ROTATION['at']=0
+                            result=flights_live.snapshot('G-WUKU')
+                            self.assertEqual(result['aircraft']['G-WUKU']['status'],'N/A')
+        self.assertEqual(used,['adsb.fi','FlyItalyADSB','adsb.lol','adsb.fi'])
 
     def test_invalid_registration_or_too_many_rejected_without_network_calls(self):
         with self.assertRaises(ValueError):

@@ -60,7 +60,7 @@ const filterDefinitions=[
 ];
 const blankFilters=()=>({year:[],airline:[],who:[],from_airport:[],to_airport:[],airplane:[],flight_code:[]});
 let allFlights=[],activeFilters=blankFilters(),searchTerm='',filterOpen=null;
-let lastLive={},selectedFlightId=null,flightTimer=null,flightsGeneration=0,sheetWarning='';
+let lastLive={},selectedFlightId=null,flightTimer=null,flightsGeneration=0,sheetWarning='',statusRequestNumber=0;
 let expandedRows=new Set();
 
 async function api(url,body){
@@ -108,6 +108,8 @@ export const flightLogTestHelpers={
  parseDate,toInputDate,niceDate,yearFromRow,uniqueYears,uniqueValues,
  uniquePeople,blankFilters,stats,filterMatchesSelected
 };
+// Exposed solely to protect local-last-seen formatting and live-only LGW rules in tests.
+export const flightStatusTestHelpers={relativeLocalSeen,isCurrentGatwick};
 function updateStats(rows){
  const s=stats(rows);
  for(const [name,value] of Object.entries(s)){
@@ -124,44 +126,82 @@ function currentReg(row){
 }
 function lgw(text){return /\b(?:LGW|EGKK)\b/i.test(String(text||''));}
 function liveFor(row){return lastLive[currentReg(row).toUpperCase()]||{status:'N/A'};}
+function isCurrentGatwick(item){
+ return String(item.status||'').startsWith('Flying')&&lgw(item.route);
+}
+function liveGatwick(row){return isCurrentGatwick(liveFor(row));}
 function statusBadge(row){
  const item=liveFor(row),status=String(item.status||'N/A');
- const primary=status==='N/A'?'Not tracked':status;
- const highlight=lgw(status)||lgw(item.route);
+ const highlight=liveGatwick(row);
  return '<span class="flights-live-chip'+(highlight?' flights-lgw':'')+
-  (status==='N/A'?' is-unknown':'')+'" title="'+escapeHtml(item.source?'Live: '+item.source:'No recent reliable position')+
-  '" data-live-reg="'+escapeHtml(currentReg(row).toUpperCase())+'">'+escapeHtml(primary)+'</span>';
+  (status==='N/A'?' is-unknown':'')+'" title="'+escapeHtml(item.source?'Live: '+item.source:'No current reliable live position')+
+  '" data-live-reg="'+escapeHtml(currentReg(row).toUpperCase())+'">'+escapeHtml(status)+'</span>';
+}
+function relativeLocalSeen(timestamp,now=Date.now()/1000){
+ const then=Number(timestamp);
+ if(!Number.isFinite(then)||then<=0)return '';
+ const age=Math.max(0,Math.round(now-then));
+ if(age<60)return 'Seen just now';
+ if(age<3600)return 'Seen '+Math.floor(age/60)+'m ago';
+ if(age<86400)return 'Seen '+Math.floor(age/3600)+'h ago';
+ if(age<86400*30)return 'Seen '+Math.floor(age/86400)+'d ago';
+ if(age<86400*365)return 'Seen '+Math.floor(age/(86400*30))+'mo ago';
+ return 'Seen '+Math.floor(age/(86400*365))+'y ago';
+}
+function localLastSeen(row){
+ const item=liveFor(row),stamp=item.local_last_seen_at;
+ const label=relativeLocalSeen(stamp),hex=String(item.local_hex||'').toUpperCase();
+ if(!label||!/^[0-9A-F]{6}$/.test(hex))return '';
+ // This hex and timestamp come exclusively from Aerodrome's own database.
+ const url='http://'+location.hostname+':8000/aircraft/'+hex;
+ const exact=new Date(Number(stamp)*1000).toLocaleString('en-GB',{timeZone:'Europe/London'});
+ return '<a class="flights-local-seen" href="'+escapeHtml(url)+
+  '" target="_blank" rel="noopener noreferrer" title="Seen by your antenna: '+escapeHtml(exact)+
+  ' · Open Aerodrome aircraft history">'+escapeHtml(label)+'</a>';
 }
 function rowHtml(row){
  const reg=currentReg(row),detailId='flight-detail-'+String(row.id).replace(/[^0-9a-z_-]/gi,'');
  const origin=normalizeUpper(row.from_airport),destination=normalizeUpper(row.to_airport);
- const route=origin+' → '+destination;
- const highlight=lgw(origin)||lgw(destination)||lgw(liveFor(row).status);
+ const route=origin+' → '+destination,live=liveFor(row);
+ const highlight=liveGatwick(row);
  const open=expandedRows.has(row.id);
  const fr24='https://www.flightradar24.com/data/aircraft/'+encodeURIComponent(reg);
- const live=liveFor(row);
  const localHex=/^[0-9a-f]{6}$/i.test(live.hex||'')?live.hex:'';
  const localMap=localHex?'http://'+location.hostname+':1099/map/?icao='+localHex.toUpperCase()+'&noIsolation':'';
- return '<tr class="flights-row'+(highlight?' flights-highlight':'')+'" data-flight-id="'+escapeHtml(row.id)+'">'+
-  '<td class="flights-cell-date">'+escapeHtml(niceDate(row.date))+'</td>'+
-  '<td class="flights-cell-route'+(lgw(route)?' flights-lgw':'')+'">'+escapeHtml(route)+'</td>'+
+ const date=niceDate(row.date),shortDate=date.replace(/(\d{4})$/,(_,year)=>year.slice(-2));
+ const id=escapeHtml(row.id);
+ const detailsButton='<button type="button" class="btn small flights-more" data-expand="'+id+
+  '" aria-expanded="'+(open?'true':'false')+'" aria-controls="'+escapeHtml(detailId)+
+  '" title="More flight details">More</button>';
+ return '<tr class="flights-row'+(highlight?' flights-highlight':'')+'" data-flight-id="'+id+'">'+
+  '<td class="flights-cell-date"><span class="flights-desktop-date">'+escapeHtml(date)+
+  '</span><span class="flights-mobile-date">'+escapeHtml(shortDate)+'</span></td>'+
+  '<td class="flights-cell-route">'+escapeHtml(route)+'</td>'+
   '<td class="flights-cell-code">'+escapeHtml(row.flight_code||'—')+'</td>'+
   '<td class="flights-cell-airline">'+escapeHtml(row.airline||'—')+'</td>'+
   '<td class="flights-cell-aircraft">'+escapeHtml(row.airplane||'—')+'</td>'+
-  '<td class="flights-cell-reg"><a class="flights-reg" target="_blank" rel="noopener noreferrer" href="'+escapeHtml(fr24)+'">'+escapeHtml(row.registration||'No reg')+'</a>'+
-  statusBadge(row)+'</td>'+
+  '<td class="flights-cell-reg"><div class="flights-reg-line">'+
+  (reg && !/^no reg$/i.test(reg)?'<a class="flights-reg" target="_blank" rel="noopener noreferrer" href="'+escapeHtml(fr24)+'">'+escapeHtml(row.registration)+'</a>':
+   '<span class="flights-no-reg">No reg</span>')+localLastSeen(row)+'</div>'+statusBadge(row)+'</td>'+
   '<td class="flights-cell-who">'+escapeHtml(row.who||'—')+'</td>'+
-  '<td class="flights-cell-more"><button type="button" class="btn small flights-more" data-expand="'+escapeHtml(row.id)+
-  '" aria-expanded="'+(open?'true':'false')+'" aria-controls="'+escapeHtml(detailId)+'" title="Flight options">···</button></td></tr>'+
+  '<td class="flights-cell-more"><div class="flights-row-actions">'+
+  '<button class="btn small" data-edit-flight="'+id+'">Edit</button>'+
+  '<button class="btn small danger" data-delete-flight="'+id+'">Delete</button>'+detailsButton+
+  '</div></td></tr>'+
+  '<tr class="flights-mobile-meta-row"><td colspan="8">'+
+  '<div class="flights-mobile-meta"><div class="flights-mobile-person"><span>Who</span><strong>'+
+  escapeHtml(row.who||'—')+'</strong></div>'+
+  '<div class="flights-mobile-actions"><button class="btn small" data-edit-flight="'+id+
+  '">Edit</button><button class="btn small danger" data-delete-flight="'+id+
+  '">Delete</button>'+detailsButton+'</div></div></td></tr>'+
   '<tr class="flights-details-row" id="'+escapeHtml(detailId)+'"'+(open?'':' hidden')+'><td colspan="8">'+
   '<div class="flights-detail-inner">'+
   '<div class="flights-detail-data"><span>Airline <b>'+escapeHtml(row.airline||'—')+'</b></span>'+
   '<span>Aircraft <b>'+escapeHtml(row.airplane||'—')+'</b></span>'+
   '<span>Who <b>'+escapeHtml(row.who||'—')+'</b></span>'+
-  '<span>Live <b>'+escapeHtml(live.status||'N/A')+'</b></span>'+
-  '<span>Date <b>'+escapeHtml(niceDate(row.date))+'</b></span></div>'+
-  '<div class="flights-detail-actions"><button class="btn small" data-edit-flight="'+escapeHtml(row.id)+'">Edit</button>'+
-  '<button class="btn small danger" data-delete-flight="'+escapeHtml(row.id)+'">Delete</button>'+
+  '<span>Current status <b>'+escapeHtml(live.status||'N/A')+'</b></span>'+
+  '<span>Date <b>'+escapeHtml(date)+'</b></span></div>'+
+  '<div class="flights-detail-actions">'+
   (localMap?'<a class="btn small" href="'+escapeHtml(localMap)+'" target="_blank" rel="noopener noreferrer">Local aircraft map</a>':'')+
   '<a class="btn small" href="'+escapeHtml(fr24)+'" target="_blank" rel="noopener noreferrer">FR24 history</a></div>'+
   '</div></td></tr>';
@@ -327,26 +367,27 @@ async function deleteFlight(id){
  }catch(e){feedback(e.message||'Delete failed.',true);return false;}
 }
 async function requestStatuses(){
+ const serial=++statusRequestNumber;
  const rows=filteredRows(),regs=[...new Set(rows.map(currentReg).map(v=>v.toUpperCase())
   .filter(v=>/^[A-Z0-9-]{2,16}$/.test(v)))].slice(0,80);
- if(!regs.length)return;
+ if(!regs.length){lastLive={};renderTable();return;}
  const version=flightsGeneration;
  try{
   const response=await api('/api/flights/live?regs='+encodeURIComponent(regs.join(',')));
-  if(version!==flightsGeneration||!document.getElementById('flightsTableBody'))return;
+  if(version!==flightsGeneration||serial!==statusRequestNumber||!document.getElementById('flightsTableBody'))return;
   const aircraft=response.aircraft||{};
-  lastLive={...lastLive,...aircraft};
+  lastLive=aircraft;
   // Only refresh the table, never the search field or open form.
   renderTable();
   const status=document.getElementById('flightsLiveTimestamp');
   if(status){
    const stamp=response.checked_at?new Date(response.checked_at*1000)
     .toLocaleTimeString('en-GB',{timeZone:'Europe/London',hour:'2-digit',minute:'2-digit'}):'';
-   status.textContent='Live check '+stamp+(response.warning?' · network limited':'')+' · Data: adsb.fi';
+   status.textContent=response.warning?'Live data temporarily limited':'Live status checked '+stamp;
   }
  }catch(e){
   const status=document.getElementById('flightsLiveTimestamp');
-  if(status)status.textContent='Live status unavailable · flight log still works';
+  if(status)status.textContent='Live status temporarily unavailable';
  }
 }
 function scheduleStatusRefresh(){
@@ -358,7 +399,7 @@ function scheduleStatusRefresh(){
  },35000);
 }
 export function stopFlightsPage(){
- flightsGeneration++;
+ flightsGeneration++;statusRequestNumber++;
  if(flightTimer){clearTimeout(flightTimer);flightTimer=null;}
 }
 export async function renderFlightsPage(){
@@ -383,14 +424,17 @@ export async function renderFlightsPage(){
   '<strong id="flightsFilterTitle">Choose a filter</strong><button class="btn small" id="flightsCloseFilter">Close</button></div>'+
   '<div class="flights-popover-list" id="flightsFilterList"></div></div>'+
   '<div class="flights-results-row"><span id="flightsResults">Loading flights…</span>'+
-  '<small id="flightsDatabase"></small></div><p id="flightsFeedback" class="flights-feedback" role="status"></p>'+
+  '<div class="flights-results-tools"><small id="flightsDatabase"></small>'+
+  '<details class="flights-source-credit"><summary title="Live aircraft data attribution">ⓘ</summary>'+
+  '<span>Live data: <a href="https://adsb.fi/" target="_blank" rel="noopener noreferrer">adsb.fi</a>, '+
+  '<a href="https://flyitalyadsb.com/" target="_blank" rel="noopener noreferrer">FlyItalyADSB</a>, '+
+  '<a href="https://adsb.lol/" target="_blank" rel="noopener noreferrer">adsb.lol</a> and your receiver. '+ 
+  'Live status is best effort.</span></details></div></div><p id="flightsFeedback" class="flights-feedback" role="status"></p>'+
   '<div class="flights-table-wrap"><table class="flights-table">'+
   '<colgroup><col class="fc-date"><col class="fc-route"><col class="fc-flight"><col class="fc-airline"><col class="fc-aircraft"><col class="fc-reg"><col class="fc-who"><col class="fc-actions"></colgroup>'+
   '<thead><tr><th>Date</th><th>Route</th><th>Flight</th><th class="flights-cell-airline">Airline</th>'+
-  '<th class="flights-cell-aircraft">Aircraft</th><th>Registration / live</th><th class="flights-cell-who">Who</th><th class="flights-cell-more">⋯</th></tr></thead>'+
+  '<th class="flights-cell-aircraft">Aircraft</th><th>Reg / Live</th><th class="flights-cell-who">Who</th><th class="flights-cell-more">⋯</th></tr></thead>'+
   '<tbody id="flightsTableBody"><tr><td colspan="8" class="flights-empty">Loading your Google Sheet…</td></tr></tbody></table></div>'+
-  '<div class="flights-table-bottom"><small id="flightsLiveTimestamp">Live status checks run separately</small>'+
-  '<a href="https://adsb.fi/" target="_blank" rel="noopener noreferrer">Live aircraft data: adsb.fi</a></div>'+
   '</section>'+modalHtml()+'</div>';
  document.getElementById('flightsAdd').onclick=()=>showModal();
  document.getElementById('flightsRefresh').onclick=()=>loadFlights(true).catch(e=>feedback(e.message,true));
