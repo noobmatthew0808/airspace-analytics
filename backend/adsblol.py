@@ -11,7 +11,15 @@ import math
 import threading
 import time
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request, urlopen, build_opener, ProxyHandler, HTTPRedirectHandler
+
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        return None
+
+def _private_open(request, timeout=5):
+    """Fixed HTTPS provider only; never forward API keys after redirects."""
+    return build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=timeout)
 
 BASE = 'https://api.adsb.lol/v2'
 MAX_BYTES = 2_000_000
@@ -32,7 +40,8 @@ def status(key_set=False):
                 'aircraft':_state['last_count'],'requests_session':_state['requests'],
                 'retry_after':_state['retry_after'] if _state['retry_after']>time.time() else None}
 
-def fetch(key,lat,lon,radius_km,opener=urlopen):
+def fetch(key,lat,lon,radius_km,opener=None):
+    if opener is None:opener=_private_open
     if not isinstance(key,str) or not key.strip():
         raise ValueError('adsb.lol feeder key is not saved')
     if not all(isinstance(v,(int,float)) and math.isfinite(v) for v in (lat,lon,radius_km)):
