@@ -347,7 +347,7 @@ function scheduleStatusRefresh(){
   if(location.hash==='#flights'&&document.getElementById('flightsTableBody')){
    await requestStatuses();scheduleStatusRefresh();
   }
- },90000);
+ },35000);
 }
 export function stopFlightsPage(){
  flightsGeneration++;
