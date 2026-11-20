@@ -14,7 +14,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import flyitaly, adsblol
+from . import flyitaly, adsblol, adsbfi
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler, ProxyHandler
 from urllib.parse import urlsplit
@@ -240,6 +240,14 @@ def test_adsblol():
     return adsblol.fetch(key,coords['lat'],coords['lon'],50)
 
 
+def test_adsbfi():
+    """Public API connectivity test; no secret or feeder key required."""
+    with _lock, connect() as c:coords=receiver_settings(c)
+    if coords['lat'] is None or coords['lon'] is None:
+        raise ValueError('Save antenna coordinates under Receiver first')
+    return adsbfi.fetch(coords['lat'],coords['lon'],50)
+
+
 def _flyitaly_key(c):
     row=c.execute("SELECT value FROM config WHERE key='flyitaly_key'").fetchone()
     return row['value'] if row else ''
@@ -357,7 +365,7 @@ def snapshot():
         events=[dict(x) for x in c.execute('SELECT id,rule_id,rule_label,hex,callsign,registration,aircraft_type,distance_km,altitude_ft,created,delivery,source FROM events ORDER BY id DESC LIMIT 60')]
         pub,_=notifier(c)
         return {'rules':rules,'events':events,'ntfy':pub,'flyitaly':flyitaly.status(bool(_flyitaly_key(c))), 'receiver':dict(_last_sample),
-                'adsblol':adsblol.status(bool(_adsblol_key(c))),
+                'adsblol':adsblol.status(bool(_adsblol_key(c))),'adsbfi':adsbfi.status(),
                 'receiver_settings':receiver_settings(c)}
 
 
@@ -768,7 +776,7 @@ def loop():
         try:
             payload,lat,lon=read_receiver()
             process_snapshot(payload,lat,lon,
-                             external=flyitaly.aircraft()+adsblol.aircraft())
+                             external=flyitaly.aircraft()+adsblol.aircraft()+adsbfi.aircraft())
             with _lock:_last_sample['source']=_last_good_url
         except Exception as exc:
             with _lock:_last_sample['error']=str(exc)[:180]
@@ -818,6 +826,23 @@ def adsblol_loop():
         time.sleep(interval)
 
 
+def adsbfi_loop():
+    """Conservative one-minute keyless public API, only for opted-in rules."""
+    while True:
+        interval=60
+        try:
+            with _lock, connect() as c:
+                receiver=receiver_settings(c)
+                rows=c.execute('SELECT max_km FROM rules WHERE enabled=1 AND use_flyitaly=1').fetchall()
+            if rows and receiver['lat'] is not None and receiver['lon'] is not None:
+                radius=min(450.,max(55.,*(float(row['max_km'] or 80) for row in rows)))
+                try:adsbfi.fetch(receiver['lat'],receiver['lon'],radius)
+                except ValueError:pass
+            else:adsbfi.discard_aircraft()
+        except Exception:pass
+        time.sleep(interval)
+
+
 def start():
     global _worker_started
     with _lock:
@@ -828,4 +853,6 @@ def start():
         threading.Thread(target=flyitaly_loop,name='airspace-flyitaly',
                          daemon=True).start()
         threading.Thread(target=adsblol_loop,name='airspace-adsblol',
+                         daemon=True).start()
+        threading.Thread(target=adsbfi_loop,name='airspace-adsbfi',
                          daemon=True).start()
