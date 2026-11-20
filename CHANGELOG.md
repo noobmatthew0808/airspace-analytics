@@ -1,3 +1,13 @@
+# v1.10.17 — Optional FlyItalyADSB network backup and local RSSI alerts
+
+- New optional FlyItalyADSB API integration on the Alerts page. Save or remove a key privately in the existing permission-restricted local alert-state database; only `key_set`, connection status, quotas, and errors appear in API responses. Never store credentials in GitHub or browser JavaScript.
+- Local Ultrafeeder remains the primary, independent 3-second alert source. A separate daemon polls the provider's documented `/v2/lat/{lat}/lon/{lon}/dist/{km}` endpoint every ~12 seconds only when an enabled rule opts in and a key/antenna location exist. Cache expires after 36 seconds; no network request runs inside local matching.
+- Each rule can independently opt into `FlyItalyADSB backup` (fill missing aircraft registration/type, military flag and network MLAT position by matching ICAO hex) and optionally `Allow network-only` (requires a distance limit). Existing rules default to local-only and are not changed.
+- Add optional per-rule minimum RSSI (dBFS), evaluated exclusively on *local* readsb signal strength. Missing RSSI never becomes a positive match. A strong signal is not a verified kilometre distance.
+- Network-only events are explicitly labelled and do not link to the receiver's local tar1090 selection when the plane may not exist on that map. Existing ntfy priority 3, deduplication, local URLs and notification settings remain unchanged.
+- SQLite schema migrations preserve existing rules, occupancy, events and notification settings. Existing read-only Aerodrome metadata fallback is retained. No changes to receiver, feeders, Aerodrome, Traffic, Live ADS-B frontend or external containers.
+- Added unit tests for migrations, secret redaction, no network dependencies in local processing, RSSI, opt-in controls, timestamp validity, military MLAT enrichment, network-only deduplication and notification source distinction.
+
 # v1.10.16 — Fix Alerts live aircraft source selection (20 November 2026)
 
 - Prefer the verified live Ultrafeeder readsb feed at `http://127.0.0.1:1090/data/aircraft.json` before older localhost tar1090 ports. Also discover port 1090 on same-machine LAN addresses; retain the existing URL restrictions, overrides and Aerodrome fallback.
