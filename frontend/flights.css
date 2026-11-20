@@ -122,3 +122,113 @@
  .streamlined-topbar .topbar-left{gap:2px}
  .streamlined-topbar .top-nav-link{padding:7px 4px;font-size:9px}
 }
+
+/* v1.10.21 — align the compact flight log, including genuinely usable mobile rows. */
+.flights-page,.flights-page *{box-sizing:border-box}
+.flights-hero,.flights-panel{width:100%;max-width:100%;min-width:0}
+.flights-hero{padding:15px 17px}
+.flights-top{gap:14px}
+.flights-panel{padding:12px}
+.flights-filter-strip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;overflow:visible;padding:10px 0 4px;scroll-snap-type:none}
+.flights-filter{min-width:0;max-width:none;width:100%;padding:8px 9px;gap:2px;min-height:54px}
+.flights-filter strong{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.flights-filter-option.active::before{content:"✓ ";color:var(--aqua)}
+.flights-results-row{min-height:32px;margin:6px 2px 7px}
+.flights-results-tools{display:flex;align-items:center;gap:9px;position:relative;justify-content:flex-end;min-width:0}
+.flights-source-credit{position:relative;flex:0 0 auto}
+.flights-source-credit summary{list-style:none;border:1px solid var(--line);border-radius:50%;height:24px;width:24px;display:grid;place-items:center;cursor:pointer;font-weight:700;color:var(--muted)}
+.flights-source-credit summary::-webkit-details-marker{display:none}
+.flights-source-credit[open] span{display:block;position:absolute;right:0;top:29px;z-index:11;width:min(295px,76vw);padding:11px 13px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;box-shadow:0 12px 28px #0006;font-size:11px;line-height:1.6;white-space:normal;color:var(--text)}
+.flights-source-credit a{color:var(--aqua);text-decoration:underline}
+.flights-table-wrap{max-width:100%;overflow-x:auto}
+.flights-table{width:100%;table-layout:fixed}
+.flights-table .fc-date{width:10%}
+.flights-table .fc-route{width:12%}
+.flights-table .fc-flight{width:9%}
+.flights-table .fc-airline{width:11%}
+.flights-table .fc-aircraft{width:10%}
+.flights-table .fc-reg{width:24%}
+.flights-table .fc-who{width:11%}
+.flights-table .fc-actions{width:13%}
+.flights-table th,.flights-table td{overflow-wrap:anywhere;text-overflow:clip}
+.flights-cell-reg{overflow:visible!important}
+.flights-reg-line{display:flex;align-items:baseline;flex-wrap:wrap;column-gap:7px;row-gap:2px;line-height:1.2;min-width:0}
+.flights-reg{word-break:normal;overflow-wrap:anywhere}
+.flights-local-seen{display:inline-block;font-size:10px;color:var(--muted);text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;white-space:nowrap}
+.flights-local-seen:hover{color:var(--aqua)}
+.flights-live-chip{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.flights-highlight{background:color-mix(in srgb,var(--aqua) 4%,transparent)}
+.flights-highlight .flights-cell-route{color:var(--aqua);font-weight:800}
+.flights-row-actions{display:flex;justify-content:flex-start;flex-wrap:wrap;gap:4px}
+.flights-row-actions .btn{padding:4px 6px;font-size:10px}
+.flights-mobile-date,.flights-mobile-meta-row{display:none}
+.flights-detail-inner{min-width:0}
+.flights-panel .flights-table-bottom{display:none}
+@media(min-width:701px) and (max-width:1000px){
+ .flights-table th,.flights-table td{padding:8px 5px}
+ .flights-row-actions .btn{font-size:9px;padding:4px}
+ .flights-filter-strip{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+@media(max-width:700px){
+ .flights-hero{padding:12px}
+ .flights-panel{padding:10px}
+ .flights-top{display:block}
+ .flights-hero h1{margin:4px 0 11px;font-size:24px}
+ .flights-actions{gap:6px;margin:0 0 11px}
+ .flights-actions .btn{padding:8px 9px}
+ .flights-stats{grid-template-columns:repeat(4,minmax(0,1fr));min-width:0;width:100%;gap:5px}
+ .flights-stat{padding:9px 8px;text-align:left}
+ .flights-stat strong{font-size:19px}
+ .flights-search-row{gap:6px}
+ .flights-search-row input{font-size:12px;min-height:37px}
+ .flights-search-row .btn{padding:7px 9px;font-size:11px;min-height:37px}
+ .flights-filter-strip{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;padding-top:8px}
+ .flights-filter{padding:7px 7px;min-height:49px;border-radius:8px}
+ .flights-filter small{font-size:9px}
+ .flights-filter strong{font-size:10px}
+ .flights-results-row{margin:8px 1px 6px;font-size:10px}
+ .flights-results-tools small{font-size:10px}
+ .flights-table-wrap{overflow-x:hidden}
+ .flights-table{width:100%;min-width:0;font-size:10px}
+ .flights-table th{padding:9px 4px;font-size:9px;white-space:normal}
+ .flights-table td{padding:9px 4px;vertical-align:top}
+ /* Use four useful main columns, then an always-visible, neat Who/actions row. */
+ .flights-table .fc-airline,.flights-table .fc-aircraft,
+ .flights-table .fc-who,.flights-table .fc-actions,
+ .flights-table .flights-cell-airline,.flights-table .flights-cell-aircraft,
+ .flights-table .flights-cell-who,.flights-table .flights-cell-more{display:none!important}
+ .flights-table .fc-date{width:20%}
+ .flights-table .fc-route{width:24%}
+ .flights-table .fc-flight{width:18%}
+ .flights-table .fc-reg{width:38%}
+ .flights-table .flights-cell-date{font-size:9px;white-space:normal;line-height:1.3}
+ .flights-desktop-date{display:none}
+ .flights-mobile-date{display:inline}
+ .flights-cell-route{font-size:10px;white-space:normal;word-break:normal;line-height:1.3}
+ .flights-cell-code{font-size:10px;white-space:normal;word-break:break-word}
+ .flights-reg-line{gap:3px 5px}
+ .flights-reg{font-size:10px;overflow-wrap:anywhere}
+ .flights-live-chip{font-size:9px;line-height:1.35;margin-top:4px;padding:2px 4px}
+ .flights-local-seen{font-size:9px}
+ .flights-mobile-meta-row{display:table-row}
+ .flights-mobile-meta-row>td{background:var(--panel2);border-bottom:1px solid var(--line);padding:5px 6px!important}
+ .flights-mobile-meta{display:flex;align-items:center;justify-content:space-between;gap:7px;min-width:0}
+ .flights-mobile-person{display:flex;align-items:center;gap:5px;min-width:0;flex:1 1 auto;color:var(--muted);font-size:10px}
+ .flights-mobile-person span{flex:0 0 auto}
+ .flights-mobile-person strong{font-size:10px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-weight:600}
+ .flights-mobile-actions{display:flex;gap:4px;flex:0 0 auto}
+ .flights-mobile-actions .btn{padding:5px 6px;min-height:28px;font-size:10px}
+ .flights-mobile-actions .danger{color:var(--red)}
+ .flights-details-row td{padding:5px!important}
+ .flights-detail-inner{padding:9px}
+ .flights-detail-data{font-size:10px}
+}
+@media(max-width:380px){
+ .flights-table .fc-date{width:20%}
+ .flights-table .fc-route{width:24%}
+ .flights-table .fc-flight{width:17%}
+ .flights-table .fc-reg{width:39%}
+ .flights-mobile-actions .btn{padding:5px 4px;font-size:9px}
+ .flights-filter{padding:6px 5px}
+ .flights-hero h1{font-size:23px}
+}
