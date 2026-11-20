@@ -141,3 +141,30 @@ test('original filtered-reg copy and Google Sheet editing still present',()=>{
  assert.match(source,/action:'delete'/);
  assert.match(source,/getCurrentRegistration/);
 });
+
+
+test('new mobile table is a separate full-width five-column grid with no clipping',async()=>{
+ const {flightStatusTestHelpers:h}=await exportsPromise;
+ const css=fs.readFileSync('frontend/flights.css','utf8');
+ assert.match(source,/<\/section><section class="flights-list"/);
+ assert.match(css,/\.flights-table thead tr,\.flights-table tbody tr\.flights-row\{/);
+ assert.match(css,/grid-template-columns:15\.5% 20% 14\.5% 28\.5% 21\.5%/);
+ assert.match(css,/\.flights-table thead th,\.flights-table tbody tr\.flights-row td\{/);
+ assert.match(css,/overflow:hidden!important/);
+ assert.match(css,/\.flights-list\{width:calc\(100% \+ 28px\)!important/);
+ assert.match(css,/\.flights-who-short\{display:inline!important\}/);
+ assert.equal(h.shortWho('Matthew, Florence'),'Matthew +1');
+ assert.equal(h.shortWho('Galina'),'Galina');
+ assert.equal(h.shortWho('Matthew, Florence, Alice'),'Matthew +2');
+});
+
+test('no bold route or registration; highlight only credible current LGW route',async()=>{
+ const {flightStatusTestHelpers:h}=await exportsPromise;
+ assert.equal(h.isCurrentGatwick({status:'Flying · likely LGW–VIE',
+   route:'LGW–VIE',route_confidence:'usual'}),false);
+ assert.equal(h.isCurrentGatwick({status:'Flying LGW–VIE',
+   route:'LGW–VIE',route_confidence:'plausible'}),true);
+ const css=fs.readFileSync('frontend/flights.css','utf8');
+ assert.match(css,/\.flights-table \.flights-reg,[\s\S]*?font-weight:400!important/);
+ assert.match(css,/\.flights-table \.flights-cell-route\{font-size:11px!important;font-weight:400!important\}/);
+});
