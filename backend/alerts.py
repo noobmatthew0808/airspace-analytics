@@ -404,52 +404,113 @@ def enrich_aircraft(aircraft):
         pass  # Enrichment is optional; even Aerodrome's DataError must not interrupt alerts.
 
 
-def process_snapshot(payload, receiver_lat, receiver_lon, now=None):
-    """Transition each (rule,hex) independently, rearming on confirmed departure."""
+def _merge_external(local, remote):
+    """Fill missing local fields with recent network data, never replace fresh local data.
+
+    This is only called for rules that explicitly permit FlyItalyADSB backup.
+    RSSI is never borrowed from the network because it is receiver-specific.
+    """
+    if not remote:return local
+    merged=dict(local)
+    for field in ('r','t','flight','ownOp','alt_baro'):
+        if merged.get(field) in (None,'') and remote.get(field) not in (None,''):
+            merged[field]=remote[field]
+    try:
+        merged['dbFlags']=int(local.get('dbFlags') or 0) | int(remote.get('dbFlags') or 0)
+    except (TypeError,ValueError):
+        pass
+    pos_age=merged.get('seen_pos')
+    local_position_fresh=(
+        merged.get('lat') is not None and merged.get('lon') is not None
+        and isinstance(pos_age,(float,int)) and math.isfinite(pos_age)
+        and 0 <= pos_age <= STALE_SECONDS
+    )
+    remote_age=remote.get('seen_pos')
+    if (not local_position_fresh and
+            isinstance(remote_age,(float,int)) and math.isfinite(remote_age)
+            and 0 <= remote_age <= STALE_SECONDS and
+            remote.get('lat') is not None and remote.get('lon') is not None):
+        merged.update(lat=remote['lat'],lon=remote['lon'],seen_pos=remote_age)
+    return merged
+
+
+def process_snapshot(payload, receiver_lat, receiver_lon, now=None, external=None):
+    """Local-first per-rule matching with strictly opt-in cached network coverage.
+
+    Neither a slow nor an unavailable API can delay local matching or create
+    phantom departures. Each (rule, ICAO hex) keeps its original deduplication.
+    """
     now=int(now if now is not None else time.time())
     aircraft=payload.get('aircraft',[])
     if not isinstance(aircraft,list):raise ValueError('Invalid receiver aircraft list')
     enrich_aircraft(aircraft)
+    incoming=external if isinstance(external,list) else []
+    extra={}
+    for p in incoming[:3000]:
+        if not isinstance(p,dict):continue
+        code=str(p.get('hex','')).lower().strip()
+        if re.fullmatch(r'[0-9a-f]{6}',code):
+            extra[code]=p
+    # Existing Aerodrome data is still available for unclassified external aircraft.
+    if extra:enrich_aircraft(list(extra.values()))
+    local_hex={
+        str(p.get('hex','')).lower().strip() for p in aircraft
+        if isinstance(p,dict) and re.fullmatch(r'~?[0-9a-f]{6}',str(p.get('hex','')).lower().strip())
+    }
+    combined=[(p,False) for p in aircraft]
+    combined.extend((p,True) for code,p in extra.items() if code not in local_hex)
     with _lock, connect() as c:
         rules=[dict(x) for x in c.execute('SELECT * FROM rules WHERE enabled=1')]
         current={(x['rule_id'],x['hex']):dict(x) for x in c.execute('SELECT * FROM occupancy')}
-        # Keep active tracking state across brief signal gaps, Wi-Fi outages and restarts.
         seen=set()
-        for plane in aircraft:
-            if not isinstance(plane,dict):continue
-            hexcode=str(plane.get('hex','')).lower().strip()
+        for original, network_only in combined:
+            if not isinstance(original,dict):continue
+            hexcode=str(original.get('hex','')).lower().strip()
             if not re.fullmatch(r'~?[a-f0-9]{6}',hexcode):continue
-            try:
-                lat=float(plane['lat']) if plane.get('lat') is not None else None
-                lon=float(plane['lon']) if plane.get('lon') is not None else None
-            except (TypeError,ValueError):lat=lon=None
-            if lat is not None and lon is not None and (not math.isfinite(lat) or not math.isfinite(lon) or not (-90<=lat<=90 and -180<=lon<=180)):
-                lat=lon=None
             for rule in rules:
+                if network_only and not (rule['use_flyitaly'] and rule['network_only']):
+                    continue
+                plane=(original if network_only or not rule['use_flyitaly'] else
+                       _merge_external(original,extra.get(hexcode)))
+                try:
+                    lat=float(plane['lat']) if plane.get('lat') is not None else None
+                    lon=float(plane['lon']) if plane.get('lon') is not None else None
+                except (TypeError,ValueError):lat=lon=None
+                if lat is not None and lon is not None and (
+                        not math.isfinite(lat) or not math.isfinite(lon)
+                        or not (-90<=lat<=90 and -180<=lon<=180)):
+                    lat=lon=None
                 key=(rule['id'],hexcode)
                 old=current.get(key)
-                match=_classify(rule,plane,lat,lon,receiver_lat,receiver_lon,bool(old and old['state']=='active'))
-                if match is None:continue  # Cannot prove entry or departure.
+                match=_classify(rule,plane,lat,lon,receiver_lat,receiver_lon,
+                                bool(old and old['state']=='active'))
+                if match is None:continue
                 seen.add(key)
                 if match is False:
                     if old:
                         count=old['outside_count']+1
-                        if count >= 2:c.execute('DELETE FROM occupancy WHERE rule_id=? AND hex=?',key)
-                        else:c.execute('UPDATE occupancy SET outside_count=?,last_seen=? WHERE rule_id=? AND hex=?',(count,now,*key))
+                        if count>=2:c.execute('DELETE FROM occupancy WHERE rule_id=? AND hex=?',key)
+                        else:c.execute('UPDATE occupancy SET outside_count=?,last_seen=? WHERE rule_id=? AND hex=?',
+                                       (count,now,*key))
                     continue
                 if old and old['state']=='active':
-                    c.execute('UPDATE occupancy SET outside_count=0,last_seen=? WHERE rule_id=? AND hex=?',(now,*key))
+                    c.execute('UPDATE occupancy SET outside_count=0,last_seen=? WHERE rule_id=? AND hex=?',
+                              (now,*key))
                     continue
-                c.execute('INSERT OR REPLACE INTO occupancy(rule_id,hex,state,outside_count,last_seen) VALUES(?,?,\'active\',0,?)',(rule['id'],hexcode,now))
-                c.execute('INSERT INTO events(rule_id,rule_label,hex,callsign,registration,aircraft_type,distance_km,altitude_ft,created,next_attempt) VALUES(?,?,?,?,?,?,?,?,?,?)',
-                    (rule['id'],rule['label'],hexcode,str(plane.get('flight','')).strip()[:24],str(plane.get('r','')).strip()[:24],
-                    str(plane.get('t','')).strip()[:12],match['distance_km'],match['altitude_ft'],now,now))
-        # No observations are proof of *neither* entry nor exit. Only expire
-        # states after an extended continuous, healthy monitoring period.
+                c.execute("INSERT OR REPLACE INTO occupancy(rule_id,hex,state,outside_count,last_seen) VALUES(?,?,'active',0,?)",
+                          (rule['id'],hexcode,now))
+                c.execute('INSERT INTO events(rule_id,rule_label,hex,callsign,registration,aircraft_type,distance_km,altitude_ft,created,next_attempt,source) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+                    (rule['id'],rule['label'],hexcode,
+                     str(plane.get('flight') or '').strip()[:24],
+                     str(plane.get('r') or '').strip()[:24],
+                     str(plane.get('t') or '').strip()[:12],
+                     match['distance_km'],match['altitude_ft'],now,now,
+                     'FlyItalyADSB' if network_only else 'local'))
+        # Missing observations are not proof of exit. Preserve prior behaviour.
         for key,old in current.items():
-            if key not in seen and now - old['last_seen'] >= LOST_SECONDS:
+            if key not in seen and now-old['last_seen']>=LOST_SECONDS:
                 c.execute('DELETE FROM occupancy WHERE rule_id=? AND hex=?',key)
-        _last_sample.update(time=now, aircraft=payload.get('recent_aircraft_count',len(aircraft)),
+        _last_sample.update(time=now,aircraft=payload.get('recent_aircraft_count',len(aircraft)),
                             error=None,lat=receiver_lat,lon=receiver_lon)
 
 
