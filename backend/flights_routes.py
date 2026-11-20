@@ -59,7 +59,7 @@ def parse_routes(payload, requested):
     for entry in records[:100]:
         if not isinstance(entry,dict):continue
         callsign=str(entry.get('callsign') or '').strip().upper()
-        if callsign not in wanted or entry.get('plausible') is not True:
+        if callsign not in wanted or entry.get('plausible') not in (True,1):
             continue
         path=str(entry.get('_airport_codes_iata') or '').upper()
         parts=path.split('-')
