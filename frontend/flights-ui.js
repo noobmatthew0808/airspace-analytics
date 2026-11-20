@@ -91,7 +91,7 @@ export function filterFlightRows(rows,filters,query=''){
    (!(f.who||[]).length||splitPeople(row.who).some(person=>match('who',person)))&&
    match('from_airport',row.from_airport)&&match('to_airport',row.to_airport)&&
    match('airplane',row.airplane)&&match('flight_code',row.flight_code)&&
-   (!q||normalizeRegistration(row.registration).includes(q));
+   (!q||normalizeRegistration(row.registration).toLowerCase().includes(q));
  });
 }
 const filteredRows=()=>filterFlightRows(sourceRows(),activeFilters,searchTerm);
