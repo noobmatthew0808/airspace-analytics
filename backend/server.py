@@ -21,7 +21,7 @@ import sys
 import time
 import traceback
 
-from . import data, alerts, healthchecks, live_terminal, live_details
+from . import data, alerts, healthchecks, live_terminal, live_details, flights_log, flights_live
 
 BASE = Path(__file__).resolve().parents[1]
 STATIC = BASE / 'frontend'
@@ -133,6 +133,8 @@ class App(BaseHTTPRequestHandler):
         if path=='/api/live/terminal': return live_terminal.stream(self)
         if path=='/api/live/details': return self.send_json(live_details.details(q))
         if path=='/api/alerts': return self.send_json(alerts.snapshot())
+        if path=='/api/flights/records': return self.send_json(flights_log.read())
+        if path=='/api/flights/live': return self.send_json(flights_live.snapshot(q.get('regs','')))
         if path=='/api/health': return self.send_json(data.health())
         if path=='/api/monitoring/healthchecks': return self.send_json(healthchecks.snapshot(refresh=q.get('refresh')=='1'))
         if path=='/api/overview': return self.send_json(data.overview())
@@ -235,8 +237,33 @@ class App(BaseHTTPRequestHandler):
         if path=='/api/alerts/test':
             return self.send_json(alerts.send_test())
 
+    def flights_post(self, path):
+        """Same-origin, home-network-only mutations of the existing Google Sheet."""
+        if path!='/api/flights/records':
+            return self.send_json({'error':'Unknown flights endpoint'},404)
+        host=self.headers.get('Host','')
+        origin=self.headers.get('Origin','')
+        fetch_site=self.headers.get('Sec-Fetch-Site','')
+        if (origin and origin not in ('http://'+host,'https://'+host)) or fetch_site not in ('','same-origin','none'):
+            return self.send_json({'error':'Cross-origin flight edit blocked'},403)
+        try:
+            remote=ipaddress.ip_address(self.client_address[0])
+            ranges=('127.0.0.0/8','10.0.0.0/8','172.16.0.0/12',
+                    '192.168.0.0/16','100.64.0.0/10','::1/128','fc00::/7')
+            if not any(remote in ipaddress.ip_network(prefix) for prefix in ranges):
+                return self.send_json({'error':'Flight editing is only available on your trusted network'},403)
+        except ValueError:
+            return self.send_json({'error':'Invalid client address'},403)
+        try:length=int(self.headers.get('Content-Length','0'))
+        except ValueError:raise ValueError('Invalid request length')
+        if length<1 or length>MAX_POST:raise ValueError('Flight request too large')
+        payload=json.loads(self.rfile.read(length))
+        return self.send_json(flights_log.mutate(payload))
+
     def _post(self):
         path, _=self.get_query()
+        if path.startswith('/api/flights/'):
+            return self.flights_post(path)
         if path.startswith('/api/alerts/'):
             return self.alerts_post(path)
         if path not in ('/api/update/apply','/api/update/rollback'):
