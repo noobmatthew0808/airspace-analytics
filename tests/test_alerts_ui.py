@@ -19,6 +19,24 @@ class TestAlertsUI(unittest.TestCase):
   self.assertNotIn('data-preset',ui)
   self.assertNotIn('alert-quick',ui)
 
+ def test_two_simple_source_options_and_collapsible_config(self):
+  ui=(ROOT/'frontend/alerts-ui.js').read_text()
+  css=(ROOT/'frontend/alerts.css').read_text()
+  for label in ('Backup APIs','Also alert for network-only aircraft',
+                'Configuration &amp; Logs','alertApis','alertHistory',
+                'alertNtfy','alertReceiver','alertFlyItaly','alertAllConfig'):
+   if label=='alertFlyItaly':
+    self.assertIn('flyitaly',ui)
+   else:self.assertIn(label,ui)
+  self.assertNotIn('Minimum RSSI',ui)
+  self.assertNotIn('min_rssi',ui)
+  self.assertIn('Key saved',ui)
+  self.assertIn('Test connection',ui)
+  self.assertIn('api.adsb.lol/v2',ui)
+  self.assertIn('api.flyitalyadsb.com/v2',ui)
+  self.assertIn('alert-edit-section',css)
+  self.assertIn('alert-source-option',css)
+
  def test_optional_extra_database_not_aerodrome(self):
   alerts=(ROOT/'backend/alerts.py').read_text()
   self.assertIn("alerts.sqlite3",alerts)
