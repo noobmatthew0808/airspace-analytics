@@ -40,6 +40,13 @@ def clear():
                       monthly_quota=None, last_count=0)
 
 
+
+def discard_aircraft():
+    """Stop using stale network traffic but retain last successful API test."""
+    with _lock:
+        _state['aircraft']=[]
+
+
 def status(key_set=False):
     with _lock:
         return {
