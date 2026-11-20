@@ -21,6 +21,10 @@ def run(path):
     if not count or (result.returncode and not failed):
         print(result.stderr[-3000:])
         raise RuntimeError('Test suite crashed before reporting its outcome')
+    # When the changed branch introduces a failure, print the useful
+    # assertion/traceback too; the test names alone can mask fixture bugs.
+    if failed and Path(path).resolve()==Path('.').resolve():
+        print(result.stderr[-4500:],flush=True)
     return failed
 
 with tempfile.TemporaryDirectory(prefix='airspace-baseline-') as tmp:
