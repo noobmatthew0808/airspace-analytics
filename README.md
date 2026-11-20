@@ -12,10 +12,28 @@ A private, responsive, self-hosted ADS-B analytics homepage and historical explo
 
 ![Project](https://img.shields.io/badge/Backend-Python%20stdlib-31dfc1) ![Frontend](https://img.shields.io/badge/Frontend-Vanilla%20JS%20%2B%20SVG-6795ff) ![Database](https://img.shields.io/badge/Database-Aerodrome%20SQLite%20(read--only)-cb8efa)
 
+## Personal Flights tab (v1.10.20)
+
+The independent **Flights** tab brings the complete personal Flight Tracker from the user's supplied `live-main 2.zip` into Airspace Analytics. Its original GitHub Pages project does **not** need to be deleted or migrated.
+
+**Google Sheets remains your only flight-log database.** The exact uploaded SheetDB endpoint `https://sheetdb.io/api/v1/9fnmgmxtdst8m` and all nine original sheet columns are retained. The new local server's `/api/flights/records` endpoint merely forwards the same read/create/update/delete operations to SheetDB, protecting the existing dashboard's same-origin content policy. Read-only cached data may appear briefly if SheetDB goes down, visibly labelled; writes cannot fall back to a different database. You need no new SheetDB API key and must keep the existing SheetDB account/Google Sheet active.
+
+The original behaviour remains:
+
+- **Search registrations** by any substring ignoring case, hyphens, spaces or punctuation, e.g. `gwuku`, `g-wuku` and `G-WUKU` are equivalent.
+- **Seven multi-select filters**: Year, Airline, Who (splits comma/semicolon/newline-separated names), From, To, Airplane and Flight. Selections OR within one filter and AND across filters.
+- **Filtered stats**: Flights, distinct displayed registration text, routes and years. **Copy Reg's** copies distinct *current* registrations of the filtered rows, comma-space separated (for `G-OLD (G-NEW)`, this copies `G-NEW`).
+- **Add/edit/delete** using the original form fields and a lowest-unused positive integer ID. Dates in Google Sheets can be ISO or DD/MM/YYYY; editing converts to ISO. Clicking the registration opens its aircraft history on Flightradar24.
+- **New compact table** replaces the bubble cards. On a phone it shows date, route, flight code, registration/live status and the `···` details button. Details retain airline, aircraft, who, Edit, Delete, FR24 history and a tar1090 local aircraft map link when a live hex is known. Gatwick/EGKK/LGW routes or current locations are highlighted.
+
+**Live status is best effort, not flight-log data.** The extra read-only `/api/flights/live?regs=…` endpoint checks the same on-host readsb feed plus already cached API data and one bounded public adsb.fi registration batch at most every 30 seconds. Requests stop when the Flights page is closed; the interface refreshes live badges every 35 seconds without reloading Google Sheets. No new API key is needed. Local live positions take priority; routes are shown only when the currently broadcasting callsign has a read-only route in Aerodrome's route cache. A reliable nearby on-ground position may show `At LGW` (or another recognised airport); otherwise the status is `Ground`, `Flying`, or `N/A`, rather than an unverified last parking location. This cannot track an aircraft that all networks have stopped receiving.
+
+The live-status panel credits [adsb.fi](https://adsb.fi/) per its licence. Nothing in this feature writes into Aerodrome, starts another SDR, changes existing feeders, alters ntfy alerts, or exposes private FlyItaly/adsb.lol API keys. The existing Airspace Analytics UI updater installs this release and keeps its rollback support.
+
 ## What it includes
 
 - **Home:** live-ish source status, today's unique aircraft, observations, peak concurrency, shortcuts to ADSB.im, Aerodrome, SkyStats, readsb map, receiver graphs, and optional Dozzle.
-- **Explore:** flights / unique aircraft / observations, flexible windows (any rolling duration from minutes to years, exact custom start/end dates, or all recorded history), hourly/daily/weekly/monthly/yearly charts, recurring weekday/hour/month averages, aircraft category/type/airline breakdowns, click-to-drill, line/bar switch, bookmarks saved in the browser.
+- **Flights:** your independent Google Sheets personal flight log, seven multi-select filters, registration search, filtered stats and Copy Reg's, add/edit/delete, dense table, FR24 registration links, best-effort live status and LGW highlights.\n- **Explore:** flights / unique aircraft / observations, flexible windows (any rolling duration from minutes to years, exact custom start/end dates, or all recorded history), hourly/daily/weekly/monthly/yearly charts, recurring weekday/hour/month averages, aircraft category/type/airline breakdowns, click-to-drill, line/bar switch, bookmarks saved in the browser.
 - **Patterns:** 7 × 24 average-traffic heatmap, typical weekday and hour profiles, filtered by measurement, period and aircraft.
 - **Aircraft:** search historical ICAO codes, callsigns, aircraft types or operators; inspect stored observations.
 - **Database:** view a whitelist of Aerodrome tables, paginate, search, CSV export (up to 5,000 rows at a time); never execute arbitrary SQL.
