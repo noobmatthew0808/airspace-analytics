@@ -60,7 +60,7 @@ const filterDefinitions=[
 ];
 const blankFilters=()=>({year:[],airline:[],who:[],from_airport:[],to_airport:[],airplane:[],flight_code:[]});
 let allFlights=[],activeFilters=blankFilters(),searchTerm='',filterOpen=null;
-let lastLive={},selectedFlightId=null,flightTimer=null,flightsGeneration=0,sheetWarning='';
+let lastLive={},selectedFlightId=null,flightTimer=null,flightsGeneration=0,sheetWarning='',statusRequestNumber=0;
 let expandedRows=new Set();
 
 async function api(url,body){
@@ -109,7 +109,7 @@ export const flightLogTestHelpers={
  uniquePeople,blankFilters,stats,filterMatchesSelected
 };
 // Exposed solely to protect local-last-seen formatting and live-only LGW rules in tests.
-export const flightStatusTestHelpers={relativeLocalSeen,liveGatwick};
+export const flightStatusTestHelpers={relativeLocalSeen,isCurrentGatwick};
 function updateStats(rows){
  const s=stats(rows);
  for(const [name,value] of Object.entries(s)){
@@ -126,10 +126,10 @@ function currentReg(row){
 }
 function lgw(text){return /\b(?:LGW|EGKK)\b/i.test(String(text||''));}
 function liveFor(row){return lastLive[currentReg(row).toUpperCase()]||{status:'N/A'};}
-function liveGatwick(row){
- const item=liveFor(row);
+function isCurrentGatwick(item){
  return String(item.status||'').startsWith('Flying')&&lgw(item.route);
 }
+function liveGatwick(row){return isCurrentGatwick(liveFor(row));}
 function statusBadge(row){
  const item=liveFor(row),status=String(item.status||'N/A');
  const highlight=liveGatwick(row);
@@ -181,8 +181,8 @@ function rowHtml(row){
   '<td class="flights-cell-airline">'+escapeHtml(row.airline||'—')+'</td>'+
   '<td class="flights-cell-aircraft">'+escapeHtml(row.airplane||'—')+'</td>'+
   '<td class="flights-cell-reg"><div class="flights-reg-line">'+
-  '<a class="flights-reg" target="_blank" rel="noopener noreferrer" href="'+escapeHtml(fr24)+'">'+
-  escapeHtml(row.registration||'No reg')+'</a>'+localLastSeen(row)+'</div>'+statusBadge(row)+'</td>'+
+  (reg && !/^no reg$/i.test(reg)?'<a class="flights-reg" target="_blank" rel="noopener noreferrer" href="'+escapeHtml(fr24)+'">'+escapeHtml(row.registration)+'</a>':
+   '<span class="flights-no-reg">No reg</span>')+localLastSeen(row)+'</div>'+statusBadge(row)+'</td>'+
   '<td class="flights-cell-who">'+escapeHtml(row.who||'—')+'</td>'+
   '<td class="flights-cell-more"><div class="flights-row-actions">'+
   '<button class="btn small" data-edit-flight="'+id+'">Edit</button>'+
@@ -367,15 +367,16 @@ async function deleteFlight(id){
  }catch(e){feedback(e.message||'Delete failed.',true);return false;}
 }
 async function requestStatuses(){
+ const serial=++statusRequestNumber;
  const rows=filteredRows(),regs=[...new Set(rows.map(currentReg).map(v=>v.toUpperCase())
   .filter(v=>/^[A-Z0-9-]{2,16}$/.test(v)))].slice(0,80);
- if(!regs.length)return;
+ if(!regs.length){lastLive={};renderTable();return;}
  const version=flightsGeneration;
  try{
   const response=await api('/api/flights/live?regs='+encodeURIComponent(regs.join(',')));
-  if(version!==flightsGeneration||!document.getElementById('flightsTableBody'))return;
+  if(version!==flightsGeneration||serial!==statusRequestNumber||!document.getElementById('flightsTableBody'))return;
   const aircraft=response.aircraft||{};
-  lastLive={...lastLive,...aircraft};
+  lastLive=aircraft;
   // Only refresh the table, never the search field or open form.
   renderTable();
   const status=document.getElementById('flightsLiveTimestamp');
@@ -398,7 +399,7 @@ function scheduleStatusRefresh(){
  },35000);
 }
 export function stopFlightsPage(){
- flightsGeneration++;
+ flightsGeneration++;statusRequestNumber++;
  if(flightTimer){clearTimeout(flightTimer);flightTimer=null;}
 }
 export async function renderFlightsPage(){
