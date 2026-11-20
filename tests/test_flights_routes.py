@@ -61,10 +61,30 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(result,{'EZY123':'LGW–BTS'})
         req=opener.call_args.args[0]
         self.assertEqual(req.get_method(),'POST')
-        self.assertEqual(req.full_url,'https://api.adsb.lol/api/0/routeset')
+        self.assertEqual(req.full_url,'https://adsb.im/api/0/routeset')
         self.assertNotIn('X-api-key',req.headers)
         body=json.loads(req.data)
         self.assertEqual(body,{'planes':[{'callsign':'EZY123','lat':51.3,'lng':0.1}]})
+
+    def test_secondary_route_service_after_primary_failure(self):
+        response=MagicMock()
+        response.headers={}
+        response.read.return_value=json.dumps([{
+            'callsign':'EZY123','plausible':True,
+            '_airport_codes_iata':'LGW-VIE'}]).encode()
+        response.__enter__.return_value=response
+        def opener(request,timeout=5):
+            urls.append(request.full_url)
+            if request.full_url.startswith('https://adsb.im/'):
+                raise OSError('Simulated primary outage')
+            return response
+        urls=[]
+        found=flights_routes.fetch_routes([plane()],opener=opener)
+        self.assertEqual(found,{'EZY123':'LGW–VIE'})
+        self.assertEqual(urls,list(flights_routes.SOURCES))
+        self.assertEqual(flights_routes.health()['source'],
+                         'https://api.adsb.lol/api/0/routeset')
+        self.assertIn('adsb.im',flights_routes.health()['last_error'])
 
     def test_malformed_coordinates_and_callsigns_never_trigger_request(self):
         opener=MagicMock()
