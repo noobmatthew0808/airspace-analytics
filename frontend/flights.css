@@ -111,3 +111,14 @@
  .flights-form-grid{grid-template-columns:1fr}
  .flights-hero h1{font-size:22px}
 }
+
+/* Accommodate the extra top-level Flights tab on iPhone without wrapping. */
+@media(max-width:700px){
+ .streamlined-topbar .topbar-left{gap:4px}
+ .streamlined-topbar .top-nav-link{padding:7px 7px;font-size:10px}
+ .streamlined-topbar .top-actions{gap:4px}
+}
+@media(max-width:380px){
+ .streamlined-topbar .topbar-left{gap:2px}
+ .streamlined-topbar .top-nav-link{padding:7px 4px;font-size:9px}
+}
