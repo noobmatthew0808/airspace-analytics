@@ -269,7 +269,7 @@ def snapshot(value='',network_fetch=_lookup_network):
     with _CACHE_LOCK:
         now=time.monotonic()
         if network_fetch is _lookup_network:
-            if now-_ROTATION['at']>=MIN_REMOTE_PERIOD:
+            if not _ROTATION['at'] or now-_ROTATION['at']>=MIN_REMOTE_PERIOD:
                 eligible=[key for key in ('adsb.fi','FlyItalyADSB','adsb.lol')
                           if key in provider_keys and now>=_ROTATION['retry_until'].get(key,0)]
                 if eligible:
@@ -286,7 +286,7 @@ def snapshot(value='',network_fetch=_lookup_network):
                         # Back off failed provider instead of burning its quota.
                         _ROTATION['retry_until'][provider]=time.monotonic()+(
                             900 if 'rate limit' in str(error).lower() else 150)
-        elif now-_REMOTE['updated']>=MIN_REMOTE_PERIOD:
+        elif not _REMOTE['updated'] or now-_REMOTE['updated']>=MIN_REMOTE_PERIOD:
             # Keep old injection point for deterministic offline regressions.
             _REMOTE['updated']=now
             try:_REMOTE.update(aircraft=network_fetch(registrations),error=None)
