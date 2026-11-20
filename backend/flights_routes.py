@@ -1,6 +1,6 @@
 """Polite, transient callsign-route enrichment for the Flights tab.
 
-Routes are not ADS-B transmissions. The public adsb.lol routeset API returns
+Routes are not ADS-B transmissions. The ADSB.im/tar1090 routeset APIs return
 a candidate itinerary and a position-aware plausibility flag. Never write
 the lookup to Aerodrome, SheetDB, or the local flight log. All network calls
 run in a daemon thread, outside the live aircraft and Google Sheets requests.
@@ -15,18 +15,20 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHandler
 
-URL = 'https://api.adsb.lol/api/0/routeset'
+SOURCES = ('https://adsb.im/api/0/routeset', 'https://api.adsb.lol/api/0/routeset')
+URL = SOURCES[0]
 MAX_REQUEST_BYTES = 100_000
 MAX_RESPONSE_BYTES = 450_000
 MAX_PER_BATCH = 30
 MIN_POLL_SECONDS = 180
 GOOD_TTL_SECONDS = 30 * 60
-MISS_TTL_SECONDS = 10 * 60
+MISS_TTL_SECONDS = 5 * 60
 
 _lock=threading.Lock()
 _cache={}            # callsign -> (monotonic expiry, IATA route or empty)
 _last_request=0.0     # global guard, including failed attempts
 _busy=False
+_health={'last_check':None,'source':'','matched':0,'errors':[],'last_error':''}
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -75,37 +77,73 @@ def parse_routes(payload, requested):
     return answer
 
 
-def fetch_routes(planes, opener=None):
-    """One bounded batched request; no keys, external redirects or proxies."""
-    if opener is None:opener=_open
+def _clean_planes(planes):
     clean=[]
+    seen=set()
     for item in planes:
         if not isinstance(item,dict):continue
         call=str(item.get('callsign') or '').strip().upper()
-        if not re.fullmatch(r'[A-Z]{3}[0-9][A-Z0-9]{0,4}',call):
+        if not re.fullmatch(r'[A-Z]{3}[0-9][A-Z0-9]{0,4}',call) or call in seen:
             continue
         lat,lon=item.get('lat'),item.get('lon')
         if not all(isinstance(x,(float,int)) and math.isfinite(x) for x in (lat,lon)):
             continue
         if not (-90<=lat<=90 and -180<=lon<=180):continue
         clean.append({'callsign':call,'lat':round(lat,5),'lng':round(lon,5)})
+        seen.add(call)
         if len(clean)>=MAX_PER_BATCH:break
-    if not clean:return {}
+    return clean
+
+
+def _request_source(clean,url,opener):
+    if url not in SOURCES:raise ValueError('Untrusted route API')
     body=json.dumps({'planes':clean},separators=(',',':')).encode()
     if len(body)>MAX_REQUEST_BYTES:raise ValueError('Route batch too large')
-    request=Request(URL,data=body,method='POST',headers={
+    request=Request(url,data=body,method='POST',headers={
         'Content-Type':'application/json','Accept':'application/json',
-        'User-Agent':'AirspaceAnalytics-Flights/1'})
-    try:
-        with opener(request,timeout=4) as response:
-            if int(response.headers.get('Content-Length','0') or 0)>MAX_RESPONSE_BYTES:
-                raise ValueError('Route lookup response too large')
-            blob=response.read(MAX_RESPONSE_BYTES+1)
-        if len(blob)>MAX_RESPONSE_BYTES:raise ValueError('Route lookup response too large')
-        return parse_routes(json.loads(blob),[p['callsign'] for p in clean])
-    except (HTTPError,URLError,OSError,TimeoutError,ValueError,TypeError) as error:
-        # Optional lookup: error cannot break Sheets, Alerts or flight status.
-        return {}
+        'User-Agent':'AirspaceAnalytics-Flights/2'})
+    with opener(request,timeout=5) as response:
+        if int(response.headers.get('Content-Length','0') or 0)>MAX_RESPONSE_BYTES:
+            raise ValueError('Route lookup response too large')
+        blob=response.read(MAX_RESPONSE_BYTES+1)
+    if len(blob)>MAX_RESPONSE_BYTES:raise ValueError('Route lookup response too large')
+    payload=json.loads(blob)
+    if not isinstance(payload,list):raise ValueError('Invalid routeset response shape')
+    return parse_routes(payload,[p['callsign'] for p in clean])
+
+
+def fetch_routes(planes, opener=None):
+    """Try ADSB.im (tar1090 default), then adsb.lol for any missing routes.
+
+    Global requests are throttled by cached_routes; neither endpoint receives
+    a key or flight-log personal data.
+    """
+    if opener is None:opener=_open
+    clean=_clean_planes(planes)
+    if not clean:return {}
+    errors=[]
+    combined={}
+    used=''
+    for url in SOURCES:
+        remaining=[p for p in clean if p['callsign'] not in combined]
+        if not remaining:break
+        try:
+            matched=_request_source(remaining,url,opener)
+            if matched:used=url
+            combined.update(matched)
+        except (HTTPError,URLError,OSError,TimeoutError,ValueError,TypeError) as exc:
+            if isinstance(exc,HTTPError):
+                errors.append(url.split('/')[2]+': HTTP '+str(exc.code))
+            else:
+                errors.append(url.split('/')[2]+': unavailable or invalid')
+    with _lock:
+        _health.update(last_check=time.time(),source=used,matched=len(combined),
+                       errors=errors,last_error='; '.join(errors))
+    return combined
+
+
+def health():
+    with _lock:return dict(_health)
 
 
 def cached_routes(planes):

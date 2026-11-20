@@ -109,7 +109,7 @@ export const flightLogTestHelpers={
  uniquePeople,blankFilters,stats,filterMatchesSelected
 };
 // Exposed solely to protect local-last-seen formatting and live-only LGW rules in tests.
-export const flightStatusTestHelpers={relativeLocalSeen,isCurrentGatwick};
+export const flightStatusTestHelpers={relativeLocalSeen,isCurrentGatwick,shortWho};
 function updateStats(rows){
  const s=stats(rows);
  for(const [name,value] of Object.entries(s)){
@@ -127,7 +127,7 @@ function currentReg(row){
 function lgw(text){return /\b(?:LGW|EGKK)\b/i.test(String(text||''));}
 function liveFor(row){return lastLive[currentReg(row).toUpperCase()]||{status:'N/A'};}
 function isCurrentGatwick(item){
- return String(item.status||'').startsWith('Flying')&&lgw(item.route);
+ return String(item.status||'').startsWith('Flying')&&item.route_confidence!=='usual'&&lgw(item.route);
 }
 function liveGatwick(row){return isCurrentGatwick(liveFor(row));}
 function statusBadge(row){
@@ -160,6 +160,13 @@ function localLastSeen(row){
   ' · Open Aerodrome aircraft history">'+escapeHtml(label)+'</a>';
 }
 
+// Show full Who names on desktop and in details, a short label on phones.
+function shortWho(value){
+ const names=splitPeople(value);
+ if(!names.length)return '—';
+ if(names.length===1)return names[0].length>12?names[0].slice(0,11)+'…':names[0];
+ return names[0].slice(0,10)+' +'+(names.length-1);
+}
 function rowHtml(row){
  const reg=currentReg(row),live=liveFor(row),route=normalizeUpper(row.from_airport)+' → '+normalizeUpper(row.to_airport);
  const date=niceDate(row.date),shortDate=date.replace(/(\d{4})$/,(_,year)=>year.slice(-2));
@@ -178,7 +185,9 @@ function rowHtml(row){
   '<td class="flights-cell-aircraft">'+escapeHtml(row.airplane||'—')+'</td>'+
   '<td class="flights-cell-reg"><div class="flights-reg-line">'+regLink+localLastSeen(row)+
   '</div>'+statusBadge(row)+'</td>'+
-  '<td class="flights-cell-who" title="'+escapeHtml(row.who||'')+'">'+escapeHtml(row.who||'—')+'</td></tr>';
+  '<td class="flights-cell-who" title="'+escapeHtml(row.who||'')+'">'+
+  '<span class="flights-who-full">'+escapeHtml(row.who||'—')+'</span>'+
+  '<span class="flights-who-short">'+escapeHtml(shortWho(row.who))+'</span></td></tr>';
 }
 function renderTable(){
  const rows=filteredRows();updateStats(rows);
@@ -468,6 +477,7 @@ export async function renderFlightsPage(){
   '<button class="btn small" id="flightsManageDelete" type="button">Delete</button>'+
   '<span id="flightsManageHint">Choose Edit or Delete</span>'+
   '<button class="btn small" id="flightsManageDone" type="button">Done</button></div>'+
+  '</section><section class="flights-list" aria-label="Filtered flights">'+
   '<div class="flights-results-row"><span id="flightsResults">Loading flights…</span></div>'+
   '<p id="flightsFeedback" class="flights-feedback" role="status"></p>'+
   '<div class="flights-table-wrap"><table class="flights-table">'+

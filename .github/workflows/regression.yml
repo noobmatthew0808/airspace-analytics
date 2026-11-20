@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Python syntax
-        run: python3 -m compileall -q backend tests
+        run: python3 -m compileall -q backend tests scripts
       - name: Compare full Python suite against unchanged main
         run: python3 scripts/check_regression.py
       - name: Require all tests to pass (including Alerts)

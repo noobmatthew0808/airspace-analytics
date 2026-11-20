@@ -110,6 +110,8 @@ class LiveStatusTests(unittest.TestCase):
         # Other tests exercise the same production API caches; fixtures must
         # not accidentally inherit their aircraft and claim they are live.
         self.provider_patches=[
+            patch.object(flights_live.flights_history,'schedule'),
+            patch.object(flights_live.flights_history,'cached',return_value=None),
             patch.object(flights_live.flights_routes,'cached_routes',return_value={}),
             patch.object(flights_live.adsbfi,'aircraft',return_value=[]),
             patch.object(flights_live.adsblol,'aircraft',return_value=[]),
@@ -171,6 +173,31 @@ class LiveStatusTests(unittest.TestCase):
                     result=flights_live.snapshot('G-WUKU',network_fetch=lambda regs:[])
         self.assertEqual(result['aircraft']['G-WUKU']['status'],'Flying')
         routes.assert_called_once_with([])
+
+    def test_observed_usual_route_is_labelled_as_likely(self):
+        local={'hex':'407abc','r':'G-WUKU','flight':'EZY76',
+               'alt_baro':34000,'gs':410,'seen':0,'seen_pos':1,
+               'lat':51.2,'lon':0,'_source':'Your antenna'}
+        remote={'hex':'407abc','r':'G-WUKU','flight':'EZY76',
+                'alt_baro':34000,'seen':0,'_source':'FlyItalyADSB',
+                'route':{'from_iata':'LGW','to_iata':'VIE','count':7,
+                         'source':'observed'}}
+        with patch.object(flights_live,'_local_planes',return_value=[local]):
+            with patch.object(flights_live,'_routes',return_value={}):
+                result=flights_live.snapshot('G-WUKU',
+                    network_fetch=lambda regs:[remote])
+        self.assertEqual(result['aircraft']['G-WUKU']['status'],
+                         'Flying · likely LGW–VIE')
+        self.assertEqual(result['aircraft']['G-WUKU']['route_confidence'],'usual')
+        self.assertEqual(result['aircraft']['G-WUKU']['route'],'LGW–VIE')
+
+    def test_historical_arrival_keeps_unknown_current_position_distinct(self):
+        evidence={'airport':'VIE','time':1795190000,'evidence':'ground'}
+        with patch.object(flights_live,'_local_planes',return_value=[]):
+            with patch.object(flights_live.flights_history,'cached',return_value=evidence):
+                result=flights_live.snapshot('G-WUKU',network_fetch=lambda regs:[])
+        self.assertEqual(result['aircraft']['G-WUKU']['status'],'Last landed VIE')
+        self.assertEqual(result['aircraft']['G-WUKU']['last_landed_at'],1795190000)
 
     def test_ground_near_verified_airport_is_at_airport(self):
         plane={'hex':'407abc','r':'G-WUKU','flight':'EZY76','alt_baro':'ground',
