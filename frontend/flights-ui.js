@@ -109,7 +109,7 @@ export const flightLogTestHelpers={
  uniquePeople,blankFilters,stats,filterMatchesSelected
 };
 // Exposed solely to protect local-last-seen formatting and live-only LGW rules in tests.
-export const flightStatusTestHelpers={relativeLocalSeen,isCurrentGatwick};
+export const flightStatusTestHelpers={relativeLocalSeen,isCurrentGatwick,shortWho};
 function updateStats(rows){
  const s=stats(rows);
  for(const [name,value] of Object.entries(s)){
