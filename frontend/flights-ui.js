@@ -95,11 +95,7 @@ export function filterFlightRows(rows,filters,query=''){
  });
 }
 const filteredRows=()=>filterFlightRows(sourceRows(),activeFilters,searchTerm);
-export const flightLogTestHelpers={
- normalizeRow,normalizeWho,normalizeRegistration,getCurrentRegistration,
- parseDate,toInputDate,niceDate,yearFromRow,uniqueYears,uniqueValues,
- uniquePeople,blankFilters,stats,filterMatchesSelected
-};
+
 const stats=rows=>({
  flights:rows.length,
  regs:new Set(rows.map(r=>normalizeText(r.registration)).filter(Boolean)).size,
@@ -107,6 +103,11 @@ const stats=rows=>({
        .filter(x=>x!=='→')).size,
  years:new Set(rows.map(yearFromRow).filter(Boolean)).size,
 });
+export const flightLogTestHelpers={
+ normalizeRow,normalizeWho,normalizeRegistration,getCurrentRegistration,
+ parseDate,toInputDate,niceDate,yearFromRow,uniqueYears,uniqueValues,
+ uniquePeople,blankFilters,stats,filterMatchesSelected
+};
 function updateStats(rows){
  const s=stats(rows);
  for(const [name,value] of Object.entries(s)){
