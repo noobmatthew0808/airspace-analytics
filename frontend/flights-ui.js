@@ -292,7 +292,8 @@ async function loadFlights(showLoading=false){
  closeFilter();renderFilters();renderTable();
  if(sheetWarning)feedback(sheetWarning,true);
  else if(showLoading)feedback('');
- await requestStatuses();
+ // Aircraft status is strictly optional and must not hold up SheetDB loading.
+ requestStatuses().catch(()=>{});
 }
 function payloadFromForm(){
  const payload={};
