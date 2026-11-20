@@ -17,7 +17,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHandler
 
-from . import alerts, adsbfi, adsblol, flyitaly, data, live_details
+from . import alerts, adsbfi, adsblol, flyitaly, data, live_details, flights_routes
 
 _CACHE_LOCK=threading.Lock()
 # Keep the original adsb.fi cache shape for existing callers and regressions.
@@ -269,7 +269,7 @@ def snapshot(value='',network_fetch=_lookup_network):
     with _CACHE_LOCK:
         now=time.monotonic()
         if network_fetch is _lookup_network:
-            if now-_ROTATION['at']>=MIN_REMOTE_PERIOD:
+            if not _ROTATION['at'] or now-_ROTATION['at']>=MIN_REMOTE_PERIOD:
                 eligible=[key for key in ('adsb.fi','FlyItalyADSB','adsb.lol')
                           if key in provider_keys and now>=_ROTATION['retry_until'].get(key,0)]
                 if eligible:
@@ -286,7 +286,7 @@ def snapshot(value='',network_fetch=_lookup_network):
                         # Back off failed provider instead of burning its quota.
                         _ROTATION['retry_until'][provider]=time.monotonic()+(
                             900 if 'rate limit' in str(error).lower() else 150)
-        elif now-_REMOTE['updated']>=MIN_REMOTE_PERIOD:
+        elif not _REMOTE['updated'] or now-_REMOTE['updated']>=MIN_REMOTE_PERIOD:
             # Keep old injection point for deterministic offline regressions.
             _REMOTE['updated']=now
             try:_REMOTE.update(aircraft=network_fetch(registrations),error=None)
@@ -315,6 +315,19 @@ def snapshot(value='',network_fetch=_lookup_network):
         if reg in targets:seen[reg]=_prefer(seen.get(reg),plane)
     calls=[str(p.get('flight') or '').strip().upper() for p in seen.values()]
     route_map=_routes([c for c in calls if re.fullmatch(r'[A-Z]{3}[0-9][A-Z0-9]{0,4}',c)])
+    # The normal Aerodrome route_cache is fast but often lacks the current
+    # callsign. Queue a separate, position-aware adsb.lol route lookup.
+    # Never wait for HTTP here: a route response is shown on later refreshes.
+    missing_routes=[]
+    for plane in seen.values():
+        flight=str(plane.get('flight') or '').strip().upper()
+        if not flight or route_map.get(flight):continue
+        if not isinstance(plane.get('lat'),(int,float)) or not isinstance(plane.get('lon'),(int,float)):
+            continue
+        age=plane.get('seen_pos')
+        if not isinstance(age,(int,float)) or age<0 or age>30:continue
+        missing_routes.append({'callsign':flight,'lat':plane['lat'],'lon':plane['lon']})
+    route_map.update(flights_routes.cached_routes(missing_routes))
     output={}
     for key,registration in targets.items():
         history=local_history.get(key,{})

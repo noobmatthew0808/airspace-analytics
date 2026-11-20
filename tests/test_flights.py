@@ -110,6 +110,7 @@ class LiveStatusTests(unittest.TestCase):
         # Other tests exercise the same production API caches; fixtures must
         # not accidentally inherit their aircraft and claim they are live.
         self.provider_patches=[
+            patch.object(flights_live.flights_routes,'cached_routes',return_value={}),
             patch.object(flights_live.adsbfi,'aircraft',return_value=[]),
             patch.object(flights_live.adsblol,'aircraft',return_value=[]),
             patch.object(flights_live.flyitaly,'aircraft',return_value=[]),
@@ -146,6 +147,30 @@ class LiveStatusTests(unittest.TestCase):
         self.assertEqual(item['status'],'Flying LGW – BTS')
         self.assertEqual(item['source'],'Your antenna')
         self.assertEqual(item['hex'],'407abc')
+
+    def test_route_enrichment_is_used_only_for_current_live_callsign(self):
+        local={'hex':'407abc','r':'G-WUKU','flight':'EZY76','alt_baro':33000,
+               'gs':400,'seen':0,'seen_pos':2,'lat':51.2,'lon':0,
+               '_source':'Your antenna'}
+        with patch.object(flights_live,'_local_planes',return_value=[local]):
+            with patch.object(flights_live,'_routes',return_value={}):
+                with patch.object(flights_live.flights_routes,'cached_routes',
+                                  return_value={'EZY76':'LGW–BTS'}) as routes:
+                    result=flights_live.snapshot('G-WUKU',network_fetch=lambda regs:[])
+        self.assertEqual(result['aircraft']['G-WUKU']['status'],'Flying LGW–BTS')
+        self.assertEqual(routes.call_args.args[0][0]['callsign'],'EZY76')
+        self.assertEqual(routes.call_args.args[0][0]['lat'],51.2)
+
+    def test_route_api_not_queried_for_old_or_positionless_detection(self):
+        local={'hex':'407abc','r':'G-WUKU','flight':'EZY76',
+               'alt_baro':33000,'seen':0,'seen_pos':999,
+               '_source':'Your antenna'}
+        with patch.object(flights_live,'_local_planes',return_value=[local]):
+            with patch.object(flights_live,'_routes',return_value={}):
+                with patch.object(flights_live.flights_routes,'cached_routes',return_value={}) as routes:
+                    result=flights_live.snapshot('G-WUKU',network_fetch=lambda regs:[])
+        self.assertEqual(result['aircraft']['G-WUKU']['status'],'Flying')
+        routes.assert_called_once_with([])
 
     def test_ground_near_verified_airport_is_at_airport(self):
         plane={'hex':'407abc','r':'G-WUKU','flight':'EZY76','alt_baro':'ground',
