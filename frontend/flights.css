@@ -306,3 +306,69 @@
  .flights-table .fc-who{width:20%}
  .flights-table td{font-size:9px}
 }
+
+
+/* v1.10.23: deterministic five-column grid rather than competing table sizes. */
+.flights-list{margin-top:10px;background:var(--panel);border:1px solid var(--line);
+ border-radius:12px;padding:9px 10px;min-width:0;width:100%}
+.flights-list .flights-results-row{margin:0 2px 7px;min-height:23px}
+.flights-list .flights-table-wrap{width:100%;max-width:100%;box-sizing:border-box}
+.flights-table .flights-cell-route,
+.flights-table .flights-cell-route.flights-lgw,
+.flights-table .flights-reg,
+.flights-table .flights-cell-reg,
+.flights-table .flights-cell-who{font-weight:400!important}
+.flights-table .flights-cell-route{letter-spacing:normal!important}
+.flights-table .flights-highlight .flights-cell-route{color:var(--aqua)!important}
+.flights-who-short{display:none}
+.flights-who-full{display:inline}
+@media(max-width:700px){
+ .flights-list{width:calc(100% + 28px)!important;max-width:none!important;
+  margin:8px -14px 0;padding:0!important;background:transparent!important;
+  border:0!important;border-radius:0!important}
+ .flights-list .flights-results-row{padding:0 9px;margin:6px 0}
+ .flights-list .flights-feedback{padding:0 9px}
+ .flights-list .flights-table-wrap{border-radius:9px;width:100%;max-width:100%;
+  overflow:hidden!important}
+ .flights-table{display:block!important;width:100%!important;min-width:0!important;
+  font-size:11px!important;table-layout:auto!important}
+ .flights-table colgroup{display:none!important}
+ .flights-table thead,.flights-table tbody{display:block!important;width:100%!important}
+ .flights-table thead tr,.flights-table tbody tr.flights-row{
+  display:grid!important;grid-template-columns:15.5% 20% 14.5% 28.5% 21.5%!important;
+  align-items:stretch;gap:0;width:100%!important;max-width:100%!important;
+  box-sizing:border-box!important}
+ .flights-table thead th,.flights-table tbody tr.flights-row td{
+  display:block!important;min-width:0!important;max-width:100%!important;
+  box-sizing:border-box!important;padding:9px 3px!important;
+  overflow:hidden!important;text-overflow:clip!important;
+  white-space:normal!important;overflow-wrap:anywhere!important;
+  word-break:normal!important}
+ .flights-table thead th{font-size:10px!important;line-height:1.2!important}
+ .flights-table tbody tr.flights-row td{font-size:11px!important;line-height:1.35!important}
+ .flights-table thead th:nth-child(4),.flights-table thead th:nth-child(5),
+ .flights-table tbody tr.flights-row td:nth-child(4),
+ .flights-table tbody tr.flights-row td:nth-child(5){display:none!important}
+ .flights-table .flights-cell-who{display:block!important;font-size:10.5px!important;
+  max-width:100%!important;overflow:hidden!important;overflow-wrap:anywhere!important}
+ .flights-table .flights-cell-route{font-size:11px!important;font-weight:400!important}
+ .flights-table .flights-reg{font-size:11px!important;font-weight:400!important;
+  overflow-wrap:anywhere!important;text-underline-offset:2px}
+ .flights-table .flights-cell-code{font-size:11px!important}
+ .flights-table .flights-cell-date{font-size:10.5px!important}
+ .flights-table .flights-live-chip{font-size:10px!important;line-height:1.25!important;
+  font-weight:400!important;padding:2px 3px!important;max-width:100%!important}
+ .flights-table .flights-local-seen{font-size:9.5px!important;line-height:1.2!important}
+ .flights-who-short{display:inline!important}
+ .flights-who-full{display:none!important}
+ .flights-table tbody tr:not(.flights-row){display:block!important}
+ .flights-table tbody tr:not(.flights-row) td{display:block;width:100%;box-sizing:border-box}
+ .flights-panel{margin-bottom:0}
+}
+@media(max-width:380px){
+ .flights-table thead tr,.flights-table tbody tr.flights-row{
+  grid-template-columns:16% 19.5% 14.5% 28% 22%!important}
+ .flights-table tbody tr.flights-row td{padding:8px 2px!important}
+ .flights-table tbody tr.flights-row .flights-cell-route{font-size:10.5px!important}
+ .flights-table tbody tr.flights-row .flights-cell-who{font-size:10px!important}
+}
