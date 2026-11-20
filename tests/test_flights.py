@@ -98,8 +98,17 @@ class LiveStatusTests(unittest.TestCase):
     def setUp(self):
         self.old=dict(flights_live._REMOTE)
         flights_live._REMOTE.update(updated=0,aircraft=[],error=None)
+        # Other tests exercise the same production API caches; fixtures must
+        # not accidentally inherit their aircraft and claim they are live.
+        self.provider_patches=[
+            patch.object(flights_live.adsbfi,'aircraft',return_value=[]),
+            patch.object(flights_live.adsblol,'aircraft',return_value=[]),
+            patch.object(flights_live.flyitaly,'aircraft',return_value=[]),
+        ]
+        for provider in self.provider_patches:provider.start()
 
     def tearDown(self):
+        for provider in reversed(self.provider_patches):provider.stop()
         flights_live._REMOTE.clear()
         flights_live._REMOTE.update(self.old)
 
