@@ -1,3 +1,12 @@
+# v1.10.23 — Fix Flights clipping and add real route/history sources
+
+- Make flight list its own lower-padding, full-width section beneath existing filters. Replace the accumulated conflicting mobile table sizing with one deterministic CSS-grid five-column row (Date/Route/Flight/Reg+live/Who), hard min-width rules and no sideways clipping. Show compact Who label on phone and preserve full names in details/SheetDB; use consistent regular-weight route and registration text.
+- Research confirmed ADSB.im is the source for the user's feeder tar1090 routes (historical aggregator patterns plus ACARS/VDL2). Prefer its `/api/0/routeset` in one batched, cached asynchronous source lookup; fall back to adsb.lol only when necessary. Validate actual HTTP response shape and plausibility flags; report source health without exposing private keys.
+- Use existing saved FlyItalyADSB key to request `?with=route` (observed usual callsign route) for its existing batch live status requests; label such suggestions `Flying · likely XXX–YYY` and do not highlight LGW as a confirmed current route solely from history. Fix one-item FlyItaly list queries with a trailing comma as its official API documents.
+- Add rate-limited read-only FlyItalyADSB observed flight history (`/v2/flights/reg/{reg}`) to display `Last landed XXX` from recent confirmed ground/low arrival evidence, not a false `At XXX` claim. Respect nightly-only history on the user's Pro feeder benefit and only use same-day data where genuinely entitled. Never slow the live API/local receiver or mutate the Google Sheet.
+- Add `scripts/diagnose_flight_sources.py` for read-only real-network testing of actual tar1090 route config, both public route APIs, FlyItaly callsign routes and latest historical landing from the Ubuntu receiver. CI uses mocked responses; the diagnostic is how to validate real access and sample route success.
+- Full regression tests for source fallback, FlyItaly query format/headers, route confidence/colour, history parsing/time/freshness, background rate limits, mobile widths, Google Sheets safety and unchanged Traffic/Alerts.
+
 # v1.10.22 — Flights: true one-row table, Manage mode, plausible current routes
 
 - Replace the mobile split-row layout with **one table row per flight**, visibly showing Date, Route, Flight, Registration/live and Who. Desktop retains Airline/Aircraft columns. Keep the existing Google Sheets route, registrations, filter state, all four filtered counters, Copy Reg's and FR24 links untouched.
