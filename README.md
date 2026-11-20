@@ -270,6 +270,20 @@ For military rules, the existing read-only Aerodrome classification is used
 when available. Unclassified military aircraft cannot be guaranteed to trigger.
 
 
+### Optional FlyItalyADSB API backup (v1.10.17)
+
+On the local **Alerts** page, expand **FlyItalyADSB API**. Paste your private FlyItaly API key and select **Save API key**, then **Test API**. This stores the key in the website's pre-existing permission-restricted `.airspace-state/alerts.sqlite3` config table; it is not included in GitHub, the downloaded HTML, or the `/api/alerts` response. A blank field keeps the saved key, or use **Remove key** to delete it.
+
+This feature is **opt-in, per rule** in **Edit rule**:
+
+- **Allow FlyItalyADSB backup data:** apply recent network aircraft metadata and MLAT positions only to aircraft already detected by your local receiver, using the ICAO hex to avoid mixing aircraft. This never replaces fresh local coordinates.
+- **Also alert for network-only aircraft:** permit matches that the remote network sees nearby even if the antenna has not detected the aircraft. Requires an explicit distance in kilometres. Notifications label the network origin.
+- **Minimum RSSI, dBFS:** optional local-signal threshold, e.g. `-20`; only the local receiver can supply this. Network-only rules cannot use RSSI.
+
+All existing rules stay local-only by default, including the military and registration watchlists. The independent local worker checks every three seconds with no dependency on external API timing. The optional network worker runs approximately every 12 seconds and uses a 36-second cache expiry; network-only detection is therefore not instantaneous. The provider API uses kilometres, not nautical miles. No API response or history is written into Aerodrome.
+
+For free Pro-tier access, first enable **Fly Italy ADSB** feeding in ADSB.im, then verify receiver activity and activate the non-commercial feeder perk under [FlyItalyADSB My API](https://flyitalyadsb.com/data/api/account/). A normal Free key also works for the small local area used here. A public key pasted into chat should be rotated before being saved in your private server settings.
+
 ## Live ADS-B terminal (v1.10.9)
 
 **Live ADS-B** in the analytics header streams the real curses terminal from `docker exec -e TERM=xterm -t ultrafeeder viewadsb` through read-only same-origin SSE. Terminal redraws appear as produced, normally every 500 ms. This does not poll readsb's 1-second JSON or use a second SDR, and no ADS-B services or the Aerodrome database are changed. On mobile the original terminal can be scrolled horizontally.
