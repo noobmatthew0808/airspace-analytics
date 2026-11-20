@@ -12,6 +12,16 @@ A private, responsive, self-hosted ADS-B analytics homepage and historical explo
 
 ![Project](https://img.shields.io/badge/Backend-Python%20stdlib-31dfc1) ![Frontend](https://img.shields.io/badge/Frontend-Vanilla%20JS%20%2B%20SVG-6795ff) ![Database](https://img.shields.io/badge/Database-Aerodrome%20SQLite%20(read--only)-cb8efa)
 
+## v1.10.22 — One-row Flights and optional route intelligence
+
+The Flights tab now keeps **one flight per table row**, with **Who** visible beside the other essential columns on mobile. The old second action row and repeated Edit/Delete controls are gone. Use the top **Manage → Edit** or **Manage → Delete**, then tap the intended flight (deletion requires confirmation). Outside Manage, tap a flight row to see its extra Airline/Aircraft details and historical/local links; tapping the registration always opens the same FR24 aircraft page.
+
+The cosmetic Google Sheet status label and source-information control were removed at the user's request. **Google Sheets via SheetDB is still the sole database** for flight records, and cached reads are clearly flagged on an outage. All filters, registration search, copy operations, counts, and add/edit/delete semantics are retained.
+
+When an aircraft is actually airborne but only shows **Flying**, a dedicated optional lookup now checks the public [adsb.lol routeset API](https://api.adsb.lol/docs) for its current callsign and position. It only displays a two-airport route if the API marks it **plausible**; it does not use the historic flight-log route as a guess or claim that ADS-B broadcasts the destination. The route worker is asynchronous: page load and local status never depend on the service being online. One bounded batch at most every three minutes, with short-lived in-memory caches and conservative error handling. A second UI check occurs about 12 seconds after opening Flights so recently resolved routes can appear. This API route lookup currently needs no extra key and does not alter the Alerts API configuration.
+
+Source credits: global aircraft positions from [adsb.fi](https://adsb.fi/), [adsb.lol](https://adsb.lol/) and [FlyItalyADSB](https://flyitalyadsb.com/) when available; route suggestions from adsb.lol. The recorded Google Sheet and read-only local Aerodrome receiver sightings are separate.
+
 ## v1.10.21 Flights refinements
 
 The phone layout now fits **four flight columns** without horizontal scrolling, with **Who, Edit, Delete and More** shown on a tidy second line for each flight. The seven original multi-select filters form an aligned two-row grid on phones. Date, route, code, registration and all SheetDB data remain unchanged.
