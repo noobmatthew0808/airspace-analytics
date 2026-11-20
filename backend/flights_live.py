@@ -17,7 +17,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHandler
 
-from . import alerts, adsbfi, adsblol, flyitaly, data, live_details, flights_routes
+from . import alerts, adsbfi, adsblol, flyitaly, data, live_details, flights_routes, flights_history
 
 _CACHE_LOCK=threading.Lock()
 # Keep the original adsb.fi cache shape for existing callers and regressions.
@@ -78,7 +78,13 @@ def _lookup_provider(regs,provider='adsb.fi',key='',opener=None):
     aircraft=[]
     for start in range(0,len(codes),limit):
         batch=codes[start:start+limit]
-        request=Request(prefix+','.join(batch),headers={
+        address=prefix+','.join(batch)
+        if provider=='FlyItalyADSB':
+            # Batch endpoint is list-shaped only with at least one comma.
+            # ?with=route adds the usual observed route, not today's filed plan.
+            if len(batch)==1:address+=','
+            address+='?with=route'
+        request=Request(address,headers={
             'Accept':'application/json','User-Agent':'AirspaceAnalytics-FlightLog/2',**auth})
         try:
             with opener(request,timeout=6) as response:
@@ -327,19 +333,47 @@ def snapshot(value='',network_fetch=_lookup_network):
         age=plane.get('seen_pos')
         if not isinstance(age,(int,float)) or age<0 or age>30:continue
         missing_routes.append({'callsign':flight,'lat':plane['lat'],'lon':plane['lon']})
-    route_map.update(flights_routes.cached_routes(missing_routes))
+    plausible_routes=flights_routes.cached_routes(missing_routes)
+    route_map.update(plausible_routes)
+    # Observed usual callsign routes are a fallback, *not* a confirmation.
+    usual_routes={}
+    for item in remote+others+local:
+        if not isinstance(item,dict):continue
+        reg=normal_reg(item.get('r',''))
+        if reg not in targets:continue
+        route_info=item.get('route')
+        if not isinstance(route_info,dict) or not item.get('flight'):continue
+        orig=str(route_info.get('from_iata') or '').strip().upper()
+        dest=str(route_info.get('to_iata') or '').strip().upper()
+        if re.fullmatch(r'[A-Z]{3}',orig) and re.fullmatch(r'[A-Z]{3}',dest) and orig!=dest:
+            usual_routes[str(item['flight']).strip().upper()]=orig+'–'+dest
+    history_key=configured.get('FlyItalyADSB','') if isinstance(configured,dict) else ''
+    unknown_regs=[reg for key,reg in targets.items() if key not in seen]
+    if history_key and unknown_regs:
+        flights_history.schedule(unknown_regs,history_key)
     output={}
     for key,registration in targets.items():
         history=local_history.get(key,{})
         plane=seen.get(key)
-        result={'status':'N/A','route':'','source':'','hex':'','at_airport':'',
+        result={'status':'N/A','route':'','route_confidence':'','source':'','hex':'',
+                'at_airport':'','last_landed_at':None,
                 'local_hex':history.get('hex',''),
                 'local_last_seen_at':history.get('last_seen_at')}
         if plane is None:
+            recent=flights_history.cached(registration)
+            if recent:
+                result.update(status='Last landed '+recent['airport'],
+                              source='FlyItalyADSB observed history',
+                              last_landed_at=recent['time'],
+                              at_airport=recent['airport'])
             output[registration]=result
             continue
         flight=str(plane.get('flight') or '').strip().upper()
         route=route_map.get(flight,'')
+        confidence='plausible' if flight in plausible_routes else ('cached' if route else '')
+        if not route and flight in usual_routes:
+            route=usual_routes[flight]
+            confidence='usual'
         altitude=plane.get('alt_baro')
         airport=''
         status='N/A'
@@ -350,10 +384,12 @@ def snapshot(value='',network_fetch=_lookup_network):
             speed=plane.get('gs')
             high=isinstance(altitude,(int,float)) and altitude>=2000
             moving=isinstance(speed,(int,float)) and speed>=80
-            if high or moving:status='Flying '+route if route else 'Flying'
+            if high or moving:
+                status=('Flying '+route if confidence!='usual' else 'Flying · likely '+route) if route else 'Flying'
         hexcode=str(plane.get('hex') or '').lower().strip()
         if not re.fullmatch(r'[a-f0-9]{6}',hexcode):hexcode=''
         result.update(status=status,route=route if status.startswith('Flying') else '',
+                      route_confidence=confidence if status.startswith('Flying') else '',
                       source=str(plane.get('_source',''))[:30],hex=hexcode,
                       at_airport=airport,callsign=flight,
                       updated_seconds_ago=plane.get('seen'))
