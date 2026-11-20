@@ -2,6 +2,7 @@
 import json
 import time
 import unittest
+from datetime import datetime,timezone
 from unittest.mock import MagicMock,patch
 from backend import flights_history
 
@@ -41,7 +42,7 @@ class FlightHistoryTests(unittest.TestCase):
         payload={'flights':[{'to':{'airport':'EGKK','iata':'LGW',
                 'time':now-86400,'seen':'ground'}}],
                 'today':{'available':True,'flights':[{
-                    'to':{'airport':'LOWW','time':'2026-11-20T16:00:00Z',
+                    'to':{'airport':'LOWW','time':datetime.fromtimestamp(now-1000,timezone.utc).isoformat(),
                           'seen':'ground'}}]}}
         result=flights_history.parse_last_landing(payload,now=now)
         self.assertIsNotNone(result)
