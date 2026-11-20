@@ -793,7 +793,7 @@ def flyitaly_loop():
                 except ValueError:pass   # Status is visible without exposing keys
                 interval=12
             else:
-                flyitaly.clear()
+                flyitaly.discard_aircraft()
         except Exception:
             # Optional network failure must never affect the local alerts.
             pass
@@ -813,7 +813,7 @@ def adsblol_loop():
                 radius=min(450.,max(75.,*(float(row['max_km'] or 100) for row in rows)))
                 try:adsblol.fetch(key,receiver['lat'],receiver['lon'],radius)
                 except ValueError:pass
-            else:adsblol.clear()
+            else:adsblol.discard_aircraft()
         except Exception:pass
         time.sleep(interval)
 
