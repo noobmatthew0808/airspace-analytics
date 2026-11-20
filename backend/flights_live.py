@@ -23,7 +23,7 @@ _CACHE_LOCK=threading.Lock()
 _REMOTE={'updated':0.,'aircraft':[],'error':None}
 MAX_BYTES=1_750_000
 MAX_REGS=80
-MIN_REMOTE_PERIOD=90
+MIN_REMOTE_PERIOD=30
 AIRPORT_FILE=Path('/opt/aerodrome/static/airports.json')
 # Airport reference fallback for common UK airports when Aerodrome isn't mounted.
 COMMON_AIRPORTS=(
@@ -207,7 +207,16 @@ def snapshot(value='',network_fetch=_lookup_network):
             except (OSError,ValueError) as error:
                 _REMOTE['aircraft']=[]
                 _REMOTE['error']=str(error)[:150]
+        # An HTTP result's 'seen' fields describe its age at fetch time.
+        # Age cached aircraft again on every request; never treat an old
+        # network position as live just because the server retained the JSON.
+        elapsed=max(0.0,time.monotonic()-_REMOTE['updated'])
         remote=[dict(p) for p in _REMOTE['aircraft']]
+        for plane in remote:
+            for field in ('seen','seen_pos'):
+                age=plane.get(field)
+                if isinstance(age,(int,float)) and math.isfinite(age):
+                    plane[field]=age+elapsed
         error=_REMOTE['error']
     seen={}
     for plane in remote+others+local:
