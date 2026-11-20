@@ -181,8 +181,12 @@ class ExternalAlertsTests(unittest.TestCase):
 
 
 class ProviderTests(unittest.TestCase):
-    def setUp(self):flyitaly.clear()
-    def tearDown(self):flyitaly.clear()
+    def setUp(self):
+        flyitaly.clear()
+        adsblol.clear()
+    def tearDown(self):
+        flyitaly.clear()
+        adsblol.clear()
 
     def test_https_header_response_timestamp_and_quota_are_validated(self):
         response=Mock()
