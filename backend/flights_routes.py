@@ -128,7 +128,7 @@ def cached_routes(planes):
         elif item.get('lat') is not None and item.get('lon') is not None:
             pending.append(item)
     with _lock:
-        if pending and not _busy and now-_last_request>=MIN_POLL_SECONDS:
+        if pending and not _busy and (not _last_request or now-_last_request>=MIN_POLL_SECONDS):
             _busy=True
             _last_request=now
             batch=pending[:MAX_PER_BATCH]
