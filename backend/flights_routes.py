@@ -1,6 +1,6 @@
 """Polite, transient callsign-route enrichment for the Flights tab.
 
-Routes are not ADS-B transmissions. The public adsb.lol routeset API returns
+Routes are not ADS-B transmissions. The ADSB.im/tar1090 routeset APIs return
 a candidate itinerary and a position-aware plausibility flag. Never write
 the lookup to Aerodrome, SheetDB, or the local flight log. All network calls
 run in a daemon thread, outside the live aircraft and Google Sheets requests.
@@ -15,18 +15,20 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHandler
 
-URL = 'https://api.adsb.lol/api/0/routeset'
+SOURCES = ('https://adsb.im/api/0/routeset', 'https://api.adsb.lol/api/0/routeset')
+URL = SOURCES[0]
 MAX_REQUEST_BYTES = 100_000
 MAX_RESPONSE_BYTES = 450_000
 MAX_PER_BATCH = 30
 MIN_POLL_SECONDS = 180
 GOOD_TTL_SECONDS = 30 * 60
-MISS_TTL_SECONDS = 10 * 60
+MISS_TTL_SECONDS = 5 * 60
 
 _lock=threading.Lock()
 _cache={}            # callsign -> (monotonic expiry, IATA route or empty)
 _last_request=0.0     # global guard, including failed attempts
 _busy=False
+_health={'last_check':None,'source':'','matched':0,'errors':[],'last_error':''}
 
 
 class _NoRedirect(HTTPRedirectHandler):
