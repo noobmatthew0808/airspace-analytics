@@ -218,8 +218,9 @@ Set a maximum **ground distance (km)** from the antenna and optional
 minimum/maximum **barometric altitude (feet)**. Leave a limit empty to disable it.
 
 Alerts monitors the receiver's live `aircraft.json` every three seconds in the
-website's Python service, even after closing the phone or browser. It tries
-local tar1090 on port 1099 automatically. Under **Alerts → Receiver setup**,
+website's Python service, even after closing the phone or browser. It first tries
+the existing Ultrafeeder readsb JSON at `http://127.0.0.1:1090/data/aircraft.json`,
+then other same-host tar1090 HTTP endpoints automatically. Under **Alerts → Receiver setup**,
 you can optionally supply a localhost feed URL and manual antenna latitude/
 longitude when `receiver.json` lacks them. **Test connection** checks the
 configured live feed. Distance-limited rules require a fresh aircraft position
@@ -259,6 +260,14 @@ need both an antenna location and a usable aircraft position. Rechecking the
 same Aerodrome observation does not rearm an aircraft; only new observations
 can confirm a departure. No additional service or database installation is
 required.
+
+If a previously saved **Aircraft feed URL** still points to port 1099 and fails,
+change it to `http://127.0.0.1:1090/data/aircraft.json` or clear the field
+and save to let the app automatically select the working endpoint. The live
+source supplies registration, type, position and barometric altitude when
+available, but not every aircraft has a fresh position; `dbFlags` may be missing.
+For military rules, the existing read-only Aerodrome classification is used
+when available. Unclassified military aircraft cannot be guaranteed to trigger.
 
 
 ## Live ADS-B terminal (v1.10.9)
