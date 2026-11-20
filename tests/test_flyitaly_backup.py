@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from backend import alerts, flyitaly, adsblol
+from backend import alerts, flyitaly, adsblol, adsbfi
 
 
 class ExternalAlertsTests(unittest.TestCase):
@@ -72,20 +72,21 @@ class ExternalAlertsTests(unittest.TestCase):
         self.assertEqual(self.events()[0]['source'],'local')
         self.assertLess(self.events()[0]['distance_km'],40)
 
-    def test_network_only_needs_both_explicit_optins_and_distance(self):
-        for data in (
-            {'network_only':True,'max_km':40},
-            {'network_only':True,'use_flyitaly':True},
-        ):
-            with self.assertRaises(ValueError):
-                alerts.save_rule({'label':'Invalid','field':'military',**data})
-        alerts.save_rule({'label':'Network allowed','field':'military',
-                          'use_flyitaly':True,'network_only':True,'max_km':40})
+    def test_one_backup_toggle_allows_nearby_network_aircraft_only_with_radius(self):
+        alerts.save_rule({'label':'No backup','field':'military','max_km':40})
+        alerts.save_rule({'label':'Backup no radius','field':'military',
+                          'backup_apis':True})
+        alerts.save_rule({'label':'Backup with radius','field':'military',
+                          'backup_apis':True,'max_km':40})
+        rules={r['label']:r for r in alerts.snapshot()['rules']}
+        self.assertEqual(rules['No backup']['network_only'],0)
+        self.assertEqual(rules['Backup no radius']['network_only'],0)
+        self.assertEqual(rules['Backup with radius']['network_only'],1)
         alerts.process_snapshot({'aircraft':[]},50,0,now=100,
                                 external=[self.network()])
         alerts.process_snapshot({'aircraft':[]},50,0,now=103,
                                 external=[self.network()])
-        self.assertEqual(len(self.events()),1)
+        self.assertEqual([e['rule_label'] for e in self.events()],['Backup with radius'])
         self.assertEqual(self.events()[0]['source'],'FlyItalyADSB')
 
     def test_network_only_remote_position_and_age_must_be_fresh(self):
@@ -103,6 +104,12 @@ class ExternalAlertsTests(unittest.TestCase):
         alerts.process_snapshot({'aircraft':[]},50,0,now=106,
                                 external=[fresh])
         self.assertEqual(len(self.events()),1)
+
+    def test_adsbfi_is_keyless_and_available_in_status(self):
+        status=alerts.snapshot()['adsbfi']
+        self.assertFalse(status['key_required'])
+        self.assertFalse(status['key_set'])
+        self.assertNotIn('api_key',status)
 
     def test_private_key_is_not_returned_through_alerts_api(self):
         key='fia_TEST_MOCK_KEY_WITHOUT_REAL_CREDENTIAL'
@@ -184,9 +191,11 @@ class ProviderTests(unittest.TestCase):
     def setUp(self):
         flyitaly.clear()
         adsblol.clear()
+        adsbfi.discard_aircraft()
     def tearDown(self):
         flyitaly.clear()
         adsblol.clear()
+        adsbfi.discard_aircraft()
 
     def test_https_header_response_timestamp_and_quota_are_validated(self):
         response=Mock()
@@ -255,6 +264,25 @@ class ProviderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'Stale'):
             adsblol.fetch('mock_key',50.,0.,40.,opener=Mock(return_value=response))
         self.assertEqual(adsblol.aircraft(),[])
+
+    def test_adsbfi_public_v3_radius_is_nm_and_no_key(self):
+        response=Mock()
+        response.headers={}
+        response.read.return_value=json.dumps({
+            'now':time.time()*1000,
+            'ac':[{'hex':'abc123','r':'G-TEST','seen':1,'seen_pos':2,
+                   'lat':50.01,'lon':0.0,'dbFlags':1}]
+        }).encode()
+        response.__enter__=Mock(return_value=response)
+        response.__exit__=Mock(return_value=None)
+        opener=Mock(return_value=response)
+        result=adsbfi.fetch(50.,0.,40.,opener=opener)
+        req=opener.call_args.args[0]
+        self.assertEqual(req.full_url,
+            'https://opendata.adsb.fi/api/v3/lat/50.0000000/lon/0.0000000/dist/22')
+        self.assertIsNone(req.get_header('X-api-key'))
+        self.assertTrue(result['connected'])
+        self.assertEqual(adsbfi.aircraft()[0]['_network_source'],'adsb.fi')
 
     def test_external_api_does_not_run_during_local_matching(self):
         with patch.object(flyitaly,'fetch',side_effect=AssertionError('network call in matching')):

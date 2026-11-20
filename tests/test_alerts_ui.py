@@ -19,23 +19,25 @@ class TestAlertsUI(unittest.TestCase):
   self.assertNotIn('data-preset',ui)
   self.assertNotIn('alert-quick',ui)
 
- def test_two_simple_source_options_and_collapsible_config(self):
+ def test_compact_editor_and_keyless_provider_in_configuration(self):
   ui=(ROOT/'frontend/alerts-ui.js').read_text()
   css=(ROOT/'frontend/alerts.css').read_text()
-  for label in ('Backup APIs','Also alert for network-only aircraft',
-                'Configuration &amp; Logs','alertApis','alertHistory',
-                'alertNtfy','alertReceiver','alertFlyItaly','alertAllConfig'):
-   if label=='alertFlyItaly':
-    self.assertIn('flyitaly',ui)
-   else:self.assertIn(label,ui)
+  for label in ('Backup APIs','Configuration &amp; Logs','alertApis',
+                'alertHistory','alertNtfy','alertReceiver','alertAllConfig'):
+   self.assertIn(label,ui)
+  self.assertNotIn('Also alert for network-only aircraft',ui)
+  self.assertNotIn('name="network_only"',ui)
   self.assertNotIn('Minimum RSSI',ui)
   self.assertNotIn('min_rssi',ui)
   self.assertIn('Key saved',ui)
   self.assertIn('Test connection',ui)
   self.assertIn('api.adsb.lol/v2',ui)
   self.assertIn('api.flyitalyadsb.com/v2',ui)
-  self.assertIn('alert-edit-section',css)
-  self.assertIn('alert-source-option',css)
+  self.assertIn('opendata.adsb.fi/api',ui)
+  self.assertIn('alertAdsbfiTest',ui)
+  self.assertIn('alert-compact-top',css)
+  self.assertIn('alert-compact-limits',css)
+  self.assertEqual(ui.count('name="backup_apis"'),1)
 
  def test_optional_extra_database_not_aerodrome(self):
   alerts=(ROOT/'backend/alerts.py').read_text()

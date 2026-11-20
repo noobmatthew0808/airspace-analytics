@@ -69,3 +69,25 @@
  .alert-provider .alert-editor-buttons{gap:5px}
  .alert-provider .alert-editor-buttons>.btn{padding:8px}
 }
+
+/* v1.10.19 — classic compact Alerts editor with aligned iOS controls. */
+.alert-editor-compact{padding:12px 14px;max-width:900px}
+.alert-editor-compact .alert-editor-heading{margin:0 0 12px}
+.alert-compact-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:12px;row-gap:8px;align-items:end}
+.alert-compact-limits{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));column-gap:12px;row-gap:8px;margin-top:11px;align-items:end}
+.alert-editor-compact .alert-field{display:flex;flex-direction:column;justify-content:flex-end;gap:5px;min-width:0;font-size:11px;line-height:1.4}
+.alert-editor-compact .alert-field input,.alert-editor-compact .alert-field select{box-sizing:border-box;display:block;min-width:0;width:100%;height:39px;min-height:39px;margin:0;font-size:12px;padding:8px 9px;line-height:20px}
+.alert-editor-compact .alert-field select{padding-right:20px}
+.alert-editor-compact .alert-compact-pattern{margin-top:11px}
+.alert-compact-backup{display:inline-flex;align-items:center;gap:9px;margin-top:13px;cursor:pointer;font-size:12px}
+.alert-compact-backup input{width:17px;height:17px;accent-color:var(--aqua);margin:0}
+.alert-compact-note{font-size:10px;color:var(--muted);line-height:1.45;margin:5px 0 0}
+.alert-editor-compact .alert-editor-buttons{margin-top:12px}
+@media(max-width:480px){
+ .alert-editor-compact{padding:11px}
+ .alert-compact-top{column-gap:9px}
+ .alert-compact-limits{column-gap:7px}
+ .alert-editor-compact .alert-field input,.alert-editor-compact .alert-field select{padding:7px 8px;font-size:12px}
+ .alert-editor-compact .alert-field select{padding-right:17px}
+ .alert-compact-limits .alert-field{font-size:10px}
+}

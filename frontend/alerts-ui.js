@@ -5,7 +5,8 @@ const whenAlert=n=>new Date(n*1000).toLocaleString('en-GB',{timeZone:'Europe/Lon
 const fields=[['type','Aircraft type'],['registration','Registration'],['callsign','Callsign'],['hex','ICAO hex'],['operator','Operator'],['military','Military']];
 const providers=[
  {id:'flyitaly',name:'FlyItalyADSB',url:'https://api.flyitalyadsb.com/v2',hint:'Live positions and military metadata; check your feeder perk in My API.'},
- {id:'adsblol',name:'adsb.lol',url:'https://api.adsb.lol/v2',hint:'Ready for your feeder key when eligible. No key needed until then.'}
+ {id:'adsblol',name:'adsb.lol',url:'https://api.adsb.lol/v2',hint:'Ready for your feeder key when eligible. No key needed until then.'},
+ {id:'adsbfi',name:'adsb.fi',url:'https://opendata.adsb.fi/api',hint:'Free API · no key required.'}
 ];
 let alertsData=null,alertsTimer=null,editingRule=null,alertsBusy=false;
 async function alertApi(path,body){
@@ -20,7 +21,7 @@ function feedback(message,error=false){
  if(node){node.textContent=message;node.className='alert-feedback'+(error?' alert-fail':'');}
 }
 function ruleCard(r){
- const source=r.use_flyitaly?(r.network_only?' · Network allowed':' · Backup APIs'):' · Local only';
+ const source=r.use_flyitaly?' · Backup APIs':' · Local only';
  return '<article class="alert-rule"><div class="alert-rule-main"><div class="alert-rule-title"><strong>'+ae(r.label)+'</strong><span class="alert-tag">'+at(r.active||0)+' active</span></div>'+
   '<div class="alert-rule-meta">'+ae(r.field==='military'?'Military':r.field+': '+r.pattern)+' · '+at(r.max_km)+' km · '+at(r.min_ft)+'–'+at(r.max_ft)+' ft'+source+'</div></div>'+
   '<div class="alert-rule-actions"><label class="alert-switch"><input type="checkbox" data-toggle="'+r.id+'" '+(r.enabled?'checked':'')+' aria-label="Enable alert"><span>On</span></label>'+
@@ -33,6 +34,17 @@ function eventCard(e){
 }
 function providerCard(p,d){
  const info=d[p.id]||{},saved=!!info.key_set,connected=!!info.connected;
+ if(p.id==='adsbfi'){
+  return '<details class="foldout alert-config alert-provider" id="alert-adsbfi"><summary><span>adsb.fi <small>'+
+   (connected?'Connected · no key needed':(info.last_success?'Previously tested · no key':(info.error?'Needs attention · no key':'No key required')))+
+   '</small></span></summary><div class="alert-config-content">'+
+   '<div class="alert-provider-endpoint"><span>API endpoint</span><code>'+ae(p.url)+'</code></div>'+
+   '<p class="alert-provider-note">Free public aircraft API. No key to enter. Contributor access uses your feeder IP. <a href="https://adsb.fi/" target="_blank" rel="noopener noreferrer">adsb.fi</a></p>'+
+   '<div class="alert-editor-buttons"><button class="btn small primary" id="alertAdsbfiTest" type="button">Test connection</button></div>'+
+   (info.last_success?'<p class="alert-provider-note">Last success: '+whenAlert(info.last_success)+' · '+at(info.aircraft)+' aircraft</p>':'')+
+   (info.error?'<p class="alert-provider-note">'+ae(info.error)+'</p>':'')+
+   '</div></details>';
+ }
  const subtitle=saved?(connected?'Live data fresh':(info.error?'Needs attention':(info.last_success?'Key saved · last test succeeded':'Key saved · not tested'))):'No key saved';
  return '<details class="foldout alert-config alert-provider" id="alert-'+p.id+'"><summary><span>'+ae(p.name)+' <small>'+ae(subtitle)+'</small></span></summary>'+
   '<form class="alert-config-content alert-provider-form" data-provider="'+p.id+'" autocomplete="off">'+
@@ -95,44 +107,33 @@ function editAlert(rule){
  editingRule=rule||{};
  const r=editingRule,node=document.querySelector('#alertEditor');
  if(!node)return;
- node.innerHTML='<form id="alertEditorForm" class="alert-editor alert-editor-refined">'+
+ node.innerHTML='<form id="alertEditorForm" class="alert-editor alert-editor-compact">'+
   '<div class="alert-editor-heading"><strong>'+(r.id?'Edit alert':'New alert')+'</strong><button class="btn small" type="button" id="alertCancel">Cancel</button></div>'+
-  '<section class="alert-edit-section"><h3>1. Aircraft</h3><div class="alert-form-grid">'+
-  '<label class="alert-field">Alert name<input name="label" maxlength="50" required value="'+ae(r.label||'')+'" placeholder="Military nearby"></label>'+
+  '<div class="alert-compact-top">'+
+  '<label class="alert-field">Name<input name="label" maxlength="50" required value="'+ae(r.label||'')+'" placeholder="Military nearby"></label>'+
   '<label class="alert-field">Match by<select name="field" id="alertField">'+fields.map(f=>'<option value="'+f[0]+'" '+(r.field===f[0]?'selected':'')+'>'+f[1]+'</option>').join('')+'</select></label>'+
-  '<label class="alert-field alert-wide" id="alertPatternHolder">Registration, type or pattern<input name="pattern" maxlength="1800" required value="'+ae(r.pattern||'')+'" placeholder="A388 or G-* or BAW*"><small>Up to 100 values separated by commas. * matches anything.</small></label>'+
-  '</div></section>'+
-  '<section class="alert-edit-section"><h3>2. Limits <small>Leave blank for no limit</small></h3><div class="alert-form-grid">'+
-  '<label class="alert-field">Distance (km)<input name="max_km" type="number" step="0.1" min="0.1" max="1000" value="'+ae(r.max_km??'')+'" placeholder="Any distance"></label>'+
-  '<label class="alert-field">Minimum altitude (ft)<input name="min_ft" type="number" min="-2000" max="70000" step="100" value="'+ae(r.min_ft??'')+'" placeholder="Any altitude"></label>'+
-  '<label class="alert-field">Maximum altitude (ft)<input name="max_ft" type="number" min="-2000" max="70000" step="100" value="'+ae(r.max_ft??'')+'" placeholder="Any altitude"></label>'+
-  '</div></section>'+
-  '<section class="alert-edit-section"><h3>3. Sources <small>Both off by default</small></h3>'+
-  '<label class="alert-source-option"><span class="alert-source-copy"><strong>Backup APIs</strong><small>Default OFF. Aircraft must be received by your antenna first. Online sources may fill in missing identity, military classification or MLAT position. Local detection is never delayed.</small></span>'+
-  '<input name="backup_apis" type="checkbox" '+(r.use_flyitaly?'checked':'')+'></label>'+
-  '<label class="alert-source-option"><span class="alert-source-copy"><strong>Also alert for network-only aircraft</strong><small>Default OFF. Allow an API to trigger this rule for an aircraft your antenna has NOT received. Requires Backup APIs and a distance limit.</small></span>'+
-  '<input name="network_only" type="checkbox" '+(r.network_only?'checked':'')+'></label>'+
-  '<p class="alert-explainer">Local receiver always stays enabled. No API keys? The rule still works locally.</p>'+
-  '</section>'+
-  '<div class="alert-editor-buttons"><button type="submit" class="btn primary">Save alert</button>'+
+  '</div>'+
+  '<label class="alert-field alert-compact-pattern" id="alertPatternHolder">Codes / pattern<input name="pattern" maxlength="1800" required value="'+ae(r.pattern||'')+'" placeholder="A388, G-*, BAW*"></label>'+
+  '<div class="alert-compact-limits">'+
+  '<label class="alert-field">Distance (km)<input name="max_km" type="number" step="0.1" min="0.1" max="1000" value="'+ae(r.max_km??'')+'" placeholder="Any"></label>'+
+  '<label class="alert-field">Min alt (ft)<input name="min_ft" type="number" min="-2000" max="70000" step="100" value="'+ae(r.min_ft??'')+'" placeholder="Any"></label>'+
+  '<label class="alert-field">Max alt (ft)<input name="max_ft" type="number" min="-2000" max="70000" step="100" value="'+ae(r.max_ft??'')+'" placeholder="Any"></label>'+
+  '</div>'+
+  '<label class="alert-compact-backup"><input name="backup_apis" type="checkbox" '+(r.use_flyitaly?'checked':'')+'><strong>Backup APIs</strong></label>'+
+  '<p class="alert-compact-note">Off: your antenna only. On: antenna + live API data. A distance limit enables nearby network detections.</p>'+
+  '<div class="alert-editor-buttons"><button type="submit" class="btn primary">Save</button>'+
   (r.id?'<button type="button" class="btn small alert-delete" id="alertDelete">Delete</button>':'')+'</div></form>';
  const form=node.querySelector('form'),match=form.elements.field,pattern=form.elements.pattern;
  const sync=()=>{pattern.disabled=match.value==='military';pattern.required=!pattern.disabled;
   document.querySelector('#alertPatternHolder').hidden=pattern.disabled};
  match.onchange=sync;sync();
- const backup=form.elements.backup_apis,network=form.elements.network_only;
- backup.onchange=()=>{if(!backup.checked)network.checked=false;};
- network.onchange=()=>{if(network.checked)backup.checked=true;};
  document.querySelector('#alertCancel').onclick=()=>{editingRule=null;node.innerHTML='';};
  form.onsubmit=async e=>{
   e.preventDefault();if(alertsBusy)return;
-  if(network.checked&&!form.elements.max_km.value.trim()){
-   feedback('Set a distance limit for network-only detection.',true);return;
-  }
   alertsBusy=true;
   try{
    const obj=Object.fromEntries(new FormData(form));
-   obj.backup_apis=backup.checked;obj.network_only=network.checked;
+   obj.backup_apis=form.elements.backup_apis.checked;
    obj.enabled=r.enabled??1;if(r.id)obj.id=r.id;
    await alertApi('/api/alerts/rule',obj);
    editingRule=null;await refreshAlerts();feedback('Alert saved.');
@@ -141,7 +142,7 @@ function editAlert(rule){
  if(r.id)document.querySelector('#alertDelete').onclick=async()=>{
   if(!confirm('Delete this alert rule?'))return;
   try{await alertApi('/api/alerts/delete',{id:r.id});editingRule=null;await refreshAlerts();feedback('Alert deleted.');}
-  catch(err){feedback(err.message,true)}
+  catch(err){feedback(err.message,true);}
  };
 }
 function bindAlerts(){
@@ -153,6 +154,14 @@ function bindAlerts(){
   try{await alertApi('/api/alerts/rule',{...r,enabled:b.checked});await refreshAlerts();}
   catch(err){b.checked=!b.checked;feedback(err.message,true);}
  });
+ document.querySelector('#alertAdsbfiTest').onclick=async()=>{
+  try{
+   const result=await alertApi('/api/alerts/adsbfi/check',{});
+   await refreshAlerts();
+   ['alertAllConfig','alertApis','alert-adsbfi'].forEach(k=>{document.getElementById(k).open=true;});
+   feedback('adsb.fi connected: '+at(result.aircraft)+' aircraft returned. No key required.');
+  }catch(err){feedback('adsb.fi: '+err.message,true);}
+ };
  document.querySelectorAll('.alert-provider-form').forEach(form=>{
   const id=form.dataset.provider;
   form.onsubmit=async e=>{

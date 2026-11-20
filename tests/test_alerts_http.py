@@ -59,11 +59,20 @@ class AlertsAPITest(unittest.TestCase):
   self.assertFalse(state['flyitaly']['key_set'])
   self.assertFalse(state['adsblol']['key_set'])
 
- def test_network_only_without_distance_rejected(self):
-  with self.assertRaises(HTTPError) as error:
-   self.call('/api/alerts/rule',{'field':'military','backup_apis':True,
-                                'network_only':True})
-  self.assertEqual(error.exception.code,400)
+ def test_backup_checkbox_single_semantics(self):
+  rule1=self.call('/api/alerts/rule',{'field':'military','backup_apis':True})
+  rule2=self.call('/api/alerts/rule',{'field':'military','backup_apis':True,'max_km':40})
+  state=self.call('/api/alerts')
+  rules={r['id']:r for r in state['rules']}
+  self.assertEqual(rules[rule1['id']]['network_only'],0)
+  self.assertEqual(rules[rule2['id']]['network_only'],1)
+  self.call('/api/alerts/delete',{'id':rule1['id']})
+  self.call('/api/alerts/delete',{'id':rule2['id']})
+
+ def test_adsbfi_is_keyless_on_api(self):
+  state=self.call('/api/alerts')
+  self.assertFalse(state['adsbfi']['key_required'])
+  self.assertFalse(state['adsbfi']['key_set'])
 
  def test_cross_origin_and_invalid_rule(self):
   with self.assertRaises(HTTPError) as error:
