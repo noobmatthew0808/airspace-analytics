@@ -11,7 +11,15 @@ import math
 import threading
 import time
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request, urlopen, build_opener, ProxyHandler, HTTPRedirectHandler
+
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        return None
+
+def _private_open(request, timeout=5):
+    """Fixed HTTPS provider only; never forward API keys after redirects."""
+    return build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=timeout)
 
 BASE = 'https://api.flyitalyadsb.com'
 MAX_BYTES = 2_000_000
@@ -30,6 +38,13 @@ def clear():
         _state.update(aircraft=[], last_success=None, last_error=None,
                       source_now=None, plan=None, monthly_used=None,
                       monthly_quota=None, last_count=0)
+
+
+
+def discard_aircraft():
+    """Stop using stale network traffic but retain last successful API test."""
+    with _lock:
+        _state['aircraft']=[]
 
 
 def status(key_set=False):
@@ -51,13 +66,14 @@ def _safe_age(value, maximum):
     return isinstance(value, (int, float)) and math.isfinite(value) and 0 <= value <= maximum
 
 
-def fetch(key, lat, lon, radius_km, opener=urlopen):
+def fetch(key, lat, lon, radius_km, opener=None):
     """Fetch geographic aircraft by radius in **kilometres**.
 
     This runs in a SEPARATE background thread, never in the three-second local
     receiver loop. Bad JSON, stale responses or an HTTP error cannot create
     network-only alerts; the last cache expires after MAX_AGE seconds.
     """
+    if opener is None:opener=_private_open
     if not isinstance(key, str) or not key.strip():
         raise ValueError('FlyItalyADSB key is missing')
     if not all(isinstance(x, (float, int)) and math.isfinite(x)

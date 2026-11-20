@@ -270,19 +270,27 @@ For military rules, the existing read-only Aerodrome classification is used
 when available. Unclassified military aircraft cannot be guaranteed to trigger.
 
 
-### Optional FlyItalyADSB API backup (v1.10.17)
+### Optional external APIs and neat Alert configuration (v1.10.18)
 
-On the local **Alerts** page, expand **FlyItalyADSB API**. Paste your private FlyItaly API key and select **Save API key**, then **Test API**. This stores the key in the website's pre-existing permission-restricted `.airspace-state/alerts.sqlite3` config table; it is not included in GitHub, the downloaded HTML, or the `/api/alerts` response. A blank field keeps the saved key, or use **Remove key** to delete it.
+Go to **Alerts → Configuration & Logs → APIs**. Expand each provider independently:
 
-This feature is **opt-in, per rule** in **Edit rule**:
+- **FlyItalyADSB**: endpoint shown as `https://api.flyitalyadsb.com/v2`. Keys are issued via [My API](https://flyitalyadsb.com/data/api/account/) after enabling Fly Italy ADSB feeding and verifying the free feeder perk. Enter your key, press **Save key**, then **Test connection**. A green connected status, timestamp and aircraft count confirm live API access; no key is exposed in the browser after saving.
+- **adsb.lol**: endpoint shown as `https://api.adsb.lol/v2`. Continue feeding adsb.lol and [request a feeder key when eligible](https://www.adsb.lol/receiver). Enter the new key in the already-present adsb.lol panel. The other source does not need to be disabled.
+- **Remove key** deletes that provider's stored key. **Show** only reveals a key *while you are typing it*; a saved key is never sent back to the browser. A saved-key indicator is displayed instead.
+- Provider URLs are shown read-only so credentials can be sent only to the verified provider hostname. Keys are held only in the existing permission-restricted `.airspace-state/alerts.sqlite3`; they are never placed in public GitHub source, traffic history or API responses.
 
-- **Allow FlyItalyADSB backup data:** apply recent network aircraft metadata and MLAT positions only to aircraft already detected by your local receiver, using the ICAO hex to avoid mixing aircraft. This never replaces fresh local coordinates.
-- **Also alert for network-only aircraft:** permit matches that the remote network sees nearby even if the antenna has not detected the aircraft. Requires an explicit distance in kilometres. Notifications label the network origin.
-- **Minimum RSSI, dBFS:** optional local-signal threshold, e.g. `-20`; only the local receiver can supply this. Network-only rules cannot use RSSI.
+When editing a rule, choose **both OFF by default**:
 
-All existing rules stay local-only by default, including the military and registration watchlists. The independent local worker checks every three seconds with no dependency on external API timing. The optional network worker runs approximately every 12 seconds and uses a 36-second cache expiry; network-only detection is therefore not instantaneous. The provider API uses kilometres, not nautical miles. No API response or history is written into Aerodrome.
+1. **Backup APIs**: the aircraft must be detected first by your own receiver. External sources may fill in its missing registration/type/military classification/MLAT position by ICAO hex. The local 3-second alert worker never waits for a network request.
+2. **Also alert for network-only aircraft**: optionally permit a matching aircraft to trigger *without any reception by your antenna*, if a configured network sees it **within the rule's distance limit**. Requires Backup APIs and an explicit distance in kilometres; notifications label the provider source.
 
-For free Pro-tier access, first enable **Fly Italy ADSB** feeding in ADSB.im, then verify receiver activity and activate the non-commercial feeder perk under [FlyItalyADSB My API](https://flyitalyadsb.com/data/api/account/). A normal Free key also works for the small local area used here. A public key pasted into chat should be rotated before being saved in your private server settings.
+Leaving **Backup APIs** unchecked keeps a rule entirely local-only, exactly as before. For a registration alert intended to mean **my receiver has picked up the aircraft**, leave network-only off. For military alerts based on network MLAT with no local positional reception, network-only may be enabled. Multiple providers reporting the same ICAO count as one aircraft within the rule, not multiple notifications. Neither service guarantees complete military identification or MLAT coverage.
+
+RSSI has been retired from Alerts because signal strength is not a kilometre distance. Existing saved rules are migrated without deleting their history or deduplication, and the obsolete RSSI restriction no longer prevents new matches.
+
+**Configuration & Logs** also contains collapsible Notifications (Send test publishes an ntfy priority-3 test), Receiver (Test connection checks local readsb and antenna coordinates), and Recent alerts (event statuses and sources). **API Test connection** makes one authenticated request for live aircraft; it does **not** send an ntfy notification or require an aircraft to match an alert. This diagnostic is safe to use without modifying the rule state.
+
+FlyItalyADSB distance query uses kilometres; adsb.lol's query radius is converted from kilometres to nautical miles at the HTTP boundary. Your existing local alert distance calculation remains in kilometres. Local alerts always remain available even when one or both APIs fail; backups poll separately at approximately 12 and 30 seconds respectively, within documented limits. No network observations are written into Aerodrome.
 
 ## Live ADS-B terminal (v1.10.9)
 

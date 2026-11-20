@@ -14,7 +14,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import flyitaly
+from . import flyitaly, adsblol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler, ProxyHandler
 from urllib.parse import urlsplit
@@ -130,15 +130,14 @@ def validate_rule(data):
     max_ft = _number(data.get('max_ft'), -2000, 70000, 'Maximum altitude', True)
     if min_ft is not None and max_ft is not None and min_ft > max_ft:
         raise ValueError('Minimum altitude must not exceed maximum')
-    min_rssi = _number(data.get('min_rssi'), -60, 0, 'RSSI', digits=1)
-    use_flyitaly = int(bool(data.get('use_flyitaly',False)))
+    # Legacy column now stores the global Backup APIs option; RSSI retired.
+    min_rssi = None
+    use_flyitaly = int(bool(data.get('backup_apis',data.get('use_flyitaly',False))))
     network_only = int(bool(data.get('network_only',False)))
     if network_only and not use_flyitaly:
-        raise ValueError('Enable FlyItalyADSB backup before enabling network-only alerts')
+        raise ValueError('Enable Backup APIs before enabling network-only alerts')
     if network_only and max_km is None:
         raise ValueError('Network-only alerts require a maximum distance')
-    if network_only and min_rssi is not None:
-        raise ValueError('RSSI is only available from your receiver; disable network-only for RSSI rules')
     return {'label': label, 'field':field,'pattern':pattern, 'max_km': max_km,
             'min_ft':min_ft, 'max_ft':max_ft, 'enabled':int(bool(data.get('enabled',True))),
             'use_flyitaly':use_flyitaly,'network_only':network_only,'min_rssi':min_rssi}
@@ -206,6 +205,39 @@ def save_flyitaly(data):
                       ('flyitaly_key',key))
             changed=True
     if changed:flyitaly.clear()
+
+
+def save_adsblol(data):
+    """Save/remove adsb.lol key only in existing private local configuration."""
+    if not isinstance(data,dict):raise ValueError('Invalid adsb.lol settings')
+    changed=False
+    with _lock, connect() as c:
+        if data.get('clear'):
+            c.execute("DELETE FROM config WHERE key='adsblol_key'")
+            changed=True
+        elif str(data.get('key','')).strip():
+            key=str(data['key']).strip()
+            if not re.fullmatch(r'[A-Za-z0-9_\-]{12,500}',key):
+                raise ValueError('Invalid adsb.lol key format')
+            c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',
+                      ('adsblol_key',key))
+            changed=True
+    if changed:adsblol.clear()
+
+
+def _adsblol_key(c):
+    row=c.execute("SELECT value FROM config WHERE key='adsblol_key'").fetchone()
+    return row['value'] if row else ''
+
+
+def test_adsblol():
+    with _lock, connect() as c:
+        key=_adsblol_key(c)
+        coords=receiver_settings(c)
+    if not key:raise ValueError('Save your adsb.lol feeder key first')
+    if coords['lat'] is None or coords['lon'] is None:
+        raise ValueError('Save antenna coordinates in Receiver setup')
+    return adsblol.fetch(key,coords['lat'],coords['lon'],50)
 
 
 def _flyitaly_key(c):
@@ -325,6 +357,7 @@ def snapshot():
         events=[dict(x) for x in c.execute('SELECT id,rule_id,rule_label,hex,callsign,registration,aircraft_type,distance_km,altitude_ft,created,delivery,source FROM events ORDER BY id DESC LIMIT 60')]
         pub,_=notifier(c)
         return {'rules':rules,'events':events,'ntfy':pub,'flyitaly':flyitaly.status(bool(_flyitaly_key(c))), 'receiver':dict(_last_sample),
+                'adsblol':adsblol.status(bool(_adsblol_key(c))),
                 'receiver_settings':receiver_settings(c)}
 
 
@@ -352,11 +385,6 @@ def _classify(rule, plane, lat,lon, receiver_lat,receiver_lon, was_active):
                'hex':plane.get('hex'),'operator':plane.get('_operator') or plane.get('ownOp')}.get(field)
         matched = bool(value and _match_pattern(rule['pattern'],str(value).strip()))
     if not matched: return False
-    if rule.get('min_rssi') is not None:
-        rssi=plane.get('rssi')
-        if not isinstance(rssi,(int,float)) or not math.isfinite(rssi):
-            return None
-        if rssi < rule['min_rssi']:return False
     max_km=rule['max_km']
     if max_km is not None:
         if lat is None or lon is None or receiver_lat is None or receiver_lon is None:return None
@@ -407,8 +435,7 @@ def enrich_aircraft(aircraft):
 def _merge_external(local, remote):
     """Fill missing local fields with recent network data, never replace fresh local data.
 
-    This is only called for rules that explicitly permit FlyItalyADSB backup.
-    RSSI is never borrowed from the network because it is receiver-specific.
+    Only called for rules that explicitly enable Backup APIs.
     """
     if not remote:return local
     merged=dict(local)
@@ -450,7 +477,17 @@ def process_snapshot(payload, receiver_lat, receiver_lon, now=None, external=Non
         if not isinstance(p,dict):continue
         code=str(p.get('hex','')).lower().strip()
         if re.fullmatch(r'[0-9a-f]{6}',code):
-            extra[code]=p
+            # Merge matching ICAOs from multiple networks; prefer freshest position.
+            previous=extra.get(code)
+            if previous is None:extra[code]=p
+            else:
+                prior_age=previous.get('seen_pos')
+                new_age=p.get('seen_pos')
+                better=(isinstance(new_age,(int,float)) and math.isfinite(new_age)
+                        and (not isinstance(prior_age,(int,float)) or
+                             not math.isfinite(prior_age) or new_age<prior_age))
+                extra[code]=(_merge_external(p,previous) if better
+                             else _merge_external(previous,p))
     # Existing Aerodrome data is still available for unclassified external aircraft.
     if extra:enrich_aircraft(list(extra.values()))
     local_hex={
@@ -505,7 +542,7 @@ def process_snapshot(payload, receiver_lat, receiver_lon, now=None, external=Non
                      str(plane.get('r') or '').strip()[:24],
                      str(plane.get('t') or '').strip()[:12],
                      match['distance_km'],match['altitude_ft'],now,now,
-                     'FlyItalyADSB' if network_only else 'local'))
+                     (str(plane.get('_network_source') or 'FlyItalyADSB') if network_only else 'local')))
         # Missing observations are not proof of exit. Preserve prior behaviour.
         for key,old in current.items():
             if key not in seen and now-old['last_seen']>=LOST_SECONDS:
@@ -691,7 +728,7 @@ def deliver_pending(now=None, opener=urlopen):
         body=f"{event['callsign'] or event['registration'] or event['hex']} · {event['aircraft_type'] or 'Aircraft'}"
         if event['distance_km'] is not None:body+=f" · {event['distance_km']} km"
         if event['altitude_ft'] is not None:body+=f" · {event['altitude_ft']:,} ft"
-        network=event['source']=='FlyItalyADSB'
+        network=event['source']!='local'
         headers={'Title':event['rule_label']+(' (network)' if network else '')+' nearby',
                  'Priority':'3','Content-Type':'text/plain; charset=utf-8'}
         # A network-only aircraft may not exist on the LOCAL tar1090 map.
@@ -730,7 +767,8 @@ def loop():
     while True:
         try:
             payload,lat,lon=read_receiver()
-            process_snapshot(payload,lat,lon,external=flyitaly.aircraft())
+            process_snapshot(payload,lat,lon,
+                             external=flyitaly.aircraft()+adsblol.aircraft())
             with _lock:_last_sample['source']=_last_good_url
         except Exception as exc:
             with _lock:_last_sample['error']=str(exc)[:180]
@@ -755,10 +793,28 @@ def flyitaly_loop():
                 except ValueError:pass   # Status is visible without exposing keys
                 interval=12
             else:
-                flyitaly.clear()
+                flyitaly.discard_aircraft()
         except Exception:
             # Optional network failure must never affect the local alerts.
             pass
+        time.sleep(interval)
+
+
+def adsblol_loop():
+    """Optional adsb.lol feeder API, separate from local and FlyItaly workers."""
+    while True:
+        interval=30
+        try:
+            with _lock, connect() as c:
+                key=_adsblol_key(c)
+                receiver=receiver_settings(c)
+                rows=c.execute('SELECT max_km FROM rules WHERE enabled=1 AND use_flyitaly=1').fetchall()
+            if key and rows and receiver['lat'] is not None and receiver['lon'] is not None:
+                radius=min(450.,max(75.,*(float(row['max_km'] or 100) for row in rows)))
+                try:adsblol.fetch(key,receiver['lat'],receiver['lon'],radius)
+                except ValueError:pass
+            else:adsblol.discard_aircraft()
+        except Exception:pass
         time.sleep(interval)
 
 
@@ -770,4 +826,6 @@ def start():
         Thread=threading.Thread(target=loop,name='airspace-alerts',daemon=True)
         Thread.start()
         threading.Thread(target=flyitaly_loop,name='airspace-flyitaly',
+                         daemon=True).start()
+        threading.Thread(target=adsblol_loop,name='airspace-adsblol',
                          daemon=True).start()
