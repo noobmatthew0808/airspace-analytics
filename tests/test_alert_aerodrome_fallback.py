@@ -84,7 +84,7 @@ class AerodromeFallbackTests(unittest.TestCase):
         self.assertEqual(len(payload['aircraft']),1)
         again,_,_=alerts.read_receiver()
         self.assertEqual(again['aircraft'],[])
-        self.assertEqual(self.get.call_count,5)  # one full localhost attempt, then DB cache
+        self.assertEqual(self.get.call_count,len(alerts.DEFAULT_RECEIVER_URLS))  # one full localhost attempt, then DB cache
 
     def test_recent_aircraft_count_does_not_flicker_to_zero(self):
         self.sighting('abc123')

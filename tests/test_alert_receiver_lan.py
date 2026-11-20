@@ -1,4 +1,6 @@
 """Regression: tar1090 can be published on this Linux machine's LAN IP only."""
+import os
+import sqlite3
 import tempfile
 import time
 import unittest
@@ -69,7 +71,56 @@ class TestReceiverOnLAN(unittest.TestCase):
         self.assertIn('http://192.168.1.187:1099/map/data/aircraft.json',urls)
         self.assertIn('http://192.168.1.187:1099/data/aircraft.json',urls)
         self.assertIn('http://192.168.1.187:8080/data/aircraft.json',urls)
+        self.assertIn('http://192.168.1.187:1090/data/aircraft.json',urls)
+        self.assertEqual(urls[0], 'http://127.0.0.1:1090/data/aircraft.json')
         self.assertEqual(len(set(urls)),len(urls))
+
+
+    def test_new_live_ultrafeeder_port_triggers_registration_and_type_alerts(self):
+        """The receiver's verified readsb JSON fields drive real alert rules."""
+        alerts.save_receiver({'lat':'50.0','lon':'0.0'})
+        alerts.save_rule({'label':'Watchlist','field':'registration','pattern':'HA-LDG',
+                         'max_km':20,'max_ft':14000})
+        alerts.save_rule({'label':'A340','field':'type','pattern':'A34*','max_km':20})
+        feed={'now':time.time(),'aircraft':[{'hex':'abc123','r':'HA-LDG','t':'A346',
+              'lat':50.01,'lon':0.0,'alt_baro':9000,'seen':0,'seen_pos':0}]}
+        live_url='http://127.0.0.1:1090/data/aircraft.json'
+        tried=[]
+        def fetch(url):
+            tried.append(url)
+            if url==live_url:return feed
+            if url==live_url.replace('aircraft.json','receiver.json'):return {}
+            raise URLError('Unexpected feed')
+        with patch.object(alerts,'_get_json',side_effect=fetch):
+            payload,lat,lon=alerts.read_receiver()
+        self.assertEqual((lat,lon),(50.0,0.0))
+        self.assertEqual(tried[0],live_url)
+        self.assertEqual(alerts._last_good_url,live_url)
+        alerts.process_snapshot(payload,lat,lon)
+        self.assertEqual({e['rule_label'] for e in alerts.snapshot()['events']},
+                         {'Watchlist','A340'})
+        self.assertTrue(all(e['distance_km']<20 for e in alerts.snapshot()['events']))
+
+    def test_live_source_missing_dbflags_uses_aerodrome_military_category(self):
+        """Readsb may omit dbFlags: trusted existing Aerodrome classification still works."""
+        from backend import data
+        dbfile=Path(self.temp.name)/'aerodrome.db'
+        with sqlite3.connect(dbfile) as db:
+            db.execute('CREATE TABLE seen_aircraft (icao TEXT PRIMARY KEY, registration TEXT, '
+                       'aircraft_type TEXT, operator TEXT, category TEXT)')
+            db.executemany('INSERT INTO seen_aircraft VALUES (?,?,?,?,?)',[
+                ('abc123','G-TEST','A400','Military operator','military'),
+                ('def456','G-CIVIL','A320','Civil operator','commercial')])
+        alerts.save_rule({'label':'Military','field':'military','pattern':'YES','max_km':40})
+        live={'aircraft':[
+            {'hex':'abc123','r':'G-TEST','t':'A400','seen':0,'seen_pos':0,
+             'lat':50.01,'lon':0.0,'alt_baro':8000},
+            {'hex':'def456','r':'G-CIVIL','t':'A320','seen':0,'seen_pos':0,
+             'lat':50.01,'lon':0.0,'alt_baro':8000}]}
+        # The live feed contains full r/t, but no dbFlags on either aircraft.
+        with patch.dict(os.environ, {'AIRSPACE_DB':str(dbfile)}):
+            alerts.process_snapshot(live,50.0,0.0)
+        self.assertEqual([e['hex'] for e in alerts.snapshot()['events']],['abc123'])
 
     def test_unreachable_manual_source_does_not_scan_other_hosts(self):
         wanted='http://192.168.1.187:1099/data/aircraft.json'
