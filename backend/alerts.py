@@ -13,6 +13,8 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
+
+from . import flyitaly
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler, ProxyHandler
 from urllib.parse import urlsplit
@@ -55,7 +57,10 @@ def connect():
     CREATE TABLE IF NOT EXISTS rules (
         id INTEGER PRIMARY KEY, label TEXT NOT NULL, field TEXT NOT NULL,
         pattern TEXT NOT NULL, max_km REAL, min_ft INTEGER, max_ft INTEGER,
-        enabled INTEGER NOT NULL DEFAULT 1, created INTEGER NOT NULL
+        enabled INTEGER NOT NULL DEFAULT 1, created INTEGER NOT NULL,
+        use_flyitaly INTEGER NOT NULL DEFAULT 0,
+        network_only INTEGER NOT NULL DEFAULT 0,
+        min_rssi REAL
     );
     CREATE TABLE IF NOT EXISTS occupancy (
         rule_id INTEGER NOT NULL, hex TEXT NOT NULL, state TEXT NOT NULL,
@@ -67,10 +72,22 @@ def connect():
         hex TEXT NOT NULL, callsign TEXT, registration TEXT, aircraft_type TEXT,
         distance_km REAL, altitude_ft INTEGER, created INTEGER NOT NULL,
         delivery TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
-        next_attempt INTEGER NOT NULL DEFAULT 0, last_error TEXT
+        next_attempt INTEGER NOT NULL DEFAULT 0, last_error TEXT,
+        source TEXT NOT NULL DEFAULT 'local'
     );
     CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     ''')
+    # Add new optional columns on existing installs without changing rules or history.
+    for table, additions in (
+        ('rules', (('use_flyitaly', 'INTEGER NOT NULL DEFAULT 0'),
+                   ('network_only', 'INTEGER NOT NULL DEFAULT 0'),
+                   ('min_rssi', 'REAL'))),
+        ('events', (('source', "TEXT NOT NULL DEFAULT 'local'"),)),
+    ):
+        existing = {row[1] for row in conn.execute(f'PRAGMA table_info({table})')}
+        for column, declaration in additions:
+            if column not in existing:
+                conn.execute(f'ALTER TABLE {table} ADD COLUMN {column} {declaration}')
     try: os.chmod(DB_PATH, 0o600)
     except OSError: pass
     try:
@@ -113,8 +130,18 @@ def validate_rule(data):
     max_ft = _number(data.get('max_ft'), -2000, 70000, 'Maximum altitude', True)
     if min_ft is not None and max_ft is not None and min_ft > max_ft:
         raise ValueError('Minimum altitude must not exceed maximum')
+    min_rssi = _number(data.get('min_rssi'), -60, 0, 'RSSI', digits=1)
+    use_flyitaly = int(bool(data.get('use_flyitaly',False)))
+    network_only = int(bool(data.get('network_only',False)))
+    if network_only and not use_flyitaly:
+        raise ValueError('Enable FlyItalyADSB backup before enabling network-only alerts')
+    if network_only and max_km is None:
+        raise ValueError('Network-only alerts require a maximum distance')
+    if network_only and min_rssi is not None:
+        raise ValueError('RSSI is only available from your receiver; disable network-only for RSSI rules')
     return {'label': label, 'field':field,'pattern':pattern, 'max_km': max_km,
-            'min_ft':min_ft, 'max_ft':max_ft, 'enabled':int(bool(data.get('enabled',True)))}
+            'min_ft':min_ft, 'max_ft':max_ft, 'enabled':int(bool(data.get('enabled',True))),
+            'use_flyitaly':use_flyitaly,'network_only':network_only,'min_rssi':min_rssi}
 
 
 def save_rule(data):
@@ -126,12 +153,12 @@ def save_rule(data):
             except (ValueError,TypeError): raise ValueError('Invalid rule ID')
             exists=c.execute('SELECT 1 FROM rules WHERE id=?',(rule_id,)).fetchone()
             if not exists: raise ValueError('Rule not found')
-            c.execute('UPDATE rules SET label=?,field=?,pattern=?,max_km=?,min_ft=?,max_ft=?,enabled=? WHERE id=?',
+            c.execute('UPDATE rules SET label=?,field=?,pattern=?,max_km=?,min_ft=?,max_ft=?,enabled=?,use_flyitaly=?,network_only=?,min_rssi=? WHERE id=?',
                 (*item.values(),rule_id))
             # Changing filters must not leave stale armed state from the old rule.
             c.execute('DELETE FROM occupancy WHERE rule_id=?',(rule_id,))
         else:
-            cur=c.execute('INSERT INTO rules(label,field,pattern,max_km,min_ft,max_ft,enabled,created) VALUES(?,?,?,?,?,?,?,?)',
+            cur=c.execute('INSERT INTO rules(label,field,pattern,max_km,min_ft,max_ft,enabled,use_flyitaly,network_only,min_rssi,created) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
                           (*item.values(),int(time.time())))
             rule_id=cur.lastrowid
         return rule_id
@@ -161,6 +188,45 @@ def save_notifier(data):
             token=str(data['token']).strip()
             if len(token)>500: raise ValueError('Token too long')
             c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',('token',token))
+
+
+def save_flyitaly(data):
+    """Store the API key in private local SQLite state only, never in GitHub."""
+    if not isinstance(data,dict):raise ValueError('Invalid FlyItalyADSB settings')
+    changed=False
+    with _lock, connect() as c:
+        if data.get('clear'):
+            c.execute("DELETE FROM config WHERE key='flyitaly_key'")
+            changed=True
+        elif 'key' in data and str(data['key']).strip():
+            key=str(data['key']).strip()
+            if not re.fullmatch(r'[A-Za-z0-9_-]{20,250}',key):
+                raise ValueError('Invalid FlyItalyADSB API key format')
+            c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',
+                      ('flyitaly_key',key))
+            changed=True
+    if changed:flyitaly.clear()
+
+
+def _flyitaly_key(c):
+    row=c.execute("SELECT value FROM config WHERE key='flyitaly_key'").fetchone()
+    return row['value'] if row else ''
+
+
+def flyitaly_status():
+    with _lock, connect() as c:
+        configured=bool(_flyitaly_key(c))
+    return flyitaly.status(key_set=configured)
+
+
+def test_flyitaly():
+    with _lock, connect() as c:
+        key=_flyitaly_key(c)
+        coords=receiver_settings(c)
+    if not key:raise ValueError('Save your FlyItalyADSB key first')
+    if coords['lat'] is None or coords['lon'] is None:
+        raise ValueError('Save your antenna coordinates under Receiver setup first')
+    return flyitaly.fetch(key,coords['lat'],coords['lon'],50)
 
 
 def receiver_settings(c):
@@ -253,12 +319,12 @@ def notifier(c):
 
 def snapshot():
     with _lock, connect() as c:
-        rules=[dict(x) for x in c.execute('SELECT id,label,field,pattern,max_km,min_ft,max_ft,enabled FROM rules ORDER BY id DESC')]
+        rules=[dict(x) for x in c.execute('SELECT id,label,field,pattern,max_km,min_ft,max_ft,enabled,use_flyitaly,network_only,min_rssi FROM rules ORDER BY id DESC')]
         active={r['rule_id']:r['n'] for r in c.execute("SELECT rule_id,count(*) n FROM occupancy WHERE state='active' GROUP BY rule_id")}
         for r in rules:r['active']=active.get(r['id'],0)
-        events=[dict(x) for x in c.execute('SELECT id,rule_id,rule_label,hex,callsign,registration,aircraft_type,distance_km,altitude_ft,created,delivery FROM events ORDER BY id DESC LIMIT 60')]
+        events=[dict(x) for x in c.execute('SELECT id,rule_id,rule_label,hex,callsign,registration,aircraft_type,distance_km,altitude_ft,created,delivery,source FROM events ORDER BY id DESC LIMIT 60')]
         pub,_=notifier(c)
-        return {'rules':rules,'events':events,'ntfy':pub,'receiver':dict(_last_sample),
+        return {'rules':rules,'events':events,'ntfy':pub,'flyitaly':flyitaly.status(bool(_flyitaly_key(c))), 'receiver':dict(_last_sample),
                 'receiver_settings':receiver_settings(c)}
 
 
@@ -286,6 +352,11 @@ def _classify(rule, plane, lat,lon, receiver_lat,receiver_lon, was_active):
                'hex':plane.get('hex'),'operator':plane.get('_operator') or plane.get('ownOp')}.get(field)
         matched = bool(value and _match_pattern(rule['pattern'],str(value).strip()))
     if not matched: return False
+    if rule.get('min_rssi') is not None:
+        rssi=plane.get('rssi')
+        if not isinstance(rssi,(int,float)) or not math.isfinite(rssi):
+            return None
+        if rssi < rule['min_rssi']:return False
     max_km=rule['max_km']
     if max_km is not None:
         if lat is None or lon is None or receiver_lat is None or receiver_lon is None:return None
