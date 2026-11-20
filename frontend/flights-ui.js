@@ -427,13 +427,15 @@ async function requestStatuses(){
   if(status)status.textContent='Live status temporarily unavailable';
  }
 }
-function scheduleStatusRefresh(){
+function scheduleStatusRefresh(first=false){
  if(flightTimer)clearTimeout(flightTimer);
+ // One early refresh lets the asynchronous route lookup populate the
+ // flight table without making the initial Google Sheet load wait.
  flightTimer=setTimeout(async()=>{
   if(location.hash==='#flights'&&document.getElementById('flightsTableBody')){
-   await requestStatuses();scheduleStatusRefresh();
+   try{await requestStatuses();}finally{scheduleStatusRefresh(false);}
   }
- },35000);
+ },first?12000:35000);
 }
 export function stopFlightsPage(){
  flightsGeneration++;statusRequestNumber++;manageActive=false;manageMode=null;
@@ -497,5 +499,5 @@ export async function renderFlightsPage(){
  renderFilters();renderTable();
  try{await loadFlights(true);}
  catch(e){feedback(e.message||'Could not load flights from Google Sheets.',true);}
- scheduleStatusRefresh();
+ scheduleStatusRefresh(true);
 }
