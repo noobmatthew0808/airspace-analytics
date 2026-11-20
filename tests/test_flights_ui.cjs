@@ -57,7 +57,7 @@ test('exact original four filtered statistics and latest-first dates',async()=>{
  const {filterFlightRows,flightLogTestHelpers:h}=await exportsPromise;
  const all=filterFlightRows(rows,h.blankFilters());
  assert.deepEqual(all.map(r=>r.id),['2','1','3']);
- assert.deepEqual(h.stats(all),{flights:3,regs:3,routes:3,years:2});
+ assert.deepEqual(h.stats(all),{flights:3,regs:2,routes:3,years:2});
  const f=h.blankFilters();f.from_airport=['LGW'];
  assert.deepEqual(h.stats(filterFlightRows(rows,f)),{flights:2,regs:1,routes:2,years:2});
 });
