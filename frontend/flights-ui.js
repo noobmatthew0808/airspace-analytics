@@ -82,17 +82,23 @@ const optionsFor=key=>{
  const definition=filterDefinitions.find(x=>x.key===key);
  return definition?definition.options(sourceRows()):[];
 };
-const filteredRows=()=>{
- const q=normalizeFilterSearch(searchTerm);
- return sortedRows().filter(row=>{
-  const f=activeFilters;
+export function filterFlightRows(rows,filters,query=''){
+ const q=normalizeFilterSearch(query);
+ const f=filters;
+ return sortedRows(rows).filter(row=>{
   const match=(key,value)=>filterMatchesSelected(value,f[key]||[]);
   return match('year',yearFromRow(row))&&match('airline',row.airline)&&
-   (!f.who.length||splitPeople(row.who).some(person=>match('who',person)))&&
+   (!(f.who||[]).length||splitPeople(row.who).some(person=>match('who',person)))&&
    match('from_airport',row.from_airport)&&match('to_airport',row.to_airport)&&
    match('airplane',row.airplane)&&match('flight_code',row.flight_code)&&
    (!q||normalizeRegistration(row.registration).includes(q));
  });
+}
+const filteredRows=()=>filterFlightRows(sourceRows(),activeFilters,searchTerm);
+export const flightLogTestHelpers={
+ normalizeRow,normalizeWho,normalizeRegistration,getCurrentRegistration,
+ parseDate,toInputDate,niceDate,yearFromRow,uniqueYears,uniqueValues,
+ uniquePeople,blankFilters,stats,filterMatchesSelected
 };
 const stats=rows=>({
  flights:rows.length,
