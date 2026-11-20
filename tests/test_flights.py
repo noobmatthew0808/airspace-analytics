@@ -4,7 +4,7 @@ import time
 import unittest
 import sqlite3
 import json
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, MagicMock
 from urllib.error import URLError
 
 from backend import flights_log, flights_live
@@ -203,7 +203,7 @@ class LiveStatusTests(unittest.TestCase):
             calls.append(req)
             content=json.dumps({'now':time.time(),'ac':[{
                 'hex':'4080f7','r':'G-WUKU','alt_baro':32000,'seen':1}]}).encode()
-            obj=Mock()
+            obj=MagicMock()
             obj.headers={}
             obj.read.return_value=content
             obj.__enter__=Mock(return_value=obj)
