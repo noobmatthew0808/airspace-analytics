@@ -17,14 +17,14 @@ function notifyInline(message,error=false){
 }
 function alertRule(r){
  return '<article class="alert-rule"><div class="alert-rule-main"><div class="alert-rule-title"><strong>'+ae(r.label)+'</strong><span class="alert-tag">'+at(r.active||0)+' active</span></div>'+
- '<div class="alert-rule-meta">'+ae(r.field==='military'?'Military':r.field+': '+r.pattern)+' · '+at(r.max_km)+' km · '+at(r.min_ft)+'–'+at(r.max_ft)+' ft</div></div>'+
+ '<div class="alert-rule-meta">'+ae(r.field==='military'?'Military':r.field+': '+r.pattern)+' · '+at(r.max_km)+' km · '+at(r.min_ft)+'–'+at(r.max_ft)+' ft'+(r.min_rssi!=null?' · RSSI ≥ '+ae(r.min_rssi)+' dBFS':'')+(r.use_flyitaly?' · FlyItaly backup':'')+(r.network_only?' · Network-only permitted':'')+'</div></div>'+
  '<div class="alert-rule-actions"><label class="alert-switch"><input type="checkbox" data-toggle="'+r.id+'" '+(r.enabled?'checked':'')+' aria-label="Enable alert"><span>On</span></label>'+
  '<button class="btn small" type="button" data-edit="'+r.id+'">Edit</button></div></article>';
 }
 function alertEvent(e){
  return '<div class="alert-event"><div><strong>'+ae(e.rule_label)+'</strong> <span class="muted">'+ae(e.callsign||e.registration||e.hex)+'</span>'+
  '<div class="alert-event-meta">'+ae(e.aircraft_type||'Unknown')+' · '+ae(e.hex.toUpperCase())+' · '+at(e.distance_km)+' km · '+at(e.altitude_ft)+' ft</div></div>'+
- '<div class="alert-event-time">'+whenAlert(e.created)+'<div>'+ae(e.delivery)+'</div></div></div>';
+ '<div class="alert-event-time">'+whenAlert(e.created)+'<div>'+ae(e.delivery)+(e.source==='FlyItalyADSB'?' · Network':'')+'</div></div></div>';
 }
 function renderAlertPageContents(){
  const host=document.querySelector('#page');if(!host||!alertsData)return;
@@ -40,9 +40,19 @@ function renderAlertPageContents(){
  '<label class="alert-field alert-wide">Access token <small>'+(d.ntfy.token_set?'Saved · blank to keep':'Optional')+'</small><input type="password" name="token" autocomplete="off" placeholder="Leave empty to keep saved token"></label>'+
  '</div><div class="alert-editor-buttons"><button class="btn primary" type="submit">Save notifications</button><button class="btn small" type="button" id="alertTest">Send test</button>'+
  (d.ntfy.token_set?'<label class="alert-clear"><input type="checkbox" id="clearNtfyToken"> Clear token</label>':'')+'</div></form></details>'+
+ '<details class="foldout alert-config" id="alertFlyItaly"><summary><span>FlyItalyADSB API <small>'+(d.flyitaly?.key_set?(d.flyitaly.connected?'Connected':(d.flyitaly.error?'Error · check connection':'Key saved')):'Not configured')+'</small></span></summary>'+
+ '<form id="alertFlyItalyForm" class="alert-config-content" autocomplete="off"><div class="alert-form-grid">'+
+ '<label class="alert-field alert-wide">FlyItalyADSB API key <small>'+(d.flyitaly?.key_set?'Saved privately on this computer · leave blank to keep':'Not stored in GitHub or returned by the API')+'</small><input name="key" type="password" autocomplete="new-password" placeholder="Paste your FlyItaly API key"></label>'+
+ '</div><div class="alert-editor-buttons"><button class="btn primary" type="submit">Save API key</button><button class="btn small" type="button" id="alertFlyItalyTest">Test API</button>'+
+ (d.flyitaly?.key_set?'<label class="alert-clear"><input type="checkbox" id="clearFlyItalyKey"> Remove key</label>':'')+'</div>'+
+ '<small>Only alert rules with FlyItaly backup enabled will use this service. Local receiver alerts run independently. '+
+ (d.flyitaly?.plan?'Plan: '+ae(d.flyitaly.plan)+' · ':'')+
+ (d.flyitaly?.monthly_used?'Monthly requests: '+ae(d.flyitaly.monthly_used)+'/'+ae(d.flyitaly.monthly_quota||'?')+' · ':'')+
+ (d.flyitaly?.last_success?'Last connected: '+whenAlert(d.flyitaly.last_success)+' · ':'')+
+ (d.flyitaly?.error?'Last error: '+ae(d.flyitaly.error):'')+'</small></form></details>'+
  '<details class="foldout alert-config" id="alertReceiver"><summary><span>Receiver setup <small>'+(receiver.lat!=null&&receiver.lon!=null?'Antenna located':'Optional setup')+'</small></span></summary>'+
  '<form id="alertReceiverForm" class="alert-config-content"><div class="alert-form-grid">'+
- '<label class="alert-field alert-wide">Aircraft feed URL <small>Leave blank for automatic localhost and LAN detection</small><input name="url" type="url" value="'+ae(d.receiver_settings?.url||'')+'" placeholder="http://'+ae(location.hostname)+':1099/data/aircraft.json"></label>'+
+ '<label class="alert-field alert-wide">Aircraft feed URL <small>Leave blank for automatic localhost and LAN detection</small><input name="url" type="url" value="'+ae(d.receiver_settings?.url||'')+'" placeholder="http://'+ae(location.hostname)+':1090/data/aircraft.json"></label>'+
  '<label class="alert-field">Antenna latitude<input name="lat" type="number" min="-90" max="90" step="any" value="'+ae(d.receiver_settings?.lat??'')+'" placeholder="Automatic"></label>'+
  '<label class="alert-field">Antenna longitude<input name="lon" type="number" min="-180" max="180" step="any" value="'+ae(d.receiver_settings?.lon??'')+'" placeholder="Automatic"></label>'+
  '</div><div class="alert-editor-buttons"><button type="submit" class="btn primary">Save receiver</button><button type="button" class="btn small" id="alertReceiverCheck">Test connection</button></div></form></details>'+
@@ -63,6 +73,9 @@ function editAlert(rule){
  '<label class="alert-field">Distance, km<input name="max_km" type="number" step="0.1" min="0.1" max="1000" value="'+ae(r.max_km??'')+'" placeholder="Any"></label>'+
  '<label class="alert-field">Min altitude, ft<input name="min_ft" type="number" min="-2000" max="70000" step="100" value="'+ae(r.min_ft??'')+'" placeholder="Any"></label>'+
  '<label class="alert-field">Max altitude, ft<input name="max_ft" type="number" min="-2000" max="70000" step="100" value="'+ae(r.max_ft??'')+'" placeholder="Any"></label>'+
+ '<label class="alert-field">Minimum RSSI, dBFS <small>Optional, local signal only; −20 is selective</small><input name="min_rssi" type="number" min="-60" max="0" step="0.5" value="'+ae(r.min_rssi??'')+'" placeholder="Any"></label>'+
+ '<label class="alert-field alert-wide"><input type="checkbox" name="use_flyitaly" '+(r.use_flyitaly?'checked':'')+'> Allow FlyItalyADSB backup data <small>Fill missing identities / network MLAT positions for aircraft seen by your receiver</small></label>'+
+ '<label class="alert-field alert-wide"><input type="checkbox" name="network_only" '+(r.network_only?'checked':'')+'> Also alert for network-only aircraft <small>Requires FlyItaly backup and a distance limit. Never uses RSSI.</small></label>'+
  '</div><div class="alert-editor-buttons"><button type="submit" class="btn primary">Save rule</button>'+
  (r.id?'<button type="button" id="alertDelete" class="btn small alert-delete">Delete</button>':'')+'</div></form>';
  const form=node.querySelector('form');
@@ -97,6 +110,24 @@ function bindAlerts(){
   try{const result=await alertApi('/api/alerts/receiver/check',{});
    notifyInline(result.aircraft+(result.source?.startsWith('Aerodrome')?' aircraft seen in last 30 seconds':' aircraft in current snapshot')+(result.coordinates_available?' · antenna position available':' · antenna position missing (distance filters need coordinates)')+(result.source?' · '+result.source:''));}
   catch(err){notifyInline(err.message,true)}};
+ const flyForm=document.querySelector('#alertFlyItalyForm');
+ flyForm.onsubmit=async e=>{e.preventDefault();
+   const value=flyForm.elements.key.value.trim();
+   const clear=document.querySelector('#clearFlyItalyKey')?.checked||false;
+   try{
+     await alertApi('/api/alerts/flyitaly',clear?{clear:true}:(value?{key:value}:{}));
+     flyForm.elements.key.value='';
+     await refreshAlerts();document.querySelector('#alertFlyItaly').open=true;
+     notifyInline(clear?'FlyItalyADSB key removed.':'FlyItalyADSB key saved privately.');
+   }catch(err){notifyInline(err.message,true)}
+ };
+ document.querySelector('#alertFlyItalyTest').onclick=async()=>{
+   try{
+     const result=await alertApi('/api/alerts/flyitaly/check',{});
+     await refreshAlerts();document.querySelector('#alertFlyItaly').open=true;
+     notifyInline('FlyItalyADSB API connected · '+result.aircraft+' aircraft near antenna'+(result.plan?' · '+result.plan+' plan':''));
+   }catch(err){notifyInline(err.message,true)}
+ };
  const form=document.querySelector('#alertNtfyForm');
  form.onsubmit=async e=>{e.preventDefault();const wasOpen=true;const obj=Object.fromEntries(new FormData(form));
    if(!obj.token&&!document.querySelector('#clearNtfyToken')?.checked)delete obj.token;
@@ -111,13 +142,15 @@ export async function renderAlertsPage(){
  host.innerHTML='<div class="loading">Loading alerts…</div>';
  try{await refreshAlerts()}catch(err){host.innerHTML='<div class="notice error-note">'+ae(err.message)+'</div>';return}
  const poll=async()=>{if(location.hash!=='#alerts')return;
-  try{if(!document.querySelector('#alertEditorForm')&&!document.querySelector('#alertNtfyForm:focus-within')&&!document.querySelector('#alertReceiverForm:focus-within')){
+  try{if(!document.querySelector('#alertEditorForm')&&!document.querySelector('#alertNtfyForm:focus-within')&&!document.querySelector('#alertReceiverForm:focus-within')&&!document.querySelector('#alertFlyItalyForm:focus-within')){
    const ntfyOpen=document.querySelector('#alertNtfy')?.open;
    const receiverOpen=document.querySelector('#alertReceiver')?.open;
+  const flyItalyOpen=document.querySelector('#alertFlyItaly')?.open;
    const historyOpen=document.querySelector('#alertHistory')?.open;
    await refreshAlerts();
    if(ntfyOpen)document.querySelector('#alertNtfy').open=true;
    if(receiverOpen)document.querySelector('#alertReceiver').open=true;
+  if(flyItalyOpen)document.querySelector('#alertFlyItaly').open=true;
    if(historyOpen===false)document.querySelector('#alertHistory').open=false;
   }}catch{}
   alertsTimer=setTimeout(poll,10000);

@@ -186,7 +186,7 @@ class App(BaseHTTPRequestHandler):
 
     def alerts_post(self, path):
         """Same-origin, trusted-LAN-only control plane for personal alert rules."""
-        if path not in ('/api/alerts/rule','/api/alerts/delete','/api/alerts/ntfy','/api/alerts/test','/api/alerts/receiver','/api/alerts/receiver/check'):
+        if path not in ('/api/alerts/rule','/api/alerts/delete','/api/alerts/ntfy','/api/alerts/test','/api/alerts/receiver','/api/alerts/receiver/check','/api/alerts/flyitaly','/api/alerts/flyitaly/check'):
             return self.send_json({'error':'Unknown endpoint'},404)
         origin=self.headers.get('Origin','')
         host=self.headers.get('Host','')
@@ -215,6 +215,11 @@ class App(BaseHTTPRequestHandler):
         if path=='/api/alerts/ntfy':
             alerts.save_notifier(payload)
             return self.send_json({'ok':True})
+        if path=='/api/alerts/flyitaly':
+            alerts.save_flyitaly(payload)
+            return self.send_json({'ok':True})
+        if path=='/api/alerts/flyitaly/check':
+            return self.send_json(alerts.test_flyitaly())
         if path=='/api/alerts/receiver':
             alerts.save_receiver(payload)
             return self.send_json({'ok':True})
