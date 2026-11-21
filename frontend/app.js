@@ -451,6 +451,45 @@ function periodHeading(data){
 function applyFilterState(){
  if(!state.filtersEnabled)Object.assign(state,{category:'all',type:'all',airline:'all',icao:'all'});
 }
+// Show the extra ranking only while the Traffic timeline is on one full month.
+function isFullMonthChart(){
+ if(state.period!=='custom'||state.bucket!=='week')return false;
+ const match=/^(\d{4})-(\d{2})-01T00:00$/.exec(String(state.start||''));
+ if(!match)return false;
+ const year=Number(match[1]),month=Number(match[2]);
+ if(month<1||month>12)return false;
+ const next=new Date(Date.UTC(year,month,1)).toISOString().slice(0,7)+'-01T00:00';
+ return state.end===next;
+}
+// Rank only the displayed month's recorded dates, retaining absent days last.
+function rankMonthDays(series){
+ return (Array.isArray(series)?series:[])
+  .filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(String(d.key)))
+  .sort((a,b)=>{
+   const recordedA=a.has_data!==false,recordedB=b.has_data!==false;
+   if(recordedA!==recordedB)return recordedB?1:-1;
+   return (Number(b.value)||0)-(Number(a.value)||0)||String(a.key).localeCompare(String(b.key));
+  });
+}
+function renderMonthRanking(series,metric){
+ const days=rankMonthDays(series);
+ if(!days.length)return '<div class="empty">No daily data for this month.</div>';
+ const unit={flights:'visits',aircraft:'aircraft',observations:'observations'}[metric]||'visits';
+ const max=Math.max(1,...days.filter(d=>d.has_data!==false).map(d=>Number(d.value)||0));
+ return '<div class="month-rank-title">Busiest days <small>Most to least · '+esc(unit)+'</small></div>'+
+  '<ol class="month-rank-list">'+days.map((d,i)=>{
+   const recorded=d.has_data!==false,value=Number(d.value)||0;
+   const date=new Date(String(d.key)+'T12:00:00Z').toLocaleDateString('en-GB',
+     {weekday:'short',day:'numeric',month:'short'});
+   return '<li class="month-rank-row'+(recorded?'':' month-rank-missing')+'">'+
+    '<span class="month-rank-place">'+(i+1)+'.</span>'+
+    '<time datetime="'+esc(d.key)+'">'+esc(date)+'</time>'+
+    '<span class="month-rank-bar"><i style="width:'+
+    (recorded?Math.max(0,Math.min(100,value/max*100)):0)+'%"></i></span>'+
+    '<strong>'+(recorded?fmt(value):'—')+'</strong></li>';
+  }).join('')+'</ol>'+
+  '<div class="muted tiny">— means no recorded observations; the receiver may have been offline.</div>';
+}
 function drawCurrentChart(){
  if(!currentAnalytics)return;
  const visibleSeries=todayChartSeries(currentAnalytics);
@@ -536,9 +575,10 @@ async function renderExplore(){const rid=++renderId;currentAnalytics=null;applyF
   <div class="${state.filtersEnabled?'':'filters-disabled'}" id="filtersBody">${controls(false)}</div>
  </details>
  <section class="main-chart-panel"><div class="main-chart-head"><div><div id="chartPeriod" class="chart-period">Loading period…</div><h2 id="chartLabel">Estimated flight visits</h2><div id="chartMeta" class="muted tiny">Loading…</div></div>
- <div class="chart-tools"><button class="btn small ${zoomHistory.length?'':'hidden'}" id="zoomBack" type="button">${icon('chevron',13)} Zoom out</button><button class="btn small" id="zoomReset" type="button">All years</button><span class="chart-toggle"><button class="btn small" id="barSwitch" type="button">Bars</button><button class="btn small" id="lineSwitch" type="button">Line</button></span></div></div>
+ <div class="chart-tools"><button class="btn small ${zoomHistory.length?'':'hidden'}" id="zoomBack" type="button">${icon('chevron',13)} Zoom out</button><button class="btn small" id="zoomReset" type="button">All years</button><button class="btn small hidden" id="monthRankToggle" type="button" aria-controls="monthRankPanel" aria-expanded="false">Graph</button><span class="chart-toggle"><button class="btn small" id="barSwitch" type="button">Bars</button><button class="btn small" id="lineSwitch" type="button">Line</button></span></div></div>
  <div id="exploreStats" class="compact-stats">${loading()}</div>
  <div id="exploreChart" class="chart-frame">${loading()}</div>
+ <div id="monthRankPanel" class="month-rank-panel" hidden></div>
  <div class="chart-foot"><span id="pointCount">—</span><span>Tap a bar or point to see the next level</span></div></section>
  <details class="foldout" id="breakdownDetails" open><summary><span>${icon('layers',18)} Breakdowns <small>Category · aircraft type · operator</small></span>${icon('chevron',17)}</summary><div class="breakdown-head"><button class="btn small" id="breakdownVizSwitch" type="button">${state.typeViz==='pie'?'Show bars':'Show pies'}</button></div>
  <div class="grid-three breakdown-grid"><div class="panel"><h3 class="panel-title">Aviation category</h3><div id="categoryDonut">${loading()}</div></div><div class="panel"><h3 class="panel-title">Aircraft types</h3><div id="typeBars">${loading()}</div></div><div class="panel"><select id="operatorScope" class="breakdown-scope" aria-label="Operator breakdown">${opts([['airline','Airlines · commercial'],['operator','Operators · all']],state.operatorScope||'airline')}</select><div id="airlineBars">${loading()}</div></div></div></details>
@@ -552,6 +592,21 @@ async function renderExplore(){const rid=++renderId;currentAnalytics=null;applyF
  $('#barSwitch').onclick=()=>{state.chart='bar';persist();drawCurrentChart()};
  $('#zoomBack').onclick=()=>{followingToday=false;const prev=zoomHistory.pop();if(prev){Object.assign(state,prev);persist();renderExplore()}};
  $('#zoomReset').onclick=()=>{resetTimeline();renderExplore()};
+ $('#monthRankToggle').onclick=async()=>{
+  const button=$('#monthRankToggle'),panel=$('#monthRankPanel');
+  if(!currentAnalytics||!isFullMonthChart())return;
+  if(!panel.hidden){panel.hidden=true;button.setAttribute('aria-expanded','false');return;}
+  panel.hidden=false;button.setAttribute('aria-expanded','true');
+  panel.innerHTML=loading('Ranking the days…');
+  try{
+   const daily=await api('/api/analytics',queryArgs('day'));
+   if(rid!==renderId||panel.hidden)return;
+   panel.innerHTML=renderMonthRanking(daily.series,daily.metric);
+  }catch(error){
+   if(rid!==renderId||panel.hidden)return;
+   panel.innerHTML='<div class="empty">'+esc(error.message||error)+'</div>';
+  }
+ };
  try{
   const a=await api('/api/analytics',queryArgs());if(rid!==renderId)return;
   currentAnalytics=a;fillFilterOptions(a);
@@ -560,6 +615,7 @@ async function renderExplore(){const rid=++renderId;currentAnalytics=null;applyF
   $('#chartPeriod').textContent=periodHeading(a);
   $('#chartMeta').textContent=`Grouped by ${a.bucket==='hour'?'hour':a.bucket==='day'?'day':a.bucket==='week'?'week':a.bucket==='month'?'month':'year'}`;
   $('#pointCount').textContent=`${todayChartSeries(a).length} intervals`;
+  $('#monthRankToggle').classList.toggle('hidden',!(a.bucket==='week'&&isFullMonthChart()));
   drawCurrentChart();
   function showBreakdowns(){
    const pie=state.typeViz==='pie';
