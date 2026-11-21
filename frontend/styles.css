@@ -382,3 +382,24 @@ body.launcher-mode .launcher-header{margin-bottom:24px;padding-bottom:16px}
 .hc-incident>span{flex-shrink:0;font-weight:700}
 .hc-footnote{margin:12px 2px 2px;line-height:1.5}
 @media(max-width:650px){.hc-wrapper{padding:10px}.hc-metrics{grid-template-columns:1fr}.hc-incident{align-items:flex-start;flex-wrap:wrap}.hc-check{padding:11px}}
+
+/* v1.10.25 — optional month-only ranked dates beneath Traffic chart. */
+.month-rank-panel[hidden]{display:none}
+.month-rank-panel{border-top:1px solid var(--line);margin:12px 0 0;padding:13px 0 3px}
+.month-rank-title{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:12px;font-weight:700;margin-bottom:9px;color:var(--text)}
+.month-rank-title small{font-size:10px;color:var(--muted);font-weight:400}
+.month-rank-list{list-style:none;margin:0 0 9px;padding:0;display:grid;gap:2px}
+.month-rank-row{display:grid;grid-template-columns:26px minmax(102px,128px) minmax(40px,1fr) 54px;align-items:center;gap:9px;min-height:31px;padding:4px 7px;border-radius:5px;font-size:11px}
+.month-rank-row:nth-child(odd){background:var(--panel2)}
+.month-rank-place{color:var(--muted);font-variant-numeric:tabular-nums}
+.month-rank-row time{white-space:nowrap;color:var(--text)}
+.month-rank-row strong{text-align:right;font-weight:650;font-variant-numeric:tabular-nums}
+.month-rank-bar{display:block;height:7px;border-radius:6px;background:var(--panel3);overflow:hidden}
+.month-rank-bar i{display:block;height:100%;border-radius:6px;background:var(--aqua)}
+.month-rank-missing{opacity:.62}
+@media(max-width:700px){
+ .month-rank-panel{padding-top:10px}
+ .month-rank-row{grid-template-columns:21px 91px minmax(22px,1fr) 42px;gap:5px;padding:4px 3px;font-size:10px}
+ .month-rank-title{font-size:11px}
+ .month-rank-title small{font-size:9px}
+}
