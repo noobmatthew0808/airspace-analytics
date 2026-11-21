@@ -55,3 +55,25 @@ assert.match(source,/api\('\/api\/analytics',queryArgs\('day'\)\)/);
 assert.match(source,/if\(rid!==renderId\|\|panel\.hidden\)return/);
 assert.match(css,/\.month-rank-panel\[hidden\]\{display:none\}/);
 console.log('PASS: Month-only Graph button, daily ranking, ties, absent data, months and existing chart safeguards');
+
+
+// The requested button belongs to Activity Calendar's month view, NOT
+// just the main Traffic chart's separately drilled down month.
+const calendarSource=fs.readFileSync('frontend/calendar.js','utf8');
+const sandbox={window:{}};
+vm.runInNewContext(calendarSource,sandbox);
+const sample=[{key:'2026-11-09',value:421,has_data:true},
+              {key:'2026-11-10',value:457,has_data:true}];
+const month=sandbox.window.AirspaceCalendar.render(sample,{level:'month',year:2026,month:11,metric:'flights'});
+const year=sandbox.window.AirspaceCalendar.render(sample,{level:'year',year:2026,month:11,metric:'flights'});
+assert.match(month,/November 2026/);
+assert.match(month,/data-heat-back/);
+assert.match(month,/data-heat-graph[^>]*>Graph<\/button>/);
+assert.match(month,/id="calendarRankPanel" class="month-rank-panel" hidden/);
+assert.doesNotMatch(year,/data-heat-graph/);
+assert.doesNotMatch(year,/id="calendarRankPanel"/);
+assert.match(source,/const graph=\$\('\[data-heat-graph\]'/);
+assert.match(source,/ranking\.innerHTML=renderMonthRanking\(response\.series,metric\)/);
+assert.match(source,/ranking\.hidden=!open/);
+assert.match(source,/graph\.setAttribute\('aria-expanded',String\(open\)\)/);
+console.log('PASS: Activity Calendar month header has Graph toggle, uses existing daily data, absent on year');
