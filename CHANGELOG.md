@@ -1,3 +1,10 @@
+# v1.10.25 — Month Traffic Graph button: busiest days
+
+- Only when the main Traffic chart is drilled into a **single calendar month** (the month-to-week timeline level), display a small **Graph** button alongside the existing chart controls.
+- Press Graph to expand or collapse a compact daily ranked list, sorting every date returned by the existing **daily** analytics endpoint from most to fewest observations for the selected metric (Visits/Aircraft/Samples), breaking ties by ascending date. Days without recorded observations are marked — and kept at the bottom; zero could otherwise imply the receiver was online.
+- The original chart, year/month/week/day/hour navigation, filters, metric selection, graph types, alerts, flight log, database and other pages are unmodified. The additional read-only daily request only runs when the user taps Graph, and stale responses are discarded on navigation.
+- Added deterministic Node regression tests for month-only visibility, 2026 December rollover, leap year, sorting/ties/missing observations and Traffic wiring; full Python/browser and unchanged Traffic anchor regression still run.
+
 # v1.10.24 — Include registration in aircraft push notifications
 
 - Every ntfy aircraft alert now shows **callsign · registration · aircraft type · distance · altitude** when the registration is known, e.g. `WUK83GK · G-WUKU · A21N · 40.0 km · 9,725 ft`. If only one identifier is available, show it once; do not display empty placeholders or duplicate callsign/registration values.
