@@ -732,7 +732,17 @@ def deliver_pending(now=None, opener=urlopen):
         if not public['topic']:return
         pending=[dict(x) for x in c.execute("SELECT * FROM events WHERE delivery='pending' AND next_attempt<=? ORDER BY id LIMIT 5",(now,))]
     for event in pending:
-        body=f"{event['callsign'] or event['registration'] or event['hex']} · {event['aircraft_type'] or 'Aircraft'}"
+        # Show the registration as well as the callsign whenever it is known.
+        # Only add a second identifier when it is different (a registration-
+        # only sighting must not display the same text twice).
+        callsign=str(event['callsign'] or '').strip()
+        registration=str(event['registration'] or '').strip()
+        identity=callsign or registration or str(event['hex'])
+        identifiers=[identity]
+        if callsign and registration and registration.casefold()!=callsign.casefold():
+            identifiers.append(registration)
+        identifiers.append(event['aircraft_type'] or 'Aircraft')
+        body=' · '.join(identifiers)
         if event['distance_km'] is not None:body+=f" · {event['distance_km']} km"
         if event['altitude_ft'] is not None:body+=f" · {event['altitude_ft']:,} ft"
         network=event['source']!='local'
