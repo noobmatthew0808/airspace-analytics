@@ -102,6 +102,37 @@ class AlertsTest(unittest.TestCase):
                       {'field':'type','pattern':'A388','min_ft':10000,'max_ft':5000},
                       {'field':'registration','pattern':'G-ABC','max_km':-1}):
             with self.assertRaises(ValueError):alerts.save_rule(value)
+    def test_ntfy_shows_callsign_and_registration_without_duplicates(self):
+        self.rule()
+        alerts.save_notifier({'topic':'test_local_alerts'})
+        all_planes=[
+            plane('abc123',flight='WUK83GK',reg='G-WUKU',t='A21N',alt=9725),
+            plane('abc124',flight='BAW123',reg='',t='B738',alt=10500),
+            plane('abc125',flight='',reg='G-EZBH',t='A319',alt=8000),
+            plane('abc126',flight='G-ABCD',reg='g-abcd',t='A21N',alt=7500),
+        ]
+        # Aircraft types for this test all match this test rule.
+        alerts.save_rule({'label':'Aircraft types','field':'type',
+                          'pattern':'A21N,B738,A319','max_km':25})
+        # The default A380 test rule is intentionally not triggered here.
+        alerts.process_snapshot({'aircraft':all_planes},50,0,now=100)
+        response=Mock()
+        response.status=200
+        response.__enter__=Mock(return_value=response)
+        response.__exit__=Mock(return_value=None)
+        opener=Mock(return_value=response)
+        alerts.deliver_pending(now=100,opener=opener)
+        bodies=[call.args[0].data.decode('utf-8') for call in opener.call_args_list]
+        self.assertEqual(len(bodies),4)
+        self.assertTrue(any(text.startswith('WUK83GK · G-WUKU · A21N · ') and
+                            '9,725 ft' in text for text in bodies))
+        self.assertTrue(any(text.startswith('BAW123 · B738 · ') for text in bodies))
+        self.assertTrue(any(text.startswith('G-EZBH · A319 · ') for text in bodies))
+        self.assertTrue(any(text.startswith('G-ABCD · A21N · ') for text in bodies))
+        self.assertFalse(any('G-ABCD · g-abcd' in text for text in bodies))
+        self.assertTrue(all(' km · ' in text for text in bodies))
+        self.assertTrue(all(event['delivery']=='sent' for event in alerts.snapshot()['events']))
+
     def test_ntfy_tap_opens_selected_aircraft_on_local_map(self):
         self.rule()
         alerts.save_notifier({'topic':'test_local_alerts'})

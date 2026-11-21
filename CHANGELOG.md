@@ -1,3 +1,9 @@
+# v1.10.24 — Include registration in aircraft push notifications
+
+- Every ntfy aircraft alert now shows **callsign · registration · aircraft type · distance · altitude** when the registration is known, e.g. `WUK83GK · G-WUKU · A21N · 40.0 km · 9,725 ft`. If only one identifier is available, show it once; do not display empty placeholders or duplicate callsign/registration values.
+- Keep the existing ntfy topic, priority, tap-to-tar1090 aircraft selection, source label, per-aircraft deduplication, alert rules and API configuration. No changes to the alert threshold logic, ADS-B receiver or website's other pages.
+- Offline regression test covers complete callsign+registration, callsign-only, registration-only, identical identifiers, altitude/distance preservation and delivered status.
+
 # v1.10.23 — Fix Flights clipping and add real route/history sources
 
 - Make flight list its own lower-padding, full-width section beneath existing filters. Replace the accumulated conflicting mobile table sizing with one deterministic CSS-grid five-column row (Date/Route/Flight/Reg+live/Who), hard min-width rules and no sideways clipping. Show compact Who label on phone and preserve full names in details/SheetDB; use consistent regular-weight route and registration text.
