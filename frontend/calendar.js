@@ -54,7 +54,8 @@
     const heading=level==='month'?MONTHS[m-1]+' '+y:String(y);
     const keys={flights:'estimated visits',aircraft:'unique aircraft',observations:'observations'};
     return `<div class="calendar-heatmap" role="group" aria-label="${escapeHtml(heading)} traffic calendar">
-      <div class="calendar-headline"><strong>${escapeHtml(heading)}</strong><span class="calendar-head-actions">${level==='month'?`<button type="button" class="btn small" data-heat-back>← ${y}</button>`:''}<span>Daily ${escapeHtml(keys[metric]||metric)}</span></span></div>
+      <div class="calendar-headline"><strong>${escapeHtml(heading)}</strong><span class="calendar-head-actions">${level==='month'?`<button type="button" class="btn small" data-heat-back>← ${y}</button><button type="button" class="btn small" data-heat-graph aria-controls="calendarRankPanel" aria-expanded="false">Graph</button>`:''}<span>Daily ${escapeHtml(keys[metric]||metric)}</span></span></div>
+      ${level==='month'?'<div id="calendarRankPanel" class="month-rank-panel" hidden></div>':''}
       <div class="calendar-months ${level==='month'?'single-month':'year-months'}">${months.map(mon=>monthGrid(y,mon,points,max,level)).join('')}</div>
       <div class="calendar-legend"><span>Less</span>${[0.15,.3,.5,.7,1].map(v=>`<i style="background-color:hsl(172 74% ${Math.round(22+36*v)}%)"></i>`).join('')}<span>More</span><span class="calendar-no-data">No data</span></div>
     </div>`;
