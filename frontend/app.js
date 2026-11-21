@@ -561,6 +561,16 @@ async function fillPatterns(rid,a){
      $('#heatmap').innerHTML=loading();
      renderCalendar().catch(e=>$('#heatmap').innerHTML=safeError(e));
    };
+   // Reuse this calendar's daily API series. No additional request.
+   const graph=$('[data-heat-graph]',$('#heatmap'));
+   if(graph)graph.onclick=()=>{
+     const ranking=$('#calendarRankPanel');
+     if(!ranking)return;
+     const open=ranking.hidden;
+     if(open)ranking.innerHTML=renderMonthRanking(response.series,metric);
+     ranking.hidden=!open;
+     graph.setAttribute('aria-expanded',String(open));
+   };
  };
  try{await renderStats();await renderCalendar();}
  catch(e){if(rid!==renderId||run!==patternsRequestId)return;
