@@ -1,3 +1,9 @@
+# v1.10.26 — Activity Calendar month Graph button
+
+- Correct the location of the new month-ranking option: add **Graph** beside the year-back control inside the **Activity Calendar** month header (as pictured by the user). It is absent from the twelve-month calendar year view.
+- Pressing Graph expands/collapses a busiest-to-quietest daily ranking using the **already-fetched calendar daily analytics**, current Traffic metric and filters. No additional network calls, database changes, chart modifications or new UI outside the Activity Calendar.
+- Leave the prior main chart and every other Traffic, Alerts, Flights, feeder and notification feature untouched. Extend the existing month-ranking browser regression to verify the calendar month/year markup and event wiring.
+
 # v1.10.25 — Month Traffic Graph button: busiest days
 
 - Only when the main Traffic chart is drilled into a **single calendar month** (the month-to-week timeline level), display a small **Graph** button alongside the existing chart controls.
