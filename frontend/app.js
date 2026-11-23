@@ -777,10 +777,113 @@ function collectSettingsLinks(){const original=getLinks();return $$('[data-linki
  if(logoDomain&&!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(logoDomain))throw Error('Logo domain should look like flightaware.com');
  return {...original[idx],name:$('.link-name',el).value.trim().slice(0,50)||'New link',group:$('.link-group',el).value,sub:original[idx]?.sub||'Application shortcut',port,path,url,logoDomain,extraLabel:$('.link-extra-label',el).value.trim().slice(0,32),extraPort,extraUrl,extraPath:$('.link-extra-path',el).value.trim()||'/',icon:original[idx]?.icon||'external'};
 })}
+// Suggestions use existing read-only daily analytics; never save anything without a click.
+function suggestedAverageExclusions(visitsSeries, observationSeries, firstRecordedDate, today, excluded=[]) {
+ const dayPattern=/^\d{4}-\d{2}-\d{2}$/;
+ const observationByDay=new Map((observationSeries||[]).filter(x=>dayPattern.test(String(x.key))).map(x=>[x.key,x]));
+ const ignored=new Set(excluded);
+ const complete=(visitsSeries||[]).filter(x=>{
+  const other=observationByDay.get(x.key);
+  return dayPattern.test(String(x.key))&&x.key>firstRecordedDate&&x.key<today&&
+   x.has_data===true&&other?.has_data===true&&
+   Number.isFinite(Number(x.value))&&Number.isFinite(Number(other.value))&&Number(other.value)>0;
+ }).map(x=>({date:x.key,visits:Number(x.value),observations:Number(observationByDay.get(x.key).value)}))
+  .sort((a,b)=>a.date.localeCompare(b.date));
+ const median=values=>{
+  const nums=values.slice().sort((a,b)=>a-b),n=nums.length;
+  return n%2?nums[(n-1)/2]:(nums[n/2-1]+nums[n/2])/2;
+ };
+ const suggestions=[];
+ for(let i=0;i<complete.length;i++){
+  const day=complete[i];
+  if(ignored.has(day.date))continue;
+  const previous=complete.slice(Math.max(0,i-35),i).filter(x=>!ignored.has(x.date));
+  if(previous.length<7)continue;
+  const weekday=new Date(day.date+'T12:00:00Z').getUTCDay();
+  const sameWeekday=previous.filter(x=>new Date(x.date+'T12:00:00Z').getUTCDay()===weekday);
+  const matched=sameWeekday.length>=3;
+  const peers=matched?sameWeekday:previous.slice(-28);
+  const usualVisits=median(peers.map(x=>x.visits));
+  const usualObservations=median(peers.map(x=>x.observations));
+  if(usualVisits<15||usualObservations<150)continue;
+  const visitDrop=1-day.visits/usualVisits;
+  const observationDrop=1-day.observations/usualObservations;
+  // Require two independent activity indicators to agree; ordinary quiet days
+  // or days with missing data are not enough to suggest an exclusion.
+  if(visitDrop<0.50||observationDrop<0.35)continue;
+  suggestions.push({
+   date:day.date,visits:day.visits,usualVisits:Math.round(usualVisits),
+   visitDrop:Math.round(visitDrop*100),observations:day.observations,
+   usualObservations:Math.round(usualObservations),observationDrop:Math.round(observationDrop*100),
+   comparisonDays:peers.length,sameWeekday:matched,score:visitDrop+observationDrop
+  });
+ }
+ return suggestions.sort((a,b)=>b.score-a.score||b.date.localeCompare(a.date)).slice(0,6);
+}
+let excludedEditorExpanded=false;
+let suggestedExclusionCache=null;
+let suggestedExclusionRequest=null;
 function averageExclusionSettings(){
  const days=excludedAverageDays();
- const list=days.map(day=>`<div class="setting-actions excluded-day-row"><span>${esc(day)}</span><button class="btn small" type="button" data-include-day="${esc(day)}">Include again</button></div>`).join('')||'<span class="muted">All recorded dates are included.</span>';
- return `<details class="foldout" id="excludedDaysEditor"><summary>${days.length} excluded date(s)</summary><div class="setting-actions"><input id="excludeDate" type="date" value="2026-11-09" aria-label="Date to exclude"><button class="btn" id="addExcludedDay" type="button">Exclude</button></div><div id="excludedDaysList">${list}</div><small class="muted">Affects weekday/hour averages in this browser only. Aerodrome data stays unchanged.</small></details>`;
+ const list=days.map(day=>'<div class="setting-actions excluded-day-row"><span>'+esc(day)+'</span><button class="btn small" type="button" data-include-day="'+esc(day)+'">Include again</button></div>').join('')||'<span class="muted">All recorded dates are included.</span>';
+ return '<details class="foldout" id="excludedDaysEditor" '+(excludedEditorExpanded?'open':'')+'><summary>'+days.length+' excluded date(s)</summary>'+
+  '<div class="setting-actions"><input id="excludeDate" type="date" value="2026-11-09" aria-label="Date to exclude"><button class="btn" id="addExcludedDay" type="button">Exclude</button></div>'+
+  '<div id="excludedDaysList">'+list+'</div>'+
+  '<small class="muted">Affects weekday/hour averages in this browser only. Aerodrome data stays unchanged.</small>'+
+  '<section class="suggested-exclusions" aria-label="Suggested dates to exclude"><div class="suggested-exclusions-head"><strong>Suggested dates to exclude</strong><small class="muted">Review only · never automatic</small></div>'+
+  '<div id="suggestedExclusions" aria-live="polite"><p class="muted tiny">Open this section to check for unusually low data.</p></div></section></details>';
+}
+async function loadSuggestedAverageExclusions(){
+ const fold=$('#excludedDaysEditor'),target=$('#suggestedExclusions');
+ if(!fold?.open||!target)return;
+ target.innerHTML=loading('Checking recent daily activity…');
+ try{
+  const today=ukToday();
+  if(!suggestedExclusionCache||suggestedExclusionCache.day!==today||Date.now()-suggestedExclusionCache.at>300000){
+   if(!suggestedExclusionRequest){
+    suggestedExclusionRequest=Promise.all([
+     api('/api/analytics',{period:'rolling',amount:90,unit:'days',bucket:'day',metric:'flights'}),
+     api('/api/analytics',{period:'rolling',amount:90,unit:'days',bucket:'day',metric:'observations'})
+    ]).then(([visits,observations])=>({day:today,at:Date.now(),visits,observations}))
+     .finally(()=>{suggestedExclusionRequest=null});
+   }
+   suggestedExclusionCache=await suggestedExclusionRequest;
+  }
+  if(currentPage!=='settings'||$('#excludedDaysEditor')!==fold||!fold.open)return;
+  const recordStart=suggestedExclusionCache.visits.coverage?.first;
+  const firstDay=recordStart?new Date(recordStart*1000).toLocaleDateString('sv-SE',{timeZone:'Europe/London'}):
+   suggestedExclusionCache.visits.series.find(x=>x.has_data===true)?.key||today;
+  const candidates=suggestedAverageExclusions(suggestedExclusionCache.visits.series,
+   suggestedExclusionCache.observations.series,firstDay,today,excludedAverageDays());
+  if(!candidates.length){
+   target.innerHTML='<p class="muted tiny">No clear unusually low dates found. Suggestions require at least 7 earlier recorded days; today, the first partial day and days with no observations are skipped.</p>';
+   return;
+  }
+  target.innerHTML='<p class="muted tiny">Compared with earlier recorded days. A low count does not prove missing data or an outage.</p>'+
+   '<div class="suggested-exclusions-list">'+candidates.map(x=>{
+    const date=new Date(x.date+'T12:00:00Z').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+    const basis=x.sameWeekday?'previous matching weekdays':'previous recorded days';
+    return '<div class="suggested-exclusion-row"><div class="suggested-exclusion-info">'+
+     '<strong>'+esc(date)+'</strong><span class="muted tiny">'+x.comparisonDays+' '+basis+'</span>'+
+     '<span class="tiny">Visits: <b>'+fmt(x.visits)+'</b> vs typical '+fmt(x.usualVisits)+' (−'+x.visitDrop+'%)</span>'+
+     '<span class="tiny">Observations: <b>'+fmt(x.observations)+'</b> vs typical '+fmt(x.usualObservations)+' (−'+x.observationDrop+'%)</span>'+
+     '</div><button class="btn small" type="button" data-suggest-exclude="'+esc(x.date)+'">Add to excluded</button></div>';
+   }).join('')+'</div>';
+  $$('[data-suggest-exclude]',target).forEach(btn=>btn.onclick=()=>{
+   const day=btn.dataset.suggestExclude,excluded=excludedAverageDays();
+   if(excluded.includes(day))return;
+   if(excluded.length>=64){
+    target.insertAdjacentHTML('afterbegin','<p class="muted tiny">Maximum of 64 excluded dates. Include another date again first.</p>');
+    return;
+   }
+   setExcludedAverageDays([...excluded,day]);
+   excludedEditorExpanded=true;
+   renderSettings();
+  });
+ }catch(e){
+  if(currentPage==='settings'&&$('#excludedDaysEditor')===fold&&fold.open)
+   target.innerHTML='<p class="muted tiny">Suggestions unavailable: '+esc(e.message||e)+'. Existing exclusions are unaffected.</p>';
+ }
 }
 function updateBox(){return `<div class="auth-box">
   <div class="status-row" style="margin-bottom:9px"><i class="dot" id="updateDot"></i><strong id="updateHeading">Checking GitHub…</strong></div>
@@ -865,6 +968,9 @@ async function renderSettings(){const rid=++renderId;
   ${settingsRow('Aerodrome database','',`<a id="databaseInfo" class="database-hitbox" href="/analytics#database" title="Open database" aria-label="Browse database">${loading()}</a>`)}
  </div>`;
  $('#launcherEditor').ontoggle=()=>{launcherEditorExpanded=$('#launcherEditor').open};
+ const excludedFold=$('#excludedDaysEditor');
+ excludedFold.addEventListener('toggle',()=>{excludedEditorExpanded=excludedFold.open;if(excludedFold.open)loadSuggestedAverageExclusions()});
+ if(excludedFold.open)loadSuggestedAverageExclusions();
  $('#healthchecksFold').addEventListener('toggle',()=>{if($('#healthchecksFold').open)refreshHealthchecks()});
  $('#hcRefresh').onclick=()=>refreshHealthchecks(true);
  $$('.shortcut-edit-row').forEach(row=>row.addEventListener('toggle',()=>{if(row.open)$$('.shortcut-edit-row').forEach(other=>{if(other!==row)other.open=false});}));
