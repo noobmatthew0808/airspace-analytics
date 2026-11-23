@@ -1,3 +1,10 @@
+# v1.10.27 — Suggested dates to exclude (manual review)
+
+- In Settings → Excluded days from averages, add **Suggested dates to exclude** beneath the existing manual exclusion list. Suggestions load only when this section is expanded; each proposal shows the date, estimated visits versus a historical median, observation records versus a historical median, percentage drops and comparison sample size.
+- Analyze the last 90 days of Aerodrome's existing read-only daily analytics, prefer same-weekday comparisons where there are at least three earlier matches, and otherwise use 7–28 earlier recorded dates. Suggest only when both estimated visits (at least 50% down) and observation records (at least 35% down) are unusually low. Skip today, the first partial date, dates with no recorded observations and already-excluded dates; show no suggestions if there is insufficient evidence.
+- **Never exclude automatically.** A date is added to the existing browser-only excluded-days storage solely when its **Add to excluded** button is pressed. The 64-date cap, Include again controls and current weekday/hour average calculations remain unchanged. No Aerodrome database writes, background monitoring, new service or external dependencies.
+- Add a compact responsive card layout and deterministic regression tests for confidence thresholds, missing data, incomplete dates, existing exclusions and explicit manual-only action. Leave Traffic, Alerts, Flights, receiver and updater behaviour unchanged.
+
 # v1.10.26 — Activity Calendar month Graph button
 
 - Correct the location of the new month-ranking option: add **Graph** beside the year-back control inside the **Activity Calendar** month header (as pictured by the user). It is absent from the twelve-month calendar year view.
