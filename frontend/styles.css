@@ -403,3 +403,18 @@ body.launcher-mode .launcher-header{margin-bottom:24px;padding-bottom:16px}
  .month-rank-title{font-size:11px}
  .month-rank-title small{font-size:9px}
 }
+
+
+/* Suggested average exclusions: read-only anomaly review in Settings. */
+.suggested-exclusions{border-top:1px solid var(--line);margin-top:12px;padding:14px 14px 16px}
+.suggested-exclusions-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:9px}
+.suggested-exclusions-head strong{font-size:12px}
+.suggested-exclusions-list{display:grid;gap:8px;margin-top:10px}
+.suggested-exclusion-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);min-width:0}
+.suggested-exclusion-info{display:grid;gap:2px;min-width:0}
+.suggested-exclusion-info strong{font-size:12px}
+.suggested-exclusion-row button{flex-shrink:0}
+@media(max-width:540px){
+ .suggested-exclusion-row{align-items:flex-start;flex-direction:column}
+ .suggested-exclusion-row button{align-self:flex-start}
+}
