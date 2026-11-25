@@ -134,7 +134,7 @@ class App(BaseHTTPRequestHandler):
         if path=='/api/live/details': return self.send_json(live_details.details(q))
         if path=='/api/alerts': return self.send_json(alerts.snapshot())
         if path=='/api/preferences': return self.send_json(shared_settings.read())
-        if path=='/api/flights/records': return self.send_json(flights_log.read())
+        if path=='/api/flights/records': return self.send_json(flights_log.read_cached(force=q.get('refresh')=='1'))
         if path=='/api/flights/live': return self.send_json(flights_cache.read(q.get('regs','')))
         if path=='/api/health': return self.send_json(data.health())
         if path=='/api/monitoring/healthchecks': return self.send_json(healthchecks.snapshot(refresh=q.get('refresh')=='1'))
@@ -352,6 +352,7 @@ def run():
     ThreadingHTTPServer.daemon_threads=True
     server=ThreadingHTTPServer((host,port),App)
     alerts.start()
+    flights_log.start_cache()
     flights_cache.start()
     print(f'Airspace Analytics v{VERSION} on http://{host}:{port}; Aerodrome DB {data.db_path()}',flush=True)
     try: server.serve_forever(poll_interval=0.5)
