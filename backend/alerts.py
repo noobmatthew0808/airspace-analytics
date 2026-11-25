@@ -440,6 +440,16 @@ def _provider_tests(c):
         result[provider]={k:entry[k] for k in ('ok','at','message') if k in entry}
     return result
 
+def save_provider_key(provider,payload):
+    functions={'flyitaly':save_flyitaly,'adsblol':save_adsblol,
+               'avioadsb':save_avio,'adsbiq':save_adsbiq}
+    if provider not in functions:raise ValueError('Unknown API source')
+    with _lock:
+        functions[provider](payload)
+        with connect() as c:
+            c.execute('DELETE FROM config WHERE key=?',('provider_test_'+provider,))
+
+
 def run_provider_test(provider):
     functions={'flyitaly':test_flyitaly,'adsblol':test_adsblol,
                'avioadsb':test_avio,'adsbiq':test_adsbiq,'adsbfi':test_adsbfi}
