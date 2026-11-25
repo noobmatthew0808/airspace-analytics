@@ -9,8 +9,8 @@ import time
 from . import alerts, flights_log, flights_live
 
 PERIOD = 35
-SHEET_PERIOD = 900
-LIVE_TTL = 75
+SHEET_PERIOD = 6 * 3600  # SheetDB free quota is only 500 calls/month
+LIVE_TTL = 45
 AIRPORT_TTL = 24 * 3600
 MAX_TRACKED = 400
 PATH = alerts.STATE_DIR / 'flights-live.json'
@@ -35,6 +35,13 @@ def _airport(item, now):
 def _merge(old, item, now):
     entry = dict(item, _checked_at=now)
     code, stamp = _airport(entry, now)
+    last_airborne = (old or {}).get('_last_airborne', 0)
+    if str(entry.get('status', '')).startswith('Flying'):
+        last_airborne = now
+    entry['_last_airborne'] = last_airborne
+    if code and stamp < last_airborne:
+        entry.update(status='N/A', at_airport='', last_landed_at=None)
+        code = ''
     if code:
         entry['_airport_evidence'] = stamp
     elif entry.get('status') == 'N/A' and not entry.get('hex') and old:
@@ -55,6 +62,7 @@ def _public(item, now):
     entry = dict(item)
     checked = entry.pop('_checked_at', 0)
     evidence = entry.pop('_airport_evidence', None)
+    entry.pop('_last_airborne', None)
     if now-checked > LIVE_TTL:
         code, stamp = _airport(item, now)
         if code and evidence and 0 <= now-evidence <= AIRPORT_TTL:
@@ -118,13 +126,16 @@ def _refresh(regs):
 
 
 def _run():
-    rows = []
+    rows = [{'registration': reg} for reg in _entries]
     last_sheet = 0
     while True:
         try:
             if not last_sheet or time.monotonic()-last_sheet >= SHEET_PERIOD:
                 last_sheet = time.monotonic()
-                rows = flights_log.read().get('flights', [])
+                try:
+                    rows = flights_log.read().get('flights', [])
+                except (ValueError, OSError):
+                    pass  # Continue using known registrations if SheetDB is down.
             # Reuse a fresher SheetDB response from an ordinary page load/edit.
             with flights_log._LOCK:
                 if flights_log._CACHE['rows'] is not None:
