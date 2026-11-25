@@ -188,7 +188,7 @@ class App(BaseHTTPRequestHandler):
 
     def alerts_post(self, path):
         """Same-origin, trusted-LAN-only control plane for personal alert rules."""
-        if path not in ('/api/alerts/rule','/api/alerts/delete','/api/alerts/ntfy','/api/alerts/test','/api/alerts/receiver','/api/alerts/receiver/check','/api/alerts/flyitaly','/api/alerts/flyitaly/check','/api/alerts/adsblol','/api/alerts/adsblol/check','/api/alerts/adsbfi/check','/api/alerts/avioadsb','/api/alerts/avioadsb/check'):
+        if path not in ('/api/alerts/rule','/api/alerts/delete','/api/alerts/ntfy','/api/alerts/test','/api/alerts/receiver','/api/alerts/receiver/check','/api/alerts/flyitaly','/api/alerts/flyitaly/check','/api/alerts/adsblol','/api/alerts/adsblol/check','/api/alerts/adsbfi/check','/api/alerts/avioadsb','/api/alerts/avioadsb/check','/api/alerts/adsbiq','/api/alerts/adsbiq/check'):
             return self.send_json({'error':'Unknown endpoint'},404)
         origin=self.headers.get('Origin','')
         host=self.headers.get('Host','')
@@ -219,6 +219,11 @@ class App(BaseHTTPRequestHandler):
             return self.send_json({'ok':True})
         if path=='/api/alerts/adsbfi/check':
             return self.send_json(alerts.test_adsbfi())
+        if path=='/api/alerts/adsbiq':
+            alerts.save_adsbiq(payload)
+            return self.send_json({'ok':True})
+        if path=='/api/alerts/adsbiq/check':
+            return self.send_json(alerts.test_adsbiq())
         if path=='/api/alerts/avioadsb':
             alerts.save_avio(payload)
             return self.send_json({'ok':True})
