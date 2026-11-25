@@ -51,7 +51,9 @@ def aircraft():
                 for k in ('seen','seen_pos'):
                     if valid(q.get(k)):q[k]+=max(0,now-stamp)
                 if q.get('seen',999)<=120:out.append(q)
-        return out
+        enabled='ADSBHub' in _enabled
+    if enabled:out.extend(extra.hub_nearby())
+    return out
 
 def _json_planes(payload):
     now=time.time()
@@ -100,6 +102,7 @@ def configure(area,keys,verified):
         for name in list(_cache):
             if name not in _enabled:del _cache[name]
         now=time.monotonic()
+        extra.set_region(area,'ADSBHub' in _enabled)
         if not area:return
         for name,delay in [('AvioADSB',900),('ADSBiq',300),('airplanes.live',240),('OpenSky Network',240)]:
             if name not in _enabled or name in _busy or now<_next.get(name,0) or api_budget.remaining(name)>0:continue
