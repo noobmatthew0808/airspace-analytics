@@ -1,3 +1,7 @@
+# v1.10.35 — separate API key and connection indicators
+
+- Show a normal or crossed-out key alongside a separate verified, saved, failed or unverified status on API cards. Preserve stored test results, existing controls and all backend behavior. Helpers without connection tests are not marked verified.
+
 # v1.10.34 — additional flight data sources
 
 - Add optional OpenSky OAuth (written permission required, test before activation), conservative airplanes.live feeder-IP registration lookups, and ADSBHub's authenticated-by-IP SBS stream. Keep these read-only sources separate from receiver observations and alert rules. Use known registration/hex associations, freshness validation, independent background workers, bounded requests and backoff.
