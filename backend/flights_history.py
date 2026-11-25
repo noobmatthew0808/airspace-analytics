@@ -118,7 +118,7 @@ def cached(reg):
 def schedule(registrations,key):
     """Queue at most 4 historical lookups per 35s, never blocking a page."""
     global _last_batch,_busy
-    if not key:return
+    if not key or api_budget.remaining('FlyItalyADSB')>0:return
     now=time.monotonic()
     pending=[]
     with _lock:
@@ -151,12 +151,10 @@ def _refresh(registrations,key):
             except ValueError as error:
                 with _lock:
                     _health['last_error']=str(error)[:90]
-                    _cache[reg]=(time.monotonic()+MISS_TTL,None)
                 if 'rate limit' in str(error):
-                    with _lock:
-                        _cache[reg]=(time.monotonic()+3600,None)
-                    break
-            time.sleep(0.6)
+                    break  # Shared cooldown: do not cache a failed query as a missing aircraft.
+                with _lock:_cache[reg]=(time.monotonic()+MISS_TTL,None)
+            time.sleep(2.1)
         with _lock:
             if len(_cache)>MAX_CACHED:
                 for reg in list(_cache)[:len(_cache)-MAX_CACHED]:
