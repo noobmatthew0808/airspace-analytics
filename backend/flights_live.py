@@ -395,8 +395,9 @@ def snapshot(value='',network_fetch=_lookup_network):
             tests=alerts._provider_tests(db)
             credentials=alerts._opensky_credentials(db) if tests.get('opensky',{}).get('ok') else None
             airplanes=bool(tests.get('airplaneslive',{}).get('ok'))
+            hub=bool(tests.get('adsbhub',{}).get('ok'))
         remote+=extra_flight_sources.collect(registrations,identities,set(registrations)-current,
-                                           credentials,airplanes)
+                                           credentials,airplanes,hub)
 
     seen={}
     for plane in remote+others+local:
