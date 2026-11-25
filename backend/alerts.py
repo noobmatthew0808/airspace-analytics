@@ -224,6 +224,37 @@ def save_adsblol(data):
     if changed:adsblol.clear()
 
 
+def _avio_key(c):
+    row=c.execute("SELECT value FROM config WHERE key='avioadsb_key'").fetchone()
+    return row['value'] if row else ''
+
+
+def save_avio(data):
+    with _lock,connect() as c:
+        if data.get('clear'):
+            c.execute("DELETE FROM config WHERE key='avioadsb_key'")
+        else:
+            key=str(data.get('key','')).strip()
+            if not re.fullmatch(r'avio_[A-Za-z0-9_-]{8,500}',key):
+                raise ValueError('Invalid AvioADSB API key format')
+            c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',('avioadsb_key',key))
+
+
+def test_avio():
+    with _lock,connect() as c:key=_avio_key(c)
+    if not key:raise ValueError('Save your AvioADSB key first')
+    from .flights_live import _NoRedirect as NoRedirect
+    request=Request('https://avioadsb.org/v1/me',headers={'X-API-Key':key,'Accept':'application/json'})
+    try:
+        with build_opener(ProxyHandler({}),NoRedirect()).open(request,timeout=6) as response:
+            payload=json.loads(response.read(50000))
+        if not isinstance(payload,dict):raise ValueError('Invalid response')
+        tier=str(payload.get('tier','unknown'))[:40]
+        return {'ok':True,'plan':tier,'aircraft':None}
+    except (HTTPError,URLError,OSError,ValueError,TypeError):
+        raise ValueError('AvioADSB key test failed; check your key and feeder status') from None
+
+
 def _adsblol_key(c):
     row=c.execute("SELECT value FROM config WHERE key='adsblol_key'").fetchone()
     return row['value'] if row else ''
@@ -365,6 +396,7 @@ def snapshot():
         pub,_=notifier(c)
         return {'rules':rules,'events':events,'ntfy':pub,'flyitaly':flyitaly.status(bool(_flyitaly_key(c))), 'receiver':dict(_last_sample),
                 'adsblol':adsblol.status(bool(_adsblol_key(c))),'adsbfi':adsbfi.status(),
+                'avioadsb':{'key_set':bool(_avio_key(c))},
                 'receiver_settings':receiver_settings(c)}
 
 

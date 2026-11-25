@@ -841,11 +841,22 @@ async function loadSuggestedAverageExclusions(){
   const today=ukToday();
   if(!suggestedExclusionCache||suggestedExclusionCache.day!==today||Date.now()-suggestedExclusionCache.at>300000){
    if(!suggestedExclusionRequest){
-    suggestedExclusionRequest=Promise.all([
-     api('/api/analytics',{period:'rolling',amount:90,unit:'days',bucket:'day',metric:'flights'}),
-     api('/api/analytics',{period:'rolling',amount:90,unit:'days',bucket:'day',metric:'observations'})
-    ]).then(([visits,observations])=>({day:today,at:Date.now(),visits,observations}))
-     .finally(()=>{suggestedExclusionRequest=null});
+    // The backend limits concurrent database analyses. Run both serially
+    // and retry only contention errors with bounded backoff.
+    suggestedExclusionRequest=(async()=>{
+     async function daily(metric){
+      for(let attempt=0;;attempt++){
+       try{return await api('/api/analytics',{period:'rolling',amount:90,unit:'days',bucket:'day',metric});}
+       catch(e){
+        if(attempt>=4||!/already processing another analysis/i.test(String(e.message||e)))throw e;
+        await new Promise(resolve=>setTimeout(resolve,500*2**attempt));
+       }
+      }
+     }
+     const visits=await daily('flights');
+     const observations=await daily('observations');
+     return {day:today,at:Date.now(),visits,observations};
+    })().finally(()=>{suggestedExclusionRequest=null});
    }
    suggestedExclusionCache=await suggestedExclusionRequest;
   }
@@ -882,7 +893,7 @@ async function loadSuggestedAverageExclusions(){
   });
  }catch(e){
   if(currentPage==='settings'&&$('#excludedDaysEditor')===fold&&fold.open)
-   target.innerHTML='<p class="muted tiny">Suggestions unavailable: '+esc(e.message||e)+'. Existing exclusions are unaffected.</p>';
+   {target.innerHTML='<p class="muted tiny">Suggestions unavailable: '+esc(String(e.message||e).replace(/\.$/,''))+'. Existing exclusions are unaffected.</p><button class="btn small" type="button" id="retrySuggestedExclusions">Retry</button>';$('#retrySuggestedExclusions').onclick=loadSuggestedAverageExclusions;}
  }
 }
 function updateBox(){return `<div class="auth-box">

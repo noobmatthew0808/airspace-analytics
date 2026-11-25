@@ -265,7 +265,8 @@ class LiveStatusTests(unittest.TestCase):
         for provider,key,endpoint in [
             ('adsb.fi','','https://opendata.adsb.fi/api/v2/registration/'),
             ('FlyItalyADSB','dummy-secret','https://api.flyitalyadsb.com/v2/reg/'),
-            ('adsb.lol','dummy-secret','https://api.adsb.lol/v2/reg/')]:
+            ('adsb.lol','dummy-secret','https://api.adsb.lol/v2/reg/'),
+            ('AvioADSB','dummy-secret','https://avioadsb.org/v1/aircraft')]:
             with self.subTest(provider=provider):
                 planes=flights_live._lookup_provider(['G-WUKU'],provider,key,opener=fake)
                 self.assertEqual(planes[0]['_source'],provider)

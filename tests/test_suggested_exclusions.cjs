@@ -39,6 +39,9 @@ assert(js.includes('data-suggest-exclude='),'Add button must be rendered');
 assert(js.includes("setExcludedAverageDays([...excluded,day]);"),
  'Only the user-selected Add handler should mutate excluded days');
 assert(js.includes("excludedFold.addEventListener('toggle'"),'Suggestions load only on opening exclusions');
-assert(js.includes("period:'rolling',amount:90,unit:'days',bucket:'day',metric:'observations'"),
+assert(js.includes("const observations=await daily('observations')"),
  'Stats must be based on actual observations, not only aircraft counts');
 console.log('Suggested excluded days: 12 deterministic browser checks passed.');
+
+assert(js.includes("const visits=await daily('flights')"));
+assert(js.includes('already processing another analysis'));

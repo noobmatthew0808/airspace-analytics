@@ -6,6 +6,7 @@ const fields=[['type','Aircraft type'],['registration','Registration'],['callsig
 const providers=[
  {id:'flyitaly',name:'FlyItalyADSB',url:'https://api.flyitalyadsb.com/v2',hint:'Live positions and military metadata; check your feeder perk in My API.'},
  {id:'adsblol',name:'adsb.lol',url:'https://api.adsb.lol/v2',hint:'Ready for your feeder key when eligible. No key needed until then.'},
+ {id:'avioadsb',name:'AvioADSB',url:'https://avioadsb.org/v1',hint:'Flights only. Claim your feeding station and create a contributor key on avioadsb.org/dashboard.'},
  {id:'adsbfi',name:'adsb.fi',url:'https://opendata.adsb.fi/api',hint:'Free API · no key required.'}
 ];
 let alertsData=null,alertsTimer=null,editingRule=null,alertsBusy=false;
@@ -173,7 +174,7 @@ function bindAlerts(){
     document.getElementById('alertAllConfig').open=true;
     document.getElementById('alertApis').open=true;
     document.getElementById('alert-'+id).open=true;
-    feedback((id==='flyitaly'?'FlyItalyADSB':'adsb.lol')+' key saved privately. Now press Test connection.');
+    feedback((providers.find(p=>p.id===id)?.name||id)+' key saved privately. Now press Test connection.');
    }catch(err){feedback(err.message,true)}
   };
   form.querySelector('[data-showkey]').onclick=()=>{
@@ -186,8 +187,8 @@ function bindAlerts(){
     const result=await alertApi('/api/alerts/'+id+'/check',{});
     await refreshAlerts();
     ['alertAllConfig','alertApis','alert-'+id].forEach(k=>{document.getElementById(k).open=true;});
-    feedback((id==='flyitaly'?'FlyItalyADSB':'adsb.lol')+' API successful: '+at(result.aircraft)+
-     ' aircraft near your antenna'+(result.plan?' · plan '+result.plan:'')+'. This tests API access, not a push notification.');
+    feedback((providers.find(p=>p.id===id)?.name||id)+' API successful: '+(id==='avioadsb'?'key verified':at(result.aircraft))+
+     (id==='avioadsb'?'':' aircraft near your antenna')+(result.plan?' · plan '+result.plan:'')+'. This tests API access, not a push notification.');
    }catch(err){feedback('API test failed: '+err.message,true);}
   };
   form.querySelector('[data-remove-provider]').onclick=async()=>{

@@ -1,3 +1,10 @@
+# v1.10.29 — mobile fit, recovered callsign routes, registration changes and AvioADSB
+
+- Inset the mobile table, align full-width dividers, simplify expanded details, and retain the registration at the time of flight while tracking the current registration.
+- Display the usual callsign itinerary as a fallback (evidence in expanded details), preserve routes across provider changes for the same callsign, and retain stricter LGW highlighting.
+- Serialize suggested-exclusion queries to prevent them contending with each other; bounded automatic retry and a manual Retry button, never automatic exclusion.
+- Add optional AvioADSB contributor global aircraft snapshot support with private key configuration under Alerts → Configuration & Logs → APIs, no faster than every eight minutes; do not use it for alert rules.
+
 # v1.10.28 — compact flight rows and background status cache
 
 - Display date as DD/MM/YY and place compact airport/route/Flying/N/A status beside registration. Expand flight details inline; preserve FR24, Aerodrome, filters and Manage controls.

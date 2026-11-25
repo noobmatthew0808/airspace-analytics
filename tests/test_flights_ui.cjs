@@ -175,9 +175,17 @@ test('compact display accepts only airport, credible route, Flying or N/A',async
  assert.equal(h.compactStatus({status:'At LGW',at_airport:'LGW'}),'LGW');
  assert.equal(h.compactStatus({status:'Last landed MAN',at_airport:'MAN'}),'MAN');
  assert.equal(h.compactStatus({status:'Flying LGW – BTS',route:'LGW – BTS',route_confidence:'plausible'}),'LGW-BTS');
- assert.equal(h.compactStatus({status:'Flying · likely LYS–LGW',route:'LYS–LGW',route_confidence:'usual'}),'Flying');
+ assert.equal(h.compactStatus({status:'Flying · likely LYS–LGW',route:'LYS–LGW',route_confidence:'usual'}),'LYS-LGW');
  assert.equal(h.compactStatus({status:'Ground'}),'N/A');
  assert.match(source,/regLink\+statusBadge\(row\)/);
  assert.match(source,/flights-inline-detail/);
  assert.doesNotMatch(source,/id="flightsDetails"/);
+});
+
+test('historical registration display and current registration lookup are separate',async()=>{
+ const {flightLogTestHelpers:h}=await exportsPromise;
+ assert.equal(h.getCurrentRegistration('G-XLRB (9H-XLI)'),'9H-XLI');
+ assert.match(source,/Registration at flight:/);
+ assert.match(source,/Current registration:/);
+ assert.match(source,/escapeHtml\(historical\)/);
 });

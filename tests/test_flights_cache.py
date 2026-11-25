@@ -26,3 +26,11 @@ class CacheTests(unittest.TestCase):
 
     def test_registrations_deduplication(self):
         self.assertEqual(c._registrations([{'registration':'G-OLD (G-NEW)'},{'registration':'g-new'},{'registration':'No Reg'}]),['G-NEW'])
+
+    def test_same_callsign_recovers_route_after_provider_changes(self):
+        now=1800000000
+        first=c._merge({}, {'status':'Flying LYS–LGW','callsign':'WUK123','route':'LYS–LGW','route_confidence':'usual'},now)
+        gap=c._merge(first, {'status':'N/A'},now+35)
+        current=c._merge(gap, {'status':'Flying','callsign':'WUK123'},now+70)
+        self.assertEqual(current['route'],'LYS–LGW')
+        self.assertNotIn('route',c._merge(current, {'status':'Flying','callsign':'WUK456'},now+105))

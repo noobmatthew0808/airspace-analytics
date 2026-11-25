@@ -34,6 +34,23 @@ def _airport(item, now):
 
 def _merge(old, item, now):
     entry = dict(item, _checked_at=now)
+    # Keep the route across rotating position sources and short reception gaps.
+    # A changed callsign or observed ground position invalidates this memory.
+    memory=(old or {}).get('_route_memory')
+    flying=str(entry.get('status','')).startswith('Flying')
+    call=entry.get('callsign')
+    if memory and (now-memory.get('at',0)>1800 or (call and call!=memory.get('callsign'))):
+        memory=None
+    if flying and call:
+        if entry.get('route'):
+            memory={'callsign':call,'route':entry['route'],
+                    'confidence':entry.get('route_confidence','cached'),'at':now}
+        elif memory:
+            entry.update(route=memory['route'],route_confidence=memory['confidence'])
+    elif entry.get('at_airport') or entry.get('status')=='Ground':
+        memory=None
+    if memory:
+        entry['_route_memory']=memory
     code, stamp = _airport(entry, now)
     last_airborne = (old or {}).get('_last_airborne', 0)
     if str(entry.get('status', '')).startswith('Flying'):
@@ -63,6 +80,7 @@ def _public(item, now):
     checked = entry.pop('_checked_at', 0)
     evidence = entry.pop('_airport_evidence', None)
     entry.pop('_last_airborne', None)
+    entry.pop('_route_memory', None)
     if now-checked > LIVE_TTL:
         code, stamp = _airport(item, now)
         if code and evidence and 0 <= now-evidence <= AIRPORT_TTL:

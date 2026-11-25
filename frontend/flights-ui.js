@@ -139,7 +139,7 @@ function compactStatus(item={}){
  if(/^[A-Z]{3}$/.test(airport))return airport;
  if(status.startsWith('Flying')){
   const route=String(item.route||'').toUpperCase().replace(/\s*[–—-]\s*/g,'-');
-  return item.route_confidence!=='usual'&&/^[A-Z]{3}-[A-Z]{3}$/.test(route)?route:'Flying';
+  return /^[A-Z]{3}-[A-Z]{3}$/.test(route)?route:'Flying';
  }
  return /^[A-Z]{3}$/.test(status)?status:'N/A';
 }
@@ -147,7 +147,7 @@ function statusBadge(row){
  const item=liveFor(row),status=compactStatus(item);
  const highlight=liveGatwick(row);
  return '<span class="flights-live-chip'+(highlight?' flights-lgw':'')+
-  (status==='N/A'?' is-unknown':'')+'" title="'+escapeHtml(item.source?'Live: '+item.source:'No current reliable live position')+
+  (status==='N/A'?' is-unknown':'')+'" title="'+escapeHtml(item.route_confidence==='usual'?'Usual route for current callsign; see details':item.source?'Live: '+item.source:'No current reliable live position')+
   '" data-live-reg="'+escapeHtml(currentReg(row).toUpperCase())+'">'+escapeHtml(status)+'</span>';
 }
 function relativeLocalSeen(timestamp,now=Date.now()/1000){
@@ -181,11 +181,13 @@ function shortWho(value){
  return names[0].slice(0,10)+' +'+(names.length-1);
 }
 function rowHtml(row){
- const reg=currentReg(row),live=liveFor(row),route=normalizeUpper(row.from_airport)+' → '+normalizeUpper(row.to_airport);
+ const reg=currentReg(row),live=liveFor(row),route=normalizeUpper(row.from_airport)+'→'+normalizeUpper(row.to_airport);
+ const historical=String(row.registration||'').replace(/\s*\([^()]*\)\s*$/,'').trim()||reg;
+ const renamed=historical.toUpperCase()!==reg.toUpperCase();
  const date=compactDate(row.date),shortDate=date;
  const fr24='https://www.flightradar24.com/data/aircraft/'+encodeURIComponent(reg);
  const regLink=reg&&!/^no reg$/i.test(reg)?
-  '<a class="flights-reg" target="_blank" rel="noopener noreferrer" href="'+escapeHtml(fr24)+'">'+escapeHtml(reg)+'</a>':
+  '<a class="flights-reg" target="_blank" rel="noopener noreferrer" href="'+escapeHtml(fr24)+'">'+escapeHtml(historical)+(renamed?'<sup class="flights-rereg" title="Current registration: '+escapeHtml(reg)+'">↗</sup>':'')+'</a>':
   '<span class="flights-no-reg">—</span>';
  return '<tr class="flights-row'+(liveGatwick(row)?' flights-highlight':'')+
   (manageMode?' flights-selectable':'')+'" data-flight-id="'+escapeHtml(row.id)+
@@ -204,7 +206,7 @@ function rowHtml(row){
 function renderTable(){
  const rows=filteredRows();updateStats(rows);
  const count=document.getElementById('flightsResults');
- if(count)count.textContent=rows.length+' flight'+(rows.length===1?'':'s')+' shown';
+ if(count){count.textContent=rows.length+' flight'+(rows.length===1?'':'s')+' shown';if(rows.some(row=>liveFor(row).source==='AvioADSB')){const credit=document.createElement('a');credit.href='https://avioadsb.org';credit.target='_blank';credit.rel='noopener noreferrer';credit.textContent=' · Data: AvioADSB (CC BY-NC 4.0)';count.append(credit);}}
  const table=document.getElementById('flightsTableBody');
  if(!table)return;
  table.innerHTML=rows.length?rows.map(row=>rowHtml(row)+(expandedFlightId===row.id&&!manageMode?flightDetailsHtml(row):'')).join(''):
@@ -263,12 +265,26 @@ function flightDetailsHtml(row){
  if(/^[0-9A-F]{6}$/.test(hex))links.push(
   '<a class="btn small" target="_blank" rel="noopener noreferrer" href="http://'+
   location.hostname+':1099/map/?icao='+hex+'&noIsolation">Live local map</a>');
- return '<tr class="flights-inline-detail"><td colspan="7"><div class="flightsDetailsContent flights-inline-card"><div class="flights-detail-grid">'+
-  [['Date',niceDate(row.date)],['Route',route],['Airline',row.airline],
-   ['Aircraft',row.airplane],['Registration',row.registration],['Who',row.who],
-   ['Live status',compactStatus(live)],['Callsign',live.callsign],['Data source',live.source],['Airport evidence',live.last_landed_at?'Observed landing '+new Date(live.last_landed_at*1000).toLocaleString('en-GB'):live.at_airport?'Live ground position':'—'],['Local sighting',relativeLocalSeen(live.local_last_seen_at)]].map(([key,value])=>
-   '<div><span>'+escapeHtml(key)+'</span><strong>'+escapeHtml(value||'—')+'</strong></div>').join('')+
-  '</div><div class="flights-detail-links">'+localLastSeen(row)+links.join('')+'</div></div></td></tr>';
+ const status=compactStatus(live);
+ const facts=[row.airline,row.airplane,row.who].filter(Boolean).map(escapeHtml).join(' · ');
+ const original=String(row.registration||'').replace(/\s*\([^()]*\)\s*$/,'').trim();
+ const info=[];
+ if(live.callsign)info.push('Callsign '+live.callsign);
+ if(live.route_confidence==='usual')info.push('Usual callsign route (not independently confirmed)');
+ else if(live.route_confidence==='plausible')info.push('Position-matched route');
+ else if(live.route_confidence==='cached')info.push('Callsign route cache');
+ if(live.last_landed_at)info.push('Last observed airport '+new Date(live.last_landed_at*1000).toLocaleString('en-GB',{timeZone:'Europe/London'}));
+ else if(live.at_airport)info.push('Observed on the ground');
+ if(live.source)info.push(live.source);
+ if(live.source==='AvioADSB')links.push('<a class="flights-attribution" target="_blank" rel="noopener noreferrer" href="https://avioadsb.org">Data: AvioADSB (CC BY-NC 4.0)</a>');
+ return '<tr class="flights-inline-detail"><td colspan="7"><div class="flightsDetailsContent flights-inline-card">'+
+  '<div class="flights-inline-summary"><strong>'+escapeHtml(row.flight_code||'Flight')+' · '+escapeHtml(route)+'</strong>'+
+  '<span>'+escapeHtml(niceDate(row.date))+'</span></div>'+
+  (facts?'<div class="flights-inline-facts">'+facts+'</div>':'')+
+  (original&&reg&&original.toUpperCase()!==reg.toUpperCase()?'<div class="flights-inline-facts">Registration at flight: <b>'+escapeHtml(original)+'</b> · Current: <b>'+escapeHtml(reg)+'</b></div>':'')+
+  '<div class="flights-inline-live"><span>Aircraft now'+(reg?' · '+escapeHtml(reg):'')+'</span><strong>'+escapeHtml(status)+'</strong>'+
+  (info.length?'<small>'+escapeHtml(info.join(' · '))+'</small>':'')+'</div>'+
+  '<div class="flights-detail-links">'+localLastSeen(row)+links.join('')+'</div></div></td></tr>';
 }
 
 function renderFilters(){
