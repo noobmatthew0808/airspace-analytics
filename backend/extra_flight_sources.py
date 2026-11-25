@@ -3,6 +3,8 @@ All lookups use fixed documented hosts and retain only the tracked airframes.
 """
 from __future__ import annotations
 import json
+from datetime import datetime, timezone
+import socket
 import math
 import re
 import threading
@@ -23,6 +25,11 @@ _next={}
 _errors={}
 _targets={}
 _cursor=0
+_hub_enabled=False
+_hub_running=False
+_hub_touch=0
+_hub_fields={}
+_known={}
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):return None
@@ -107,9 +114,7 @@ def test_opensky(credentials,opener=None):
     if identities:opensky_lookup(credentials,dict(list(identities.items())[:1]),opener)
     else:
         # Token verification alone cannot establish data endpoint access.
-        token=_token(credentials,opener)
-        payload=_json(STATES_URL+'?icao24=000000',{'Authorization':'Bearer '+token},opener=opener)
-        parse_opensky(payload,{})
+        raise ValueError('No known aircraft hex yet; open Flights before testing')
     return {'ok':True,'plan':'OAuth and data endpoint verified'}
 
 def airplanes_lookup(reg,opener=None):
@@ -149,17 +154,118 @@ def test_airplanes():
     with _lock:
         if time.monotonic()<_next.get('airplanes.live',0):raise ValueError('Wait for the next scheduled lookup to avoid excess requests')
         _next['airplanes.live']=time.monotonic()+180
-    found=airplanes_lookup(regs[0])
-    return {'ok':True,'plan':'Registration API accessible','aircraft':len(found)}
+    payload=_json('https://api.airplanes.live/v2/point/51.47/-0.45/10')
+    if not isinstance(payload,dict) or not isinstance(payload.get('ac'),list):raise ValueError('Invalid airplanes.live response')
+    return {'ok':True,'plan':'Feeder API accessible','aircraft':len(payload['ac'])}
 
-def collect(registrations,identities,missing,credentials=None,airplanes=False):
+def _sbs(line,now):
+    """Parse current SBS messages; positions and flight state have independent ages."""
+    fields=line.strip().split(',')
+    if len(fields)<22 or fields[0]!='MSG' or not re.fullmatch(r'[a-fA-F0-9]{6}',fields[4]):return None
+    try:
+        stamp=datetime.fromisoformat(fields[6].replace('/','-')+'T'+fields[7]).replace(tzinfo=timezone.utc).timestamp()
+    except (ValueError,OverflowError):return None
+    if not -10<=now-stamp<=120:return None
+    values={}
+    def number(i):
+        try:
+            v=float(fields[i])
+            return v if math.isfinite(v) else None
+        except (ValueError,TypeError):return None
+    if fields[10].strip():values['flight']=fields[10].strip()[:8]
+    altitude,speed,lat,lon=number(11),number(12),number(14),number(15)
+    if fields[21] in ('-1','1'):values['alt_baro']='ground'
+    elif altitude is not None:values['alt_baro']=altitude
+    if speed is not None and 0<=speed<=2000:values['gs']=speed
+    if lat is not None and lon is not None and -90<=lat<=90 and -180<=lon<=180:
+        values['position']=(lat,lon)
+    return fields[4].lower(),stamp,values
+
+def test_adsbhub(connect=None):
+    connect=connect or socket.create_connection
+    try:
+        with connect(('data.adsbhub.org',5002),timeout=6) as sock:
+            sock.settimeout(6)
+            with sock.makefile('rb') as stream:
+                for _ in range(100):
+                    line=stream.readline(2048)
+                    if not line:break
+                    if _sbs(line.decode('ascii','ignore'),time.time()):
+                        return {'ok':True,'plan':'Live SBS stream accessible'}
+    except (OSError,ValueError):
+        pass
+    raise ValueError('ADSBHub stream unavailable; check your active station and Data Access IP')
+
+def _hub_work():
+    global _hub_running
+    try:
+        while True:
+            with _lock:
+                if not _hub_enabled or time.monotonic()-_hub_touch>90 or not _targets:return
+            try:
+                with socket.create_connection(('data.adsbhub.org',5002),timeout=8) as sock:
+                    sock.settimeout(10)
+                    with sock.makefile('rb') as stream:
+                        while True:
+                            with _lock:
+                                if not _hub_enabled or time.monotonic()-_hub_touch>90:return
+                            line=stream.readline(2048)
+                            if not line:raise OSError('Stream disconnected')
+                            item=_sbs(line.decode('ascii','ignore'),time.time())
+                            if not item:continue
+                            hexcode,stamp,values=item
+                            with _lock:
+                                _errors.pop('ADSBHub',None)
+                                if hexcode not in _targets:continue
+                                record=_hub_fields.setdefault(hexcode,{})
+                                for field,value in values.items():
+                                    if stamp>=record.get(field,(0,None))[0]:record[field]=(stamp,value)
+                                record['seen']=(max(stamp,record.get('seen',(0,None))[0]),True)
+            except (OSError,ValueError):
+                with _lock:_errors['ADSBHub']='Stream disconnected; retrying in 60 seconds'
+                for _ in range(6):
+                    time.sleep(10)
+                    with _lock:
+                        if not _hub_enabled or time.monotonic()-_hub_touch>90:return
+    finally:
+        with _lock:_hub_running=False
+
+def _hub_planes():
+    now=time.time()
+    result=[]
+    for hexcode,record in list(_hub_fields.items()):
+        if hexcode not in _targets or now-record.get('seen',(0,None))[0]>120:
+            del _hub_fields[hexcode]
+            continue
+        p={'hex':hexcode,'r':_targets[hexcode],'_source':'ADSBHub','seen':max(0,now-record['seen'][0])}
+        for field,ttl in (('flight',120),('alt_baro',35),('gs',35),('position',35)):
+            stamp,value=record.get(field,(0,None))
+            if now-stamp>ttl:continue
+            if field=='position':p.update(lat=value[0],lon=value[1],seen_pos=max(0,now-stamp))
+            else:p[field]=value
+        if 'alt_baro' in p or 'gs' in p:result.append(p)
+    return result
+
+def collect(registrations,identities,missing,credentials=None,airplanes=False,hub=False):
     """Schedule independent, bounded work; return only fresh completed lookups."""
-    global _cursor,_targets
+    global _cursor,_targets,_hub_enabled,_hub_running,_hub_touch
     now=time.monotonic()
     wanted=set(registrations)
     clean={h:r for h,r in identities.items() if re.fullmatch(r'[a-f0-9]{6}',h) and r in wanted}
     with _lock:
+        for h,r in clean.items():
+            for old,(reg,_) in list(_known.items()):
+                if reg==r and old!=h:del _known[old]
+            _known[h]=(r,now)
+        for h,(r,stamp) in list(_known.items()):
+            if r not in wanted or now-stamp>86400:del _known[h]
+        clean={h:r for h,(r,_) in _known.items()}
         _targets=clean
+        _hub_enabled=hub
+        _hub_touch=now
+        if hub and clean and not _hub_running:
+            _hub_running=True
+            threading.Thread(target=_hub_work,daemon=True,name='airspace-adsbhub').start()
         def schedule(name,delay,work):
             if name in _busy or now<_next.get(name,0):return
             _busy.add(name)
@@ -203,10 +309,11 @@ def collect(registrations,identities,missing,credentials=None,airplanes=False):
                 for field in ('seen','seen_pos'):
                     if _number(plane.get(field)):plane[field]+=elapsed
                 if plane.get('seen',999)<=120:result.append(plane)
+        if hub:result.extend(_hub_planes())
         return result
 
 def health():
     with _lock:
         return {name:{'matching_aircraft':len(_cache.get(name,{})),'error':_errors.get(name),
                       'retry_seconds':round(max(0,_next.get(name,0)-time.monotonic()))}
-                for name in ('OpenSky Network','airplanes.live')}
+                for name in ('OpenSky Network','airplanes.live','ADSBHub')}
