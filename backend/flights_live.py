@@ -17,7 +17,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHandler
 
-from . import alerts, adsbfi, adsblol, flyitaly, data, live_details, flights_routes, flights_history, extra_flight_sources
+from . import alerts, adsbfi, adsblol, flyitaly, data, live_details, flights_routes, flights_history, extra_flight_sources, regional_sources, api_budget
 
 _CACHE_LOCK=threading.Lock()
 # Keep the original adsb.fi cache shape for existing callers and regressions.
@@ -66,7 +66,9 @@ def _lookup_provider(regs,provider='adsb.fi',key='',opener=None):
     One call for adsb.fi and adsb.lol; FlyItaly uses batches of at most 50.
     No credentials are included in URLs, errors or responses.
     """
-    if opener is None:opener=build_opener(ProxyHandler({}),_NoRedirect()).open
+    if opener is None:
+        base=build_opener(ProxyHandler({}),_NoRedirect()).open
+        opener=lambda req,timeout:api_budget.open_request(provider,base,req,timeout)
     codes=list(dict.fromkeys(str(r).strip().upper() for r in regs
         if re.fullmatch(r'[A-Z0-9-]{2,16}',str(r).strip().upper())))[:MAX_REGS]
     if not codes:return []
@@ -149,22 +151,32 @@ def _global_snapshot(regs,key,opener,provider):
             raise ValueError(provider+' stale or invalid response')
         targets={normal_reg(r) for r in regs}
         result=[]
+        area=regional_sources.region()
+        local=[]
         for record in payload['ac']:
-            if not isinstance(record,dict) or normal_reg(record.get('r','')) not in targets:continue
+            if not isinstance(record,dict):continue
+            tracked=normal_reg(record.get('r','')) in targets
+            near=regional_sources.nearby(record,area)
+            if not tracked and not near:continue
             plane=dict(record,_source=provider)
             for field in ('seen','seen_pos'):
                 age=plane.get(field)
                 if isinstance(age,(float,int)) and math.isfinite(age) and 0<=age<=120:
                     plane[field]=age+max(0,delta)
                 else:plane.pop(field,None)
-            result.append(plane)
+            if tracked:result.append(plane)
+            if near:local.append(plane)
+        if area and provider in ('AvioADSB','ADSBiq'):regional_sources.publish(provider,local,area)
         return result
     except HTTPError as e:
         if e.code==429:
             delay=e.headers.get('Retry-After','') if e.headers else ''
             raise ValueError(provider+' API rate limited'+(' retry '+delay if delay.isdigit() else '')) from None
         raise ValueError(provider+' HTTP '+str(e.code)) from None
-    except (URLError,OSError,TimeoutError,TypeError,AttributeError,ValueError):
+    except ValueError as error:
+        if 'rate limited; retry' in str(error):raise
+        raise ValueError(provider+' unavailable or invalid response') from None
+    except (URLError,OSError,TimeoutError,TypeError,AttributeError):
         raise ValueError(provider+' unavailable or invalid response') from None
 
 
@@ -323,7 +335,7 @@ def snapshot(value='',network_fetch=_lookup_network):
     local=_local_planes()
     local_history=_local_last_seen(registrations)
     others=[dict(p,_source=p.get('_network_source') or 'Backup API')
-            for p in adsbfi.aircraft()+adsblol.aircraft()+flyitaly.aircraft()
+            for p in adsbfi.aircraft()+adsblol.aircraft()+flyitaly.aircraft()+regional_sources.aircraft()
             if isinstance(p,dict)]
 
     # The already-running alert workers poll geographically (near Polegate).
@@ -335,7 +347,7 @@ def snapshot(value='',network_fetch=_lookup_network):
         if network_fetch is _lookup_network:
             if not _ROTATION['at'] or now-_ROTATION['at']>=MIN_REMOTE_PERIOD:
                 eligible=[key for key in ('adsb.fi','FlyItalyADSB','adsb.lol','ADSBiq','AvioADSB')
-                          if key in provider_keys and now>=_ROTATION['retry_until'].get(key,0)]
+                          if key in provider_keys and now>=_ROTATION['retry_until'].get(key,0) and api_budget.remaining(key)<=0]
                 if eligible:
                     provider=eligible[_ROTATION['cursor']%len(eligible)]
                     _ROTATION['cursor']+=1
@@ -365,6 +377,7 @@ def snapshot(value='',network_fetch=_lookup_network):
         # detected even if its provider was last used in another rotation slot.
         remote=[]
         for provider,stored in [('adsb.fi',_REMOTE),*_OTHER_REMOTE.items()]:
+            if network_fetch is _lookup_network and provider not in provider_keys:continue
             elapsed=max(0.,time.monotonic()-stored['updated'])
             if stored['updated']<=0 or elapsed>MAX_CACHED_AGE:continue
             for source in stored['aircraft']:
