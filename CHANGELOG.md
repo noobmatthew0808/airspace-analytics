@@ -1,3 +1,9 @@
+# v1.10.28 — compact flight rows and background status cache
+
+- Display date as DD/MM/YY and place compact airport/route/Flying/N/A status beside registration. Expand flight details inline; preserve FR24, Aerodrome, filters and Manage controls.
+- Refresh registration statuses on the server independently of browser visits, persist a bounded atomic local cache, and retain recently observed airport evidence for up to 24 hours. Expire stale airborne positions; never promote usual routes to current routes. Use existing provider rotation and throttles.
+- Add isolated regression tests for compact states, expiry and evidence.
+
 # v1.10.27 — Suggested dates to exclude (manual review)
 
 - In Settings → Excluded days from averages, add **Suggested dates to exclude** beneath the existing manual exclusion list. Suggestions load only when this section is expanded; each proposal shows the date, estimated visits versus a historical median, observation records versus a historical median, percentage drops and comparison sample size.
