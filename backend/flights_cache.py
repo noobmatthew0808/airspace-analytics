@@ -40,7 +40,7 @@ def _merge(old, item, now):
     if (old.get('local_last_seen_at') or 0) > (item.get('local_last_seen_at') or 0):
         item.update(local_last_seen_at=old['local_last_seen_at'],local_hex=old.get('local_hex',''))
     old_stamp=old.get('last_observed_at') or old.get('_checked_at',0)
-    new_stamp=item.get('last_observed_at') or item.get('last_landed_at') or 0
+    new_stamp=item.get('last_observed_at') or item.get('last_landed_at') or (now if item.get('hex') or str(item.get('status','')).startswith('Flying') else 0)
     # A negative response from a different network is not evidence of a change.
     # Preserve recent airborne data, without resetting the observation clock.
     if str(old.get('status','')).startswith('Flying') and 0<=now-old_stamp<=LIVE_TTL:
@@ -58,7 +58,7 @@ def _merge(old, item, now):
         for k in ('local_last_seen_at','local_hex'):
             if item.get(k):result[k]=item[k]
         return result
-    entry = dict(item, _checked_at=item.get('last_observed_at') or now)
+    entry = dict(item, _checked_at=item.get('last_observed_at') or item.get('last_landed_at') or now)
     if not item.get('last_observed_at') and item.get('status')=='N/A' and old.get('status')=='N/A':
         entry['_checked_at']=old.get('_checked_at',now)
     # Keep the route across rotating position sources and short reception gaps.
@@ -88,15 +88,15 @@ def _merge(old, item, now):
         code = ''
     if code:
         entry['_airport_evidence'] = stamp
-    elif entry.get('status') == 'N/A' and not entry.get('hex') and old:
+    elif (entry.get('status') == 'N/A' and not entry.get('hex') or entry.get('status')=='Ground') and old:
         # Missing ADS-B is not proof of arrival. Retain only an actually
         # observed recent airport; never predict landing from elapsed time.
         code, stamp = _airport(old, now)
         stamp = old.get('_airport_evidence', stamp)
-        if code and stamp and 0 <= now-stamp <= AIRPORT_TTL:
+        if code and stamp and stamp>=last_airborne and 0 <= now-stamp <= AIRPORT_TTL:
             entry.update(at_airport=code, status='Last landed '+code,
                          last_landed_at=stamp, _airport_evidence=stamp,
-                         source=old.get('source','Observed airport'))
+                         source=old.get('source','Observed airport'),_checked_at=stamp)
     return entry
 
 
@@ -212,4 +212,4 @@ def read(value=''):
     now = time.time()
     with _lock:
         return {'aircraft':{reg:_public(_entries.get(reg), now) for reg in regs},
-                'checked_at':int(now)}
+                'checked_at':int(now),'sources':flights_live.source_health()}
