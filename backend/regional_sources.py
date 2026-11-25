@@ -122,7 +122,7 @@ def configure(area,keys,verified):
 def health():
     with _lock:
         now=time.monotonic()
-        return {name:{'nearby_aircraft':len(_cache.get(name,(0,[]))[1]),
+        return {name:{'nearby_aircraft':len(extra.hub_nearby()) if name=='ADSBHub' else (len(_cache[name][1]) if name in _cache and now-_cache[name][0]<=120 else 0),
                       'last_attempt_seconds_ago':round(max(0,now-_cache[name][0])) if name in _cache else None,
                       'error':_errors.get(name),'retry_seconds':round(api_budget.remaining(name))}
                 for name in sorted(_enabled)}
