@@ -27,7 +27,7 @@ _LOCK = threading.RLock()
 _CACHE = {'rows':None,'at':0.0,'error':None}
 CACHE_PATH=Path(__file__).resolve().parents[1]/'.airspace-state'/'flights-sheet.json'
 REFRESH_PERIOD=2*3600
-_RETRY_PERIOD=300
+_RETRY_PERIOD=1800
 _cache_enabled=False
 _refresh_gate=threading.Lock()
 _last_attempt=None
@@ -137,8 +137,11 @@ def start_cache():
 def _schedule_refresh(force=False):
     global _last_attempt
     now=time.monotonic()
-    if not force and _last_attempt is not None and now-_last_attempt<_RETRY_PERIOD:return False
-    if force and _last_attempt is not None and now-_last_attempt<15:return False
+    if _last_attempt is not None:
+        elapsed=now-_last_attempt
+        if 'HTTP 429' in str(_CACHE.get('error') or '') and elapsed<6*3600:return False
+        if not force and elapsed<_RETRY_PERIOD:return False
+        if force and elapsed<15:return False
     if not _refresh_gate.acquire(blocking=False):return False
     _last_attempt=now
     def worker():
@@ -217,6 +220,11 @@ def _next_numeric_id(rows):
     return str(num)
 
 
+def _confirmed_write(result,field):
+    if isinstance(result,dict) and field in result and not result[field]:
+        raise SheetError('Google Sheets did not confirm the requested change')
+
+
 def mutate(payload):
     """POST create/edit/delete, never touch any other service or schema."""
     if not isinstance(payload,dict):raise SheetError('Invalid request')
@@ -230,22 +238,22 @@ def mutate(payload):
             existing=_rows(_fetch())
             if not any(row['id']==id_value for row in existing):
                 raise SheetError('Flight not found')
-            _fetch('/id/'+quote(id_value,safe=''),method='DELETE')
+            _confirmed_write(_fetch('/id/'+quote(id_value,safe=''),method='DELETE'),'deleted')
             updated=[row for row in existing if row['id']!=id_value]
         else:
             cleaned=_clean(payload.get('data'))
             if action=='create':
                 current=_rows(_fetch())
                 id_value=_next_numeric_id(current)
-                _fetch(method='POST',payload={'data':[{'id':id_value,**cleaned}]})
+                _confirmed_write(_fetch(method='POST',payload={'data':[{'id':id_value,**cleaned}]}),'created')
                 updated=[*current,{'id':id_value,**cleaned}]
             else:
                 id_value=_id(payload.get('id'))
                 current=_rows(_fetch())
                 if not any(row['id']==id_value for row in current):
                     raise SheetError('Flight not found')
-                _fetch('/id/'+quote(id_value,safe=''),method='PATCH',
-                       payload={'data':{'id':id_value,**cleaned}})
+                _confirmed_write(_fetch('/id/'+quote(id_value,safe=''),method='PATCH',
+                       payload={'data':{'id':id_value,**cleaned}}),'updated')
                 updated=[{'id':id_value,**cleaned} if row['id']==id_value else row for row in current]
         if _cache_enabled:_remember(updated)
         else:_CACHE.update(rows=None,at=0.0,error=None)
