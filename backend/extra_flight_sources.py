@@ -195,7 +195,10 @@ def test_airplanes():
 def _sbs(line,now):
     """Parse current SBS messages; positions and flight state have independent ages."""
     fields=line.strip().split(',')
-    if len(fields)<22 or fields[0]!='MSG' or not re.fullmatch(r'[a-fA-F0-9]{6}',fields[4]):return None
+    if len(fields)<22 or fields[0]!='MSG' or not re.fullmatch(r'[a-fA-F0-9]{1,6}',fields[4]):return None
+    # ADSBHub emits unpadded numeric ICAO24 addresses in SBS. Restore
+    # canonical six-digit hexadecimal identifiers before matching airframes.
+    hexcode=fields[4].lower().zfill(6)
     try:
         stamp=datetime.fromisoformat(fields[6].replace('/','-')+'T'+fields[7]).replace(tzinfo=timezone.utc).timestamp()
     except (ValueError,OverflowError):return None
@@ -213,7 +216,7 @@ def _sbs(line,now):
     if speed is not None and 0<=speed<=2000:values['gs']=speed
     if lat is not None and lon is not None and -90<=lat<=90 and -180<=lon<=180:
         values['position']=(lat,lon)
-    return fields[4].lower(),stamp,values
+    return hexcode,stamp,values
 
 def test_adsbhub(connect=None):
     if connect is None:
@@ -221,19 +224,28 @@ def test_adsbhub(connect=None):
             if _hub_running and _hub_last_message and time.monotonic()-_hub_last_message<30:
                 return {'ok':True,'plan':'Live SBS stream receiving data'}
     connect=connect or socket.create_connection
+    connected=False
+    received=False
     try:
         with connect(('data.adsbhub.org',5002),timeout=6) as sock:
+            connected=True
             sock.settimeout(6)
             with sock.makefile('rb') as stream:
                 deadline=time.monotonic()+6
-                for _ in range(100):
+                for _ in range(1000):
+                    if time.monotonic()>deadline:break
                     line=stream.readline(2048)
-                    if not line or time.monotonic()>deadline:break
+                    if not line:break
+                    received=True
                     if _sbs(line.decode('ascii','ignore'),time.time()):
                         return {'ok':True,'plan':'Live SBS stream accessible'}
     except (OSError,ValueError):
         pass
-    raise ValueError('ADSBHub stream unavailable; check your active station and Data Access IP')
+    if received:
+        raise ValueError('ADSBHub connected and sent data, but no fresh valid SBS message was decoded; check Data Access protocol and clock')
+    if connected:
+        raise ValueError('ADSBHub connected but sent no data; check active station and Data Access IP')
+    raise ValueError('ADSBHub TCP connection failed; check network access to port 5002')
 
 def _hub_wanted():
     now=time.monotonic()
