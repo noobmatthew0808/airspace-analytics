@@ -5,6 +5,7 @@ Geographic query distance is nautical miles, unlike our website (kilometres).
 Feeds and alert matching remain fully independent from this poller.
 """
 from __future__ import annotations
+from . import api_budget
 
 import json
 import math
@@ -48,7 +49,7 @@ def status(key_set=False):
                 'retry_after':_state['retry_after'] if _state['retry_after']>time.time() else None}
 
 def fetch(key,lat,lon,radius_km,opener=None):
-    if opener is None:opener=_private_open
+    if opener is None:opener=lambda req,timeout:api_budget.open_request('adsb.lol',_private_open,req,timeout)
     if not isinstance(key,str) or not key.strip():
         raise ValueError('adsb.lol feeder key is not saved')
     if not all(isinstance(v,(int,float)) and math.isfinite(v) for v in (lat,lon,radius_km)):
