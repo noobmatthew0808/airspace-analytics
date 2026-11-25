@@ -215,13 +215,13 @@ class LiveStatusTests(unittest.TestCase):
                 data=flights_live.snapshot('G-WUKU',network_fetch=lambda regs:[])
         self.assertEqual(data['aircraft']['G-WUKU']['status'],'Ground')
 
-    def test_network_cache_ages_and_cannot_show_90s_old_plane_as_live(self):
+    def test_network_cache_ages_and_cannot_show_expired_plane_as_live(self):
         live={'hex':'407abc','r':'G-WUKU','alt_baro':33000,'seen':0,
               'seen_pos':0,'lat':51.2,'lon':0.3,'_source':'adsb.fi'}
         with patch.object(flights_live,'_local_planes',return_value=[]):
             first=flights_live.snapshot('G-WUKU',network_fetch=lambda regs:[live])
             self.assertTrue(first['aircraft']['G-WUKU']['status'].startswith('Flying'))
-            flights_live._REMOTE['updated']=time.monotonic()-65
+            flights_live._REMOTE['updated']=time.monotonic()-180
             second=flights_live.snapshot('G-WUKU',network_fetch=lambda regs:[])
         self.assertEqual(second['aircraft']['G-WUKU']['status'],'N/A')
 
@@ -286,9 +286,44 @@ class LiveStatusTests(unittest.TestCase):
                                       side_effect=lambda regs,provider,key:used.append(provider) or []):
                         for _ in range(4):
                             flights_live._ROTATION['at']=0
+                            flights_live._ROTATION['retry_until'].clear() # simulate next eligible interval
                             result=flights_live.snapshot('G-WUKU')
                             self.assertEqual(result['aircraft']['G-WUKU']['status'],'N/A')
         self.assertEqual(used,['adsb.fi','FlyItalyADSB','adsb.lol','adsb.fi'])
+
+    def test_global_snapshot_filters_tracked_registrations_and_uses_documented_hosts(self):
+        calls=[]
+        def fake(req,timeout=12):
+            calls.append(req)
+            obj=MagicMock()
+            obj.read.return_value=json.dumps({'now':time.time(),'ac':[
+                {'hex':'4080f7','r':'G-WUKU','seen':1,'route_origin':'LGW','route_dest':'BTS'},
+                {'hex':'4080f8','r':'G-OTHER','seen':1}]}).encode()
+            obj.__enter__=Mock(return_value=obj)
+            obj.__exit__=Mock(return_value=None)
+            return obj
+        for provider,key,url in [
+            ('adsb.fi','','https://opendata.adsb.fi/api/v2/snapshot'),
+            ('ADSBiq','iq_dummy-secret','https://api.adsbiq.com/v2/all')]:
+            found=flights_live._lookup_provider(['G-WUKU','G-MISS'],provider,key,opener=fake)
+            self.assertEqual([a['r'] for a in found],['G-WUKU'])
+            self.assertEqual(found[0]['route_dest'],'BTS')
+            self.assertEqual(calls[-1].full_url,url)
+        self.assertEqual(calls[-1].get_header('Authorization'),'Bearer iq_dummy-secret')
+
+    def test_icao_landing_code_is_converted_to_iata(self):
+        with patch.object(flights_live,'_local_planes',return_value=[]):
+            with patch.object(flights_live.flights_history,'cached',return_value={'airport':'EGKK','time':int(time.time())-3600}):
+                result=flights_live.snapshot('G-WUKU',network_fetch=lambda regs:[])
+        self.assertEqual(result['aircraft']['G-WUKU']['at_airport'],'LGW')
+
+    def test_reported_routes_from_active_snapshot(self):
+        aircraft={'hex':'4080f7','r':'G-WUKU','flight':'EZY123','seen':1,'alt_baro':30000,
+                  'route_origin':'LGW','route_dest':'BTS'}
+        with patch.object(flights_live,'_local_planes',return_value=[]):
+            result=flights_live.snapshot('G-WUKU',network_fetch=lambda regs:[aircraft])
+        self.assertEqual(result['aircraft']['G-WUKU']['route'],'LGW–BTS')
+        self.assertEqual(result['aircraft']['G-WUKU']['route_confidence'],'reported')
 
     def test_invalid_registration_or_too_many_rejected_without_network_calls(self):
         with self.assertRaises(ValueError):
