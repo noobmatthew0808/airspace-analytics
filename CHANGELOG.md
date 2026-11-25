@@ -1,3 +1,7 @@
+# v1.10.33 — feeder shortcut corrections
+
+- Correct only the requested ADSBiq, ADSBHub, AvioADSB and OpenSky homepage destinations. Apply the same correction once to existing server-stored shortcuts, preserve their order, secondary links and other preferences, and retain subsequent manual edits. No API, polling, flight, alert or traffic changes.
+
 # v1.10.32 — shared settings, API status cards and faster flight log
 
 - Retain existing launcher entries and add the nine missing currently enabled feeders, with official site/feeder statistics links and existing favicon fallback. Add FR24 account stats as an optional second link.
