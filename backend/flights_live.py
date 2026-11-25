@@ -317,7 +317,7 @@ def source_health():
     # while the background thread holds the remote lookup lock.
     now=time.monotonic()
     return {**extra_flight_sources.health(),**{name:{'last_attempt_seconds_ago':round(max(0,now-store['updated'])) if store['updated'] else None,
-                  'matching_aircraft':len(store['aircraft']),
+                  'matching_aircraft':sum(1 for p in store['aircraft'] if isinstance(p.get('seen'),(int,float)) and p['seen']+max(0,now-store['updated'])<=120),
                   'error':store.get('error'),
                   'retry_seconds':round(max(0,_ROTATION['retry_until'].get(name,0)-now))}
             for name,store in [('adsb.fi',_REMOTE),*_OTHER_REMOTE.items()]}}
