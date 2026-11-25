@@ -459,3 +459,9 @@
 .flights-table .flights-row[aria-expanded="true"]{background:var(--panel2)!important}
 .flights-table .flights-reg-line .flights-live-chip.flights-lgw{color:var(--green,#36bc76)!important;background:transparent!important;border:0!important;padding:0!important;font-weight:400!important}
 .flights-inline-live>strong.flights-lgw{color:var(--green,#36bc76);font-weight:600}
+
+/* v1.10.38: restore local sighting under the registration, not the live route. */
+.flights-table .flights-reg-line>.flights-local-seen{grid-column:1;grid-row:2;justify-self:start;margin:0;line-height:1.05!important;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap!important;font-size:9px!important}
+.flights-table .flights-reg-line>.flights-live-chip{grid-column:2;grid-row:1 / span 2;align-self:center}
+.flights-table .flights-reg-line{row-gap:2px}
+@media(max-width:380px){.flights-table .flights-reg-line>.flights-local-seen{font-size:8px!important}}
