@@ -6,7 +6,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from urllib.parse import parse_qs, urlsplit
 from backend import alerts, extra_flight_sources as extra
 
@@ -82,6 +82,43 @@ class OptionalSourceTests(unittest.TestCase):
             plane=extra._hub_planes()[0]
         self.assertEqual(plane['r'],'G-TEST')
         self.assertNotIn('lat',plane)
+
+    def test_adsbhub_accepts_real_unpadded_sbs_sample(self):
+        # Exact message shape from the user's live TCP output, including
+        # millisecond timestamps and leading-zero omission.
+        now=datetime(2026,11,25,23,11,5,tzinfo=timezone.utc).timestamp()
+        sample='MSG,3,0,0,1234,0,2026/11/25,23:11:05.000,2026/11/25,23:11:04.000,,4000,,,26.273199,-100.534676,,,,,,'
+        hexcode,stamp,fields=extra._sbs(sample,now)
+        self.assertEqual(hexcode,'001234')
+        self.assertEqual(stamp,now)
+        self.assertEqual(fields['alt_baro'],4000)
+        self.assertEqual(fields['position'],(26.273199,-100.534676))
+        for raw,canonical in [('AF5A','00af5a'),('100FF','0100ff'),('abc123','abc123')]:
+            self.assertEqual(extra._sbs(sbs(now,raw),now)[0],canonical)
+        for raw in ('','1234567','xyz','-123'):
+            self.assertIsNone(extra._sbs(sbs(now,raw),now))
+        self.assertIsNone(extra._sbs(sample,now+600))
+
+    def test_adsbhub_connection_test_accepts_unpadded_stream(self):
+        now=int(time.time())
+        sock=MagicMock()
+        sock.__enter__.return_value=sock
+        sock.makefile.return_value=io.BytesIO((sbs(now,'1234')+'\n').encode())
+        connect=MagicMock(return_value=sock)
+        self.assertTrue(extra.test_adsbhub(connect)['ok'])
+        connect.assert_called_once_with(('data.adsbhub.org',5002),timeout=6)
+
+    def test_adsbhub_connection_diagnostics_distinguish_received_data(self):
+        sock=MagicMock()
+        sock.__enter__.return_value=sock
+        sock.makefile.return_value=io.BytesIO(b'not a valid SBS message\n')
+        with self.assertRaisesRegex(ValueError,'connected and sent data'):
+            extra.test_adsbhub(MagicMock(return_value=sock))
+        sock.makefile.return_value=io.BytesIO(b'')
+        with self.assertRaisesRegex(ValueError,'connected but sent no data'):
+            extra.test_adsbhub(MagicMock(return_value=sock))
+        with self.assertRaisesRegex(ValueError,'TCP connection failed'):
+            extra.test_adsbhub(MagicMock(side_effect=OSError('offline')))
 
     def test_disabled_sources_never_schedule_network(self):
         with patch.object(extra,'_known',{}),patch.object(extra,'_targets',{}),patch.object(extra,'_cache',{}),patch.object(extra,'_hub_enabled',False),patch.object(extra,'_hub_touch',0),patch.object(extra.threading,'Thread') as thread:

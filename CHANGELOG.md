@@ -1,3 +1,7 @@
+# v1.10.37 — ADSBHub SBS decoding fix
+
+- Normalize unpadded ICAO24 hex addresses from the real ADSBHub stream to six characters. Accept the existing SBS format with millisecond timestamps and preserve freshness checks. Improve connection-test diagnostics for socket failure, missing data and decoding failure. Add regression tests based on the observed stream. No unrelated changes.
+
 # v1.10.36 — free API inventory and shared backup coverage
 
 - Only integrated free/feeder data providers appear in the API panel, each with an existing real connection test and separate background-use diagnostics. Remove the informational SheetDB, route helper and unintegrated/paid provider cards without changing their underlying functionality or homepage shortcuts.
