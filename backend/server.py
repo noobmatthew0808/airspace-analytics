@@ -221,27 +221,27 @@ class App(BaseHTTPRequestHandler):
             alerts.save_notifier(payload)
             return self.send_json({'ok':True})
         if path=='/api/alerts/adsbfi/check':
-            return self.send_json(alerts.test_adsbfi())
+            return self.send_json(alerts.run_provider_test('adsbfi'))
         if path=='/api/alerts/adsbiq':
             alerts.save_adsbiq(payload)
             return self.send_json({'ok':True})
         if path=='/api/alerts/adsbiq/check':
-            return self.send_json(alerts.test_adsbiq())
+            return self.send_json(alerts.run_provider_test('adsbiq'))
         if path=='/api/alerts/avioadsb':
             alerts.save_avio(payload)
             return self.send_json({'ok':True})
         if path=='/api/alerts/avioadsb/check':
-            return self.send_json(alerts.test_avio())
+            return self.send_json(alerts.run_provider_test('avioadsb'))
         if path=='/api/alerts/adsblol':
             alerts.save_adsblol(payload)
             return self.send_json({'ok':True})
         if path=='/api/alerts/adsblol/check':
-            return self.send_json(alerts.test_adsblol())
+            return self.send_json(alerts.run_provider_test('adsblol'))
         if path=='/api/alerts/flyitaly':
             alerts.save_flyitaly(payload)
             return self.send_json({'ok':True})
         if path=='/api/alerts/flyitaly/check':
-            return self.send_json(alerts.test_flyitaly())
+            return self.send_json(alerts.run_provider_test('flyitaly'))
         if path=='/api/alerts/receiver':
             alerts.save_receiver(payload)
             return self.send_json({'ok':True})
