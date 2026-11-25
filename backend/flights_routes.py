@@ -46,9 +46,10 @@ def _code(value):
 
 
 def parse_routes(payload, requested, unpositioned=()):
-    """Return only plausible 2-airport routes for the corresponding callsigns.
+    """Return unambiguous 2-airport routes for corresponding callsigns.
 
-    Unknown, multi-stop, ambiguous or implausible results remain blank.
+    Require plausibility for position-based requests. ADSB.im requests without
+    a position may return a usual itinerary, labelled as such by the cache.
     adsb.lol may supply a list of lists (one per plane) or a flat list.
     """
     wanted=set(requested)
@@ -172,6 +173,7 @@ def cached_routes(planes):
             saved=_cache.get(call)
         if saved and saved[0]>now:
             if saved[1]:found[call]=saved[1]
+            if len(saved)>2 and saved[2]=='usual' and item.get('lat') is not None and item.get('lon') is not None and _clean_planes([item]):pending.append(item)
         elif _clean_planes([item]):
             pending.append(item)
     with _lock:
@@ -199,6 +201,8 @@ def _refresh(batch):
             for aircraft in batch:
                 call=str(aircraft.get('callsign') or '').strip().upper()
                 route=routes.get(call,'')
+                previous=_cache.get(call)
+                if not route and previous and previous[0]>now and previous[1]:continue
                 _cache[call]=(now+(GOOD_TTL_SECONDS if route else MISS_TTL_SECONDS),route,
                               'plausible' if aircraft.get('lat') is not None and aircraft.get('lon') is not None else 'usual')
     finally:
