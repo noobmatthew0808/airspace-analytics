@@ -11,7 +11,7 @@ const providers=[
  {id:'adsbfi',name:'adsb.fi',url:'https://opendata.adsb.fi/api',hint:'Free public API; worldwide snapshot access uses your feeder IP.',keyless:true}
 ];
 const otherSources=[
- {id:'airplaneslive',name:'airplanes.live',keyless:true,url:'https://airplanes.live/api-guide/',hint:'Public API; not integrated into Airspace Analytics.'},
+ {id:'airplaneslive',name:'airplanes.live',keyless:true,url:'https://airplanes.live/api-docs/',hint:'Public API; not integrated into Airspace Analytics.'},
  {id:'adsbhub',name:'ADSBHub',keyless:true,url:'https://www.adsbhub.org/howtogetdata.php',hint:'IP-authorized data stream, not a REST API. Not integrated.'},
  {id:'opensky',name:'OpenSky Network',url:'https://opensky-network.org/',hint:'OAuth API credentials; not integrated.'},
  {id:'fr24',name:'Flightradar24',url:'https://fr24api.flightradar24.com/',hint:'Separate API subscription; feeder sharing key is not an API key. Not integrated.'},
@@ -83,6 +83,9 @@ function providerCard(p,d){
   (info.monthly_used?'<p class="alert-provider-note">Requests '+ae(info.monthly_used)+'/'+ae(info.monthly_quota||'?')+'</p>':'')+
   '</form></details>';
 }
+function helperCard(id,name,description){
+ return '<details class="foldout alert-config alert-provider" id="api-helper-'+id+'"><summary class="alert-api-summary">'+providerIcon('keyless')+'<span><strong>'+ae(name)+'</strong><small>No key to enter · In use</small></span></summary><div class="alert-config-content"><p class="alert-provider-note">'+ae(description)+'</p></div></details>';
+}
 function otherProviderCard(p){
  return '<details class="foldout alert-config alert-provider" id="other-api-'+p.id+'"><summary class="alert-api-summary">'+providerIcon(p.keyless?'keyless':'missing')+
   '<span><strong>'+ae(p.name)+'</strong><small>'+ (p.keyless?'No key required · Not integrated':'Not integrated')+'</small></span></summary>'+
@@ -105,6 +108,8 @@ function renderAlertPageContents(){
   '<p class="alert-explainer">Configured sources supply Flights; backup alert sources apply only to rules with Backup APIs enabled. Your receiver remains the primary source.</p>'+
   '<div class="alert-api-legend">'+providerIcon('verified')+' Verified '+providerIcon('saved')+' Key saved '+providerIcon('missing')+' Missing / failed '+providerIcon('keyless')+' Keyless</div>'+
   providers.map(p=>providerCard(p,d)).join('')+
+  helperCard('routes','ADSB.im / adsb.lol routeset','Keyless callsign and position route enrichment for Flights. No separate credentials; automatic lookups use the existing rate limits.')+
+  helperCard('sheet','Google Sheets (SheetDB)','Existing flight-log bridge. No separate key to enter here; the Refresh button in Flights checks the sheet.')+
   '<details class="foldout alert-config" id="alertOtherSources"><summary>Other feeder sources <small>Not integrated</small></summary><div class="alert-config-stack">'+otherSources.map(otherProviderCard).join('')+'</div></details></div></details>'+
   '<details class="foldout alert-config" id="alertNtfy"><summary><span>Notifications <small>'+(d.ntfy.topic?'Configured':'Not configured')+'</small></span></summary>'+
   '<form id="alertNtfyForm" class="alert-config-content"><div class="alert-form-grid">'+
