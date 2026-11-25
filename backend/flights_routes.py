@@ -156,7 +156,33 @@ def health():
     with _lock:return dict(_health)
 
 
-def cached_routes(planes):
+def historical_route(call,key,opener=None):
+    """A usual itinerary only, from observed completed flights of this callsign."""
+    from . import api_budget, live_details
+    if not key or not re.fullmatch(r'[A-Z]{3}[0-9][A-Z0-9]{0,4}',call):return ''
+    if opener is None:
+        if api_budget.remaining('FlyItalyADSB')>0:return ''
+        opener=lambda req,timeout:api_budget.open_request('FlyItalyADSB',_open,req,timeout)
+    req=Request('https://api.flyitalyadsb.com/v2/flights/callsign/'+call+'?days=7',
+                headers={'X-Api-Key':key,'Accept':'application/json','User-Agent':'AirspaceAnalytics-Flights/4'})
+    with opener(req,timeout=5) as response:
+        raw=response.read(MAX_RESPONSE_BYTES+1)
+    if len(raw)>MAX_RESPONSE_BYTES:raise ValueError('History response too large')
+    payload=json.loads(raw)
+    if not isinstance(payload,dict):return ''
+    rows=payload.get('flights',[])
+    if not isinstance(rows,list):return ''
+    routes=set()
+    for row in rows:
+        if not isinstance(row,dict) or str(row.get('callsign') or '').strip().upper()!=call:continue
+        a,b=row.get('from'),row.get('to')
+        if not isinstance(a,dict) or not isinstance(b,dict):continue
+        route=live_details._route(a.get('iata') or a.get('airport'),b.get('iata') or b.get('airport'))
+        if route:routes.add(route.replace(' – ','–'))
+    return next(iter(routes)) if len(routes)==1 else ''
+
+
+def cached_routes(planes,history_key=''):
     """Return cached routes and optionally schedule a polite refresh.
 
     Flight-tab requests are answered immediately; no outgoing HTTP waits.
@@ -181,7 +207,7 @@ def cached_routes(planes):
             _busy=True
             _last_request=now
             batch=pending[:MAX_PER_BATCH]
-            threading.Thread(target=_refresh,args=(batch,),daemon=True,
+            threading.Thread(target=_refresh,args=(batch,history_key),daemon=True,
                              name='airspace-flight-routes').start()
     return found
 
@@ -192,10 +218,20 @@ def confidence(call):
         return saved[2] if saved and len(saved)>2 else 'plausible'
 
 
-def _refresh(batch):
+def _refresh(batch,history_key=''):
     global _busy
     try:
         routes=fetch_routes(batch)
+        from_history=set()
+        if history_key:
+            missing=[str(p.get('callsign') or '').strip().upper() for p in batch if p.get('callsign') not in routes]
+            # One extra history call at most per three-minute route batch.
+            if missing:
+                call=missing[0]
+                try:
+                    route=historical_route(call,history_key)
+                    if route:routes[call]=route;from_history.add(call)
+                except (OSError,ValueError,TypeError):pass
         now=time.monotonic()
         with _lock:
             for aircraft in batch:
@@ -204,6 +240,6 @@ def _refresh(batch):
                 previous=_cache.get(call)
                 if not route and previous and previous[0]>now and previous[1]:continue
                 _cache[call]=(now+(GOOD_TTL_SECONDS if route else MISS_TTL_SECONDS),route,
-                              'plausible' if aircraft.get('lat') is not None and aircraft.get('lon') is not None else 'usual')
+                              'plausible' if call not in from_history and aircraft.get('lat') is not None and aircraft.get('lon') is not None else 'usual')
     finally:
         with _lock:_busy=False
