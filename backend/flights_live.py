@@ -25,6 +25,7 @@ _REMOTE={'updated':0.,'aircraft':[],'error':None}
 _OTHER_REMOTE={
     'FlyItalyADSB':{'updated':0.,'aircraft':[],'error':None},
     'adsb.lol':{'updated':0.,'aircraft':[],'error':None},
+    'AvioADSB':{'updated':0.,'aircraft':[],'error':None},
 }
 _ROTATION={'at':0.,'cursor':0,'retry_until':{}}
 MAX_BYTES=1_750_000
@@ -67,6 +68,9 @@ def _lookup_provider(regs,provider='adsb.fi',key='',opener=None):
     codes=list(dict.fromkeys(str(r).strip().upper() for r in regs
         if re.fullmatch(r'[A-Z0-9-]{2,16}',str(r).strip().upper())))[:MAX_REGS]
     if not codes:return []
+    if provider=='AvioADSB':
+        if not key:raise ValueError('API key unavailable')
+        return _avio_snapshot(codes,key,opener)
     configurations={
         'adsb.fi':('https://opendata.adsb.fi/api/v2/registration/',MAX_REGS,{}),
         'adsb.lol':('https://api.adsb.lol/v2/reg/',MAX_REGS,{'X-API-Key':key}),
@@ -122,6 +126,41 @@ def _lookup_provider(regs,provider='adsb.fi',key='',opener=None):
     return aircraft
 
 
+def _avio_snapshot(regs,key,opener):
+    request=Request('https://avioadsb.org/v1/aircraft',headers={
+        'Accept':'application/json','X-API-Key':key,'User-Agent':'AirspaceAnalytics-Flights/3'})
+    limit=24_000_000
+    try:
+        with opener(request,timeout=12) as response:
+            raw=response.read(limit+1)
+        if len(raw)>limit:raise ValueError('AvioADSB response too large')
+        payload=json.loads(raw)
+        when=payload.get('now')
+        if not isinstance(when,(int,float)) or not math.isfinite(when):
+            raise ValueError('AvioADSB timestamp missing')
+        if when>1e11:when/=1000
+        delta=time.time()-when
+        if not -10<=delta<=50 or not isinstance(payload.get('ac'),list):
+            raise ValueError('AvioADSB stale or invalid response')
+        targets={normal_reg(r) for r in regs}
+        result=[]
+        for record in payload['ac']:
+            if not isinstance(record,dict) or normal_reg(record.get('r','')) not in targets:continue
+            plane=dict(record,_source='AvioADSB')
+            for field in ('seen','seen_pos'):
+                age=plane.get(field)
+                if isinstance(age,(float,int)) and math.isfinite(age) and 0<=age<=120:
+                    plane[field]=age+max(0,delta)
+                else:plane.pop(field,None)
+            result.append(plane)
+        return result
+    except HTTPError as e:
+        if e.code==429:raise ValueError('AvioADSB API rate limited') from None
+        raise ValueError('AvioADSB HTTP '+str(e.code)) from None
+    except (URLError,OSError,TimeoutError,TypeError,AttributeError,ValueError):
+        raise ValueError('AvioADSB unavailable or invalid response') from None
+
+
 def _lookup_network(regs,opener=None):
     """Backwards-compatible keyless adsb.fi lookup for callers and tests."""
     return _lookup_provider(regs,'adsb.fi',opener=opener)
@@ -132,7 +171,7 @@ def _configured_keys():
     try:
         with alerts._lock,alerts.connect() as db:
             return {'FlyItalyADSB':alerts._flyitaly_key(db),
-                    'adsb.lol':alerts._adsblol_key(db)}
+                    'adsb.lol':alerts._adsblol_key(db),'AvioADSB':alerts._avio_key(db)}
     except (OSError,ValueError):
         return {'FlyItalyADSB':'','adsb.lol':''}
 
@@ -276,7 +315,7 @@ def snapshot(value='',network_fetch=_lookup_network):
         now=time.monotonic()
         if network_fetch is _lookup_network:
             if not _ROTATION['at'] or now-_ROTATION['at']>=MIN_REMOTE_PERIOD:
-                eligible=[key for key in ('adsb.fi','FlyItalyADSB','adsb.lol')
+                eligible=[key for key in ('adsb.fi','FlyItalyADSB','adsb.lol','AvioADSB')
                           if key in provider_keys and now>=_ROTATION['retry_until'].get(key,0)]
                 if eligible:
                     provider=eligible[_ROTATION['cursor']%len(eligible)]
@@ -284,14 +323,17 @@ def snapshot(value='',network_fetch=_lookup_network):
                     _ROTATION['at']=now
                     selected=_REMOTE if provider=='adsb.fi' else _OTHER_REMOTE[provider]
                     selected['updated']=now
+                    if provider=='AvioADSB':
+                        _ROTATION['retry_until'][provider]=now+480  # < 5,600 requests in a 31-day month
                     try:
                         selected['aircraft']=_lookup_provider(registrations,provider,provider_keys[provider])
                         selected['error']=None
                     except (OSError,ValueError) as error:
                         selected.update(aircraft=[],error=str(error)[:110])
                         # Back off failed provider instead of burning its quota.
-                        _ROTATION['retry_until'][provider]=time.monotonic()+(
-                            900 if 'rate limit' in str(error).lower() else 150)
+                        _ROTATION['retry_until'][provider]=max(_ROTATION['retry_until'].get(provider,0),time.monotonic()+(
+                            86400 if provider=='AvioADSB' and 'rate limit' in str(error).lower() else
+                            900 if 'rate limit' in str(error).lower() else 150))
         elif not _REMOTE['updated'] or now-_REMOTE['updated']>=MIN_REMOTE_PERIOD:
             # Keep old injection point for deterministic offline regressions.
             _REMOTE['updated']=now
