@@ -198,7 +198,7 @@ function rowHtml(row){
   '<td class="flights-cell-code">'+escapeHtml(row.flight_code||'—')+'</td>'+
   '<td class="flights-cell-airline">'+escapeHtml(row.airline||'—')+'</td>'+
   '<td class="flights-cell-aircraft">'+escapeHtml(row.airplane||'—')+'</td>'+
-  '<td class="flights-cell-reg"><div class="flights-reg-line">'+regLink+statusBadge(row)+'</div></td>'+
+  '<td class="flights-cell-reg"><div class="flights-reg-line">'+regLink+statusBadge(row)+localLastSeen(row)+'</div></td>'+
   '<td class="flights-cell-who" title="'+escapeHtml(row.who||'')+'">'+
   '<span class="flights-who-full">'+escapeHtml(row.who||'—')+'</span>'+
   '<span class="flights-who-short">'+escapeHtml(shortWho(row.who))+'</span></td></tr>';
