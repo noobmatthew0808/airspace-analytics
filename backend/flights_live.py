@@ -284,7 +284,7 @@ def _routes(calls):
 def _local_planes():
     """Direct existing readsb feed; never require Docker socket access."""
     try:
-        raw=alerts._get_json('http://127.0.0.1:1090/data/aircraft.json')
+        raw=live_details._readsb()
         now=raw.get('now') if isinstance(raw,dict) else None
         if not isinstance(now,(float,int)) or abs(time.time()-now)>20:return []
         return [dict(a,_source='Your antenna') for a in raw.get('aircraft',[])[:2500]
@@ -425,7 +425,8 @@ def snapshot(value='',network_fetch=_lookup_network):
     calls=[str(p.get('flight') or '').strip().upper() for p in seen.values()]
     route_map=_routes([c for c in calls if re.fullmatch(r'[A-Z]{3}[0-9][A-Z0-9]{0,4}',c)])
     # The normal Aerodrome route_cache is fast but often lacks the current
-    # callsign. Queue a separate, position-aware adsb.lol route lookup.
+    # callsign. Queue the same position-aware routeset lookup as tar1090;
+    # a current ICAO identity also allows ADSB.im to answer without a position.
     # Never wait for HTTP here: a route response is shown on later refreshes.
     missing_routes=[]
     for plane in seen.values():
@@ -447,7 +448,11 @@ def snapshot(value='',network_fetch=_lookup_network):
         if not isinstance(item,dict):continue
         reg=normal_reg(item.get('r',''))
         if reg not in targets or not _active(item):continue
-        if _active(item) and item.get('flight'):
+        current=seen.get(reg,{})
+        item_call=str(item.get('flight') or '').strip().upper()
+        if not item_call or item_call!=str(current.get('flight') or '').strip().upper():continue
+        if str(item.get('hex') or '').lower()!=str(current.get('hex') or '').lower():continue
+        if item.get('flight'):
             a,b=(live_details._iata(item.get(k)) for k in ('route_origin','route_dest'))
             if re.fullmatch(r'[A-Z]{3}',a) and re.fullmatch(r'[A-Z]{3}',b) and a!=b:
                 direct_routes[str(item['flight']).strip().upper()]=a+'–'+b
