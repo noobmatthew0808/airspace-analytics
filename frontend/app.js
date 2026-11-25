@@ -44,7 +44,8 @@ function excludedAverageDays(){
  }catch{return ['2026-11-09']}
 }
 async function setExcludedAverageDays(days){
- const before=excludedAverageDays(),next=[...new Set(days)].sort().slice(0,64);
+ const before=excludedAverageDays(),next=[...new Set(days)].sort();
+ if(next.length>64)throw Error('Maximum of 64 excluded dates. Include another date again first.');
  for(const day of next.filter(day=>!before.includes(day)))await writeShared({action:'add_day',day});
  for(const day of before.filter(day=>!next.includes(day)))await writeShared({action:'remove_day',day});
 }
@@ -210,6 +211,8 @@ const newFeederLinks=[
  }
 ];
 defaultLinks.push(...newFeederLinks);
+const fr24Stats={extraLabel:'Feeder stats',extraUrl:'https://www.flightradar24.com/account/feed-stats/'};
+Object.assign(defaultLinks.find(x=>x.id==='fr24'),fr24Stats);
 const linksKey='airspace-analytics-links';
 const linksMigration='airspace-links-v19';
 function migrateLinks(){
@@ -248,6 +251,7 @@ function legacyLinks(){
   if(!Array.isArray(list))list=defaultLinks.slice();
   if(!localStorage.getItem('airspace-feeder-links-v11032')){
    for(const item of newFeederLinks)if(!list.some(x=>x.id===item.id||String(x.name).trim().toLowerCase()===item.name.toLowerCase()))list.push(item);
+   const fr24=list.find(x=>x.id==='fr24');if(fr24&&!fr24.extraLabel&&!fr24.extraUrl&&!fr24.extraPort)Object.assign(fr24,fr24Stats);
    localStorage.setItem(linksKey,JSON.stringify(list));
    localStorage.setItem('airspace-feeder-links-v11032','1');
   }
