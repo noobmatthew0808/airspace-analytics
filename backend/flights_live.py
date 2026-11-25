@@ -295,6 +295,17 @@ def _prefer(current,other):
     return current
 
 
+def source_health():
+    # No network I/O and no secrets. Avoid blocking the HTTP cache reader
+    # while the background thread holds the remote lookup lock.
+    now=time.monotonic()
+    return {name:{'last_attempt_seconds_ago':round(max(0,now-store['updated'])) if store['updated'] else None,
+                  'matching_aircraft':len(store['aircraft']),
+                  'error':store.get('error'),
+                  'retry_seconds':round(max(0,_ROTATION['retry_until'].get(name,0)-now))}
+            for name,store in [('adsb.fi',_REMOTE),*_OTHER_REMOTE.items()]}
+
+
 def snapshot(value='',network_fetch=_lookup_network):
     tokens=[str(v).strip().upper() for v in str(value).split(',') if v.strip()]
     if len(tokens)>MAX_REGS or len(value)>2000:
@@ -392,7 +403,7 @@ def snapshot(value='',network_fetch=_lookup_network):
     for item in remote+others+local:
         if not isinstance(item,dict):continue
         reg=normal_reg(item.get('r',''))
-        if reg not in targets:continue
+        if reg not in targets or not _active(item):continue
         if _active(item) and item.get('flight'):
             a,b=(str(item.get(k) or '').strip().upper() for k in ('route_origin','route_dest'))
             if re.fullmatch(r'[A-Z]{3}',a) and re.fullmatch(r'[A-Z]{3}',b) and a!=b:
@@ -404,7 +415,7 @@ def snapshot(value='',network_fetch=_lookup_network):
         if re.fullmatch(r'[A-Z]{3}',orig) and re.fullmatch(r'[A-Z]{3}',dest) and orig!=dest:
             usual_routes[str(item['flight']).strip().upper()]=orig+'–'+dest
     history_key=configured.get('FlyItalyADSB','') if isinstance(configured,dict) else ''
-    unknown_regs=[reg for key,reg in targets.items() if key not in seen]
+    unknown_regs=[reg for key,reg in targets.items() if key not in seen or (seen[key].get('alt_baro')=='ground' and not airport_for_ground(seen[key]))]
     if history_key and unknown_regs:
         flights_history.schedule(unknown_regs,history_key)
     output={}
@@ -441,6 +452,14 @@ def snapshot(value='',network_fetch=_lookup_network):
         if altitude=='ground':
             airport=airport_for_ground(plane) or ''
             status='At '+airport if airport else 'Ground'
+            if not airport:
+                recent=flights_history.cached(registration)
+                if recent:
+                    candidate=live_details._iata(recent['airport'])
+                    if candidate:
+                        airport=candidate
+                        status='Last landed '+airport
+                        result['last_landed_at']=recent['time']
         else:
             speed=plane.get('gs')
             high=isinstance(altitude,(int,float)) and altitude>=2000
