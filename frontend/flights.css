@@ -457,5 +457,5 @@
 /* v1.10.32: only the live Gatwick text is highlighted. */
 .flights-table .flights-highlight{background:transparent!important}
 .flights-table .flights-row[aria-expanded="true"]{background:var(--panel2)!important}
-.flights-table .flights-reg-line .flights-live-chip.flights-lgw{color:var(--green,#22a65c)!important;background:transparent!important;border:0!important;padding:0!important;font-weight:750!important}
-.flights-inline-live>strong.flights-lgw{color:var(--green,#22a65c)}
+.flights-table .flights-reg-line .flights-live-chip.flights-lgw{color:var(--green,#36bc76)!important;background:transparent!important;border:0!important;padding:0!important;font-weight:400!important}
+.flights-inline-live>strong.flights-lgw{color:var(--green,#36bc76);font-weight:600}
