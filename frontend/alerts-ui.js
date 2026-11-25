@@ -5,22 +5,13 @@ const whenAlert=n=>new Date(n*1000).toLocaleString('en-GB',{timeZone:'Europe/Lon
 const fields=[['type','Aircraft type'],['registration','Registration'],['callsign','Callsign'],['hex','ICAO hex'],['operator','Operator'],['military','Military']];
 const providers=[
  {id:'flyitaly',name:'FlyItalyADSB',url:'https://api.flyitalyadsb.com/v2',hint:'Live positions and military metadata; check your feeder perk in My API.'},
- {id:'adsblol',name:'adsb.lol',url:'https://api.adsb.lol/v2',hint:'Ready for your feeder key when eligible. No key needed until then.'},
- {id:'avioadsb',name:'AvioADSB',url:'https://avioadsb.org/v1',hint:'Flights only. Claim your feeding station and create a contributor key on avioadsb.org/dashboard.'},
- {id:'adsbiq',name:'ADSBiq',url:'https://api.adsbiq.com/v2/all',hint:'Flights only. Enable ADSBiq in ADSB.im, claim your station at adsbiq.com/join and copy your dashboard API key.'},
+ {id:'adsblol',name:'adsb.lol',url:'https://api.adsb.lol/v2',hint:'Enter your free feeder API key when eligible. The separate route lookup remains automatic.'},
+ {id:'avioadsb',name:'AvioADSB',url:'https://avioadsb.org/v1',hint:'Claim your feeding station and create a contributor key on avioadsb.org/dashboard.'},
+ {id:'adsbiq',name:'ADSBiq',url:'https://api.adsbiq.com/v2/all',hint:'Enable ADSBiq in ADSB.im, claim your station at adsbiq.com/join and copy your dashboard API key.'},
  {id:'adsbfi',name:'adsb.fi',url:'https://opendata.adsb.fi/api',hint:'Free public API; worldwide snapshot access uses your feeder IP.',keyless:true},
- {id:'airplaneslive',name:'airplanes.live',keyless:true,url:'https://api.airplanes.live/v2/reg/',hint:'Flights only. Test connection from your feeder network to enable conservative registration lookups.'},
- {id:'adsbhub',name:'ADSBHub',keyless:true,url:'tcp://data.adsbhub.org:5002',hint:'Flights only. Enable your Data Access IP in ADSBHub account settings, then Test connection to activate the read-only SBS stream.'},
- {id:'opensky',name:'OpenSky Network',oauth:true,url:'https://opensky-network.org/api/states/all',hint:'Flights only. Create an OAuth API client on the OpenSky account page. Written permission for automated live use is required.'}
-];
-const otherSources=[
- {id:'fr24',name:'Flightradar24',url:'https://fr24api.flightradar24.com/',hint:'Separate API subscription; feeder sharing key is not an API key. Not integrated.'},
- {id:'flightaware',name:'FlightAware',url:'https://www.flightaware.com/commercial/aeroapi/',hint:'AeroAPI; separate API access. Not integrated.'},
- {id:'adsbx',name:'ADS-B Exchange',url:'https://www.adsbexchange.com/',hint:'Separate API access. Not integrated.'},
- {id:'airnav',name:'AirNav Radar',url:'https://www.airnavradar.com/',hint:'Separate API access. Not integrated.'},
- {id:'planefinder',name:'Plane Finder',url:'https://planefinder.net/',hint:'No verified free feeder API integration.'},
- {id:'flightdeck',name:'FlightDeck',url:'https://www.tryflightdeck.com/',hint:'No verified free feeder API integration.'},
- {id:'dataero',name:'Dataero',url:'https://radar.dataero.eu/contribute',hint:'Free feeder API advertised; authenticated read API documentation needed before integration.'}
+ {id:'airplaneslive',name:'airplanes.live',keyless:true,url:'https://api.airplanes.live/v2/reg/',hint:'Test from your feeder network to enable registration and nearby aircraft lookups.'},
+ {id:'adsbhub',name:'ADSBHub',keyless:true,url:'tcp://data.adsbhub.org:5002',hint:'Set your public Data Access IP and SBS/30003 format, then test to activate the shared read-only stream.'},
+ {id:'opensky',name:'OpenSky Network',oauth:true,url:'https://opensky-network.org/api/states/all',hint:'Create an OAuth API client on the OpenSky account page. Written permission for automated live use is required.'}
 ];
 let alertsData=null,alertsTimer=null,editingRule=null,alertsBusy=false;
 const pendingProviders=new Set();
@@ -74,6 +65,8 @@ function providerCard(p,d){
   !saved?'No key saved':failed?'Connection failed':verified?'Verified':'Key saved · Not tested';
  const message=local?.message||test?.message||(info.error?'Connection failed: '+info.error:info.last_success?'Last successful connection: '+whenAlert(info.last_success):'');
  const error=local?local.error:failed;
+ const usage=d.provider_usage?.[p.id];
+ const background=usage?'<p class="alert-provider-note">Background: '+ae(usage.error?'Last attempt failed — '+usage.error:usage.last_attempt_seconds_ago==null?'Awaiting data':('Last attempt '+usage.last_attempt_seconds_ago+'s ago'))+(usage.matching_aircraft!=null?' · '+at(usage.matching_aircraft)+' tracked matches':'')+(usage.nearby_aircraft!=null?' · '+at(usage.nearby_aircraft)+' nearby matches':'')+(usage.retry_seconds>0?' · Next eligible in '+at(usage.retry_seconds)+'s':'')+'</p>':'';
  const result='<div id="provider-result-'+p.id+'" role="status" class="alert-provider-result'+(message?(error?' is-error':' is-good'):'')+'">'+ae(message)+(test?.at&&!local?' · '+ae(whenAlert(test.at)):'')+'</div>';
  return '<details class="foldout alert-config alert-provider" id="alert-'+p.id+'"><summary class="alert-api-summary">'+providerIcons(p.keyless,state)+'<span><strong>'+ae(p.name)+'</strong><small>'+ae(subtitle)+'</small></span></summary>'+
   '<form class="alert-config-content alert-provider-form" data-provider="'+p.id+'" autocomplete="off">'+
@@ -85,17 +78,9 @@ function providerCard(p,d){
   '<div class="alert-editor-buttons">'+(p.keyless?'':'<button class="btn primary" type="submit">Save key</button>')+
   '<button class="btn small" type="button" '+(p.id==='adsbfi'?'id="alertAdsbfiTest" ':'')+'data-test-provider="'+p.id+'">Test connection</button>'+
   (p.keyless?'':'<button class="btn small alert-delete" type="button" data-remove-provider="'+p.id+'" '+(saved?'':'disabled')+'>Remove key</button>')+'</div>'+
-  result+
+  result+background+
   (info.monthly_used?'<p class="alert-provider-note">Requests '+ae(info.monthly_used)+'/'+ae(info.monthly_quota||'?')+'</p>':'')+
   '</form></details>';
-}
-function helperCard(id,name,description){
- return '<details class="foldout alert-config alert-provider" id="api-helper-'+id+'"><summary class="alert-api-summary">'+providerIcons(true,'pending')+'<span><strong>'+ae(name)+'</strong><small>No key to enter · In use</small></span></summary><div class="alert-config-content"><p class="alert-provider-note">'+ae(description)+'</p></div></details>';
-}
-function otherProviderCard(p){
- return '<details class="foldout alert-config alert-provider" id="other-api-'+p.id+'"><summary class="alert-api-summary">'+providerIcons(p.keyless,'missing')+
-  '<span><strong>'+ae(p.name)+'</strong><small>'+ (p.keyless?'No key required · Not integrated':'Not integrated')+'</small></span></summary>'+
-  '<div class="alert-config-content"><p class="alert-provider-note">'+ae(p.hint)+'</p><a class="btn small" href="'+ae(p.url)+'" target="_blank" rel="noopener noreferrer">Provider website</a></div></details>';
 }
 function renderAlertPageContents(){
  const host=document.querySelector('#page');if(!host||!alertsData)return;
@@ -109,14 +94,12 @@ function renderAlertPageContents(){
   '<div id="alertEditor"></div><div id="alertFeedback" role="status" class="alert-feedback"></div>'+
   '<section class="alert-rules">'+(d.rules.length?d.rules.map(ruleCard).join(''):'<div class="alert-empty">No rules configured yet.</div>')+'</section>'+
   '<details class="foldout alert-root-config" id="alertAllConfig"><summary><span>Configuration &amp; Logs <small>APIs · Notifications · Receiver · History</small></span></summary>'+
-  '<div class="alert-config-stack"><details class="foldout alert-config" id="alertApis"><summary><span>APIs <small>Manage backup sources</small></span></summary>'+
+  '<div class="alert-config-stack"><details class="foldout alert-config" id="alertApis"><summary><span>APIs <small>Free flight data sources</small></span></summary>'+
   '<div class="alert-config-stack alert-nested">'+
-  '<p class="alert-explainer">Configured sources supply Flights; backup alert sources apply only to rules with Backup APIs enabled. Your receiver remains the primary source.</p>'+
+  '<p class="alert-explainer">Configured sources share live aircraft data for Flights and opted-in backup alerts. Each has its own limits and connection test. Receiver-only data and rules are unchanged.</p>'+
   '<div class="alert-api-legend"><span>'+providerIcon('key')+' Key required</span><span>'+providerIcon('keyless')+' Keyless</span><span>'+providerIcon('verified')+' Verified</span><span>'+providerIcon('saved')+' Key saved</span><span>'+providerIcon('missing')+' Missing / failed</span><span>'+providerIcon('pending')+' Not verified</span></div>'+
   providers.map(p=>providerCard(p,d)).join('')+
-  helperCard('routes','ADSB.im / adsb.lol routeset','Keyless callsign and position route enrichment for Flights. No separate credentials; automatic lookups use the existing rate limits.')+
-  helperCard('sheet','Google Sheets (SheetDB)','Existing flight-log bridge. No separate key to enter here; the Refresh button in Flights checks the sheet.')+
-  '<details class="foldout alert-config" id="alertOtherSources"><summary>Other feeder sources <small>Not integrated</small></summary><div class="alert-config-stack">'+otherSources.map(otherProviderCard).join('')+'</div></details></div></details>'+
+  '</div></details>'+
   '<details class="foldout alert-config" id="alertNtfy"><summary><span>Notifications <small>'+(d.ntfy.topic?'Configured':'Not configured')+'</small></span></summary>'+
   '<form id="alertNtfyForm" class="alert-config-content"><div class="alert-form-grid">'+
   '<label class="alert-field">ntfy server<input name="server" type="url" required value="'+ae(d.ntfy.server)+'"></label>'+
