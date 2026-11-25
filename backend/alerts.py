@@ -15,7 +15,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import flyitaly, adsblol, adsbfi
+from . import flyitaly, adsblol, adsbfi, regional_sources, api_budget
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler, ProxyHandler
 from urllib.parse import urlsplit
@@ -245,7 +245,8 @@ def test_adsbiq():
     with _lock,connect() as c:key=_adsbiq_key(c)
     if not key:raise ValueError('Save your ADSBiq key first')
     from .flights_live import _NoRedirect as NoRedirect, _global_snapshot
-    planes=_global_snapshot([],key,build_opener(ProxyHandler({}),NoRedirect()).open,'ADSBiq')
+    base=build_opener(ProxyHandler({}),NoRedirect()).open
+    _global_snapshot([],key,lambda req,timeout:api_budget.open_request('ADSBiq',base,req,timeout),'ADSBiq')
     return {'ok':True,'plan':'API accessible'}
 
 
@@ -949,13 +950,31 @@ def loop():
         try:
             payload,lat,lon=read_receiver()
             process_snapshot(payload,lat,lon,
-                             external=flyitaly.aircraft()+adsblol.aircraft()+adsbfi.aircraft())
+                             external=flyitaly.aircraft()+adsblol.aircraft()+adsbfi.aircraft()+regional_sources.aircraft())
             with _lock:_last_sample['source']=_last_good_url
         except Exception as exc:
             with _lock:_last_sample['error']=str(exc)[:180]
         try:deliver_pending()
         except Exception as exc:print('[alerts] ntfy:',str(exc)[:180],flush=True)
         time.sleep(POLL_SECONDS)
+
+
+def regional_loop():
+    """Additional sources are optional, shared and never block receiver matching."""
+    while True:
+        try:
+            with _lock,connect() as c:
+                receiver=receiver_settings(c)
+                rows=c.execute('SELECT max_km FROM rules WHERE enabled=1 AND use_flyitaly=1 AND max_km IS NOT NULL').fetchall()
+                keys={'AvioADSB':_avio_key(c),'ADSBiq':_adsbiq_key(c),'OpenSky Network':_opensky_credentials(c)}
+                verified=_provider_tests(c)
+            area=None
+            if rows and receiver['lat'] is not None and receiver['lon'] is not None:
+                area=(receiver['lat'],receiver['lon'],min(450.,max(10.,*(float(r['max_km'])+5 for r in rows))))
+            regional_sources.configure(area,keys,verified)
+        except Exception:
+            pass
+        time.sleep(10)
 
 
 def flyitaly_loop():
@@ -1029,3 +1048,4 @@ def start():
                          daemon=True).start()
         threading.Thread(target=adsbfi_loop,name='airspace-adsbfi',
                          daemon=True).start()
+        threading.Thread(target=regional_loop,name='airspace-regional-sources',daemon=True).start()
