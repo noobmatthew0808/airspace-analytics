@@ -452,6 +452,10 @@ def test_opensky():
     if not credentials:raise ValueError('Save permitted OpenSky OAuth credentials first')
     return extra_flight_sources.test_opensky(credentials)
 
+def test_adsbhub():
+    from . import extra_flight_sources
+    return extra_flight_sources.test_adsbhub()
+
 def test_airplaneslive():
     from . import extra_flight_sources
     return extra_flight_sources.test_airplanes()
@@ -466,7 +470,7 @@ def _provider_fingerprint(key):
 
 def _provider_tests(c):
     result={}
-    for provider in ('flyitaly','adsblol','avioadsb','adsbiq','adsbfi','opensky','airplaneslive'):
+    for provider in ('flyitaly','adsblol','avioadsb','adsbiq','adsbfi','opensky','airplaneslive','adsbhub'):
         row=c.execute('SELECT value FROM config WHERE key=?',('provider_test_'+provider,)).fetchone()
         if not row:continue
         try:entry=json.loads(row['value'])
@@ -488,7 +492,7 @@ def save_provider_key(provider,payload):
 def run_provider_test(provider):
     functions={'flyitaly':test_flyitaly,'adsblol':test_adsblol,
                'avioadsb':test_avio,'adsbiq':test_adsbiq,'adsbfi':test_adsbfi,
-               'opensky':test_opensky,'airplaneslive':test_airplaneslive}
+               'opensky':test_opensky,'airplaneslive':test_airplaneslive,'adsbhub':test_adsbhub}
     if provider not in functions:raise ValueError('Unknown API source')
     with _lock,connect() as c:
         key=_provider_key(c,provider)
@@ -523,7 +527,7 @@ def snapshot():
         return {'rules':rules,'events':events,'ntfy':pub,'flyitaly':flyitaly.status(bool(_flyitaly_key(c))), 'receiver':dict(_last_sample),
                 'adsblol':adsblol.status(bool(_adsblol_key(c))),'adsbfi':adsbfi.status(),
                 'avioadsb':{'key_set':bool(_avio_key(c))},'adsbiq':{'key_set':bool(_adsbiq_key(c))},
-                'opensky':{'key_set':bool(_opensky_key(c))},'airplaneslive':{'key_required':False},
+                'opensky':{'key_set':bool(_opensky_key(c))},'airplaneslive':{'key_required':False},'adsbhub':{'key_required':False},
                 'provider_tests':_provider_tests(c),
                 'receiver_settings':receiver_settings(c)}
 
