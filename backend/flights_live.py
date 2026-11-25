@@ -431,11 +431,13 @@ def snapshot(value='',network_fetch=_lookup_network):
     for plane in seen.values():
         flight=str(plane.get('flight') or '').strip().upper()
         if not flight or route_map.get(flight):continue
-        if not isinstance(plane.get('lat'),(int,float)) or not isinstance(plane.get('lon'),(int,float)):
-            continue
+        request={'callsign':flight}
         age=plane.get('seen_pos')
-        if not isinstance(age,(int,float)) or age<0 or age>30:continue
-        missing_routes.append({'callsign':flight,'lat':plane['lat'],'lon':plane['lon']})
+        if isinstance(age,(int,float)) and 0<=age<=30 and all(isinstance(plane.get(k),(int,float)) for k in ('lat','lon')):
+            request.update(lat=plane['lat'],lon=plane['lon'])
+        hexcode=str(plane.get('hex') or '').lower()
+        if re.fullmatch(r'[0-9a-f]{6}',hexcode):request['icao']=hexcode
+        if 'lat' in request or 'icao' in request:missing_routes.append(request)
     plausible_routes=flights_routes.cached_routes(missing_routes)
     route_map.update(plausible_routes)
     # Observed usual callsign routes are a fallback, *not* a confirmation.
@@ -446,13 +448,13 @@ def snapshot(value='',network_fetch=_lookup_network):
         reg=normal_reg(item.get('r',''))
         if reg not in targets or not _active(item):continue
         if _active(item) and item.get('flight'):
-            a,b=(str(item.get(k) or '').strip().upper() for k in ('route_origin','route_dest'))
+            a,b=(live_details._iata(item.get(k)) for k in ('route_origin','route_dest'))
             if re.fullmatch(r'[A-Z]{3}',a) and re.fullmatch(r'[A-Z]{3}',b) and a!=b:
                 direct_routes[str(item['flight']).strip().upper()]=a+'–'+b
         route_info=item.get('route')
         if not isinstance(route_info,dict) or not item.get('flight'):continue
-        orig=str(route_info.get('from_iata') or '').strip().upper()
-        dest=str(route_info.get('to_iata') or '').strip().upper()
+        orig=live_details._iata(route_info.get('from_iata') or route_info.get('from'))
+        dest=live_details._iata(route_info.get('to_iata') or route_info.get('to'))
         if re.fullmatch(r'[A-Z]{3}',orig) and re.fullmatch(r'[A-Z]{3}',dest) and orig!=dest:
             usual_routes[str(item['flight']).strip().upper()]=orig+'–'+dest
     history_key=configured.get('FlyItalyADSB','') if isinstance(configured,dict) else ''
@@ -480,11 +482,11 @@ def snapshot(value='',network_fetch=_lookup_network):
             continue
         flight=str(plane.get('flight') or '').strip().upper()
         route=route_map.get(flight,'')
-        confidence='plausible' if flight in plausible_routes else ('cached' if route else '')
+        confidence=flights_routes.confidence(flight) if flight in plausible_routes else ('cached' if route else '')
         if flight in direct_routes:
             route=direct_routes[flight]
             confidence='reported'
-        if not route and flight in usual_routes:
+        if (not route or confidence=='usual') and flight in usual_routes:
             route=usual_routes[flight]
             confidence='usual'
         altitude=plane.get('alt_baro')
