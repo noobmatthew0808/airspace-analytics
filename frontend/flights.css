@@ -429,7 +429,7 @@
 }
 
 /* v1.10.30: consistent status alignment and full-width expansion. */
-.flights-table .flights-reg-line{display:grid!important;grid-template-columns:minmax(0,1fr) 8ch;align-items:center;gap:5px;width:100%;max-width:100%}
+.flights-table .flights-reg-line{display:grid!important;grid-template-columns:minmax(0,1fr) 11ch;align-items:center;gap:5px;width:100%;max-width:100%}
 .flights-table .flights-reg-line .flights-reg,.flights-table .flights-reg-line .flights-no-reg{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .flights-table .flights-reg-line .flights-live-chip{justify-self:start;min-width:0;font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
 .flights-table .flights-reg-line .flights-live-chip.flights-lgw{color:var(--aqua)!important;font-weight:750!important;background:color-mix(in srgb,var(--aqua) 14%,transparent)!important;border:1px solid color-mix(in srgb,var(--aqua) 48%,transparent)!important;border-radius:4px;padding:1px 2px!important}
@@ -445,11 +445,11 @@
 @media(max-width:700px){
  .flights-table tbody tr.flights-inline-detail{display:block!important;width:100%!important;max-width:100%!important;box-sizing:border-box}
  .flights-table tbody tr.flights-inline-detail>td{display:block!important;width:100%!important;min-width:100%!important;max-width:100%!important;box-sizing:border-box;padding:0!important;white-space:normal!important;overflow:visible!important}
- .flights-table .flights-reg-line{grid-template-columns:minmax(0,1fr) 8.2ch;gap:3px}
+ .flights-table .flights-reg-line{grid-template-columns:minmax(0,1fr) 11ch;gap:3px}
  .flights-table .flights-reg-line .flights-live-chip{font-size:9px!important;max-width:none!important;line-height:1.2}
  .flights-table .flights-inline-card{font-size:11px}
 }
 @media(max-width:360px){
- .flights-table .flights-reg-line{gap:2px;grid-template-columns:minmax(0,1fr) 8ch}
+ .flights-table .flights-reg-line{gap:2px;grid-template-columns:minmax(0,1fr) 11ch}
  .flights-table .flights-reg-line .flights-live-chip{font-size:8px!important}
 }
