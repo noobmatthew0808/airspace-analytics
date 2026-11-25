@@ -509,7 +509,10 @@ def run_provider_test(provider):
     try:
         result=functions[provider]()
     except (ValueError,OSError) as error:
-        save(False,str(error))
+        # A temporary cooldown is not a revoked key or a failed authorization.
+        # Preserve activation so a provider can resume automatically.
+        if not any(x in str(error).lower() for x in ('rate limit','http 429','retry later','background lookup in progress')):
+            save(False,str(error))
         raise
     message='Connection successful'
     if result.get('plan'):message+=' · '+str(result['plan'])[:50]
@@ -518,7 +521,30 @@ def run_provider_test(provider):
     return result
 
 
+def provider_usage():
+    from . import flights_live
+    global_status=flights_live.source_health()
+    regional=regional_sources.health()
+    ids={'flyitaly':'FlyItalyADSB','adsblol':'adsb.lol','adsbfi':'adsb.fi',
+         'avioadsb':'AvioADSB','adsbiq':'ADSBiq','airplaneslive':'airplanes.live',
+         'adsbhub':'ADSBHub','opensky':'OpenSky Network'}
+    result={}
+    for id,name in ids.items():
+        combined=dict(global_status.get(name,{}))
+        near=regional.get(name,{})
+        if 'nearby_aircraft' in near:combined['nearby_aircraft']=near['nearby_aircraft']
+        if near.get('error') and not combined.get('error'):combined['error']=near['error']
+        combined['retry_seconds']=max(combined.get('retry_seconds',0),near.get('retry_seconds',0),
+                                      round(api_budget.remaining(name)))
+        if id in ('flyitaly','adsblol','adsbfi'):
+            state={'flyitaly':flyitaly,'adsblol':adsblol,'adsbfi':adsbfi}[id].status()
+            combined['nearby_aircraft']=state.get('aircraft',0) if state.get('connected') else 0
+        result[id]=combined
+    return result
+
+
 def snapshot():
+    usage=provider_usage()
     with _lock, connect() as c:
         rules=[dict(x) for x in c.execute('SELECT id,label,field,pattern,max_km,min_ft,max_ft,enabled,use_flyitaly,network_only,min_rssi FROM rules ORDER BY id DESC')]
         active={r['rule_id']:r['n'] for r in c.execute("SELECT rule_id,count(*) n FROM occupancy WHERE state='active' GROUP BY rule_id")}
@@ -529,7 +555,7 @@ def snapshot():
                 'adsblol':adsblol.status(bool(_adsblol_key(c))),'adsbfi':adsbfi.status(),
                 'avioadsb':{'key_set':bool(_avio_key(c))},'adsbiq':{'key_set':bool(_adsbiq_key(c))},
                 'opensky':{'key_set':bool(_opensky_key(c))},'airplaneslive':{'key_required':False},'adsbhub':{'key_required':False},
-                'provider_tests':_provider_tests(c),
+                'provider_tests':_provider_tests(c),'provider_usage':usage,
                 'receiver_settings':receiver_settings(c)}
 
 
