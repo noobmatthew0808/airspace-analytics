@@ -7,6 +7,7 @@ const providers=[
  {id:'flyitaly',name:'FlyItalyADSB',url:'https://api.flyitalyadsb.com/v2',hint:'Live positions and military metadata; check your feeder perk in My API.'},
  {id:'adsblol',name:'adsb.lol',url:'https://api.adsb.lol/v2',hint:'Ready for your feeder key when eligible. No key needed until then.'},
  {id:'avioadsb',name:'AvioADSB',url:'https://avioadsb.org/v1',hint:'Flights only. Claim your feeding station and create a contributor key on avioadsb.org/dashboard.'},
+ {id:'adsbiq',name:'ADSBiq',url:'https://api.adsbiq.com/v2/all',hint:'Flights only. Enable ADSBiq in ADSB.im, claim your station at adsbiq.com/join and copy your dashboard API key.'},
  {id:'adsbfi',name:'adsb.fi',url:'https://opendata.adsb.fi/api',hint:'Free API · no key required.'}
 ];
 let alertsData=null,alertsTimer=null,editingRule=null,alertsBusy=false;
@@ -187,8 +188,8 @@ function bindAlerts(){
     const result=await alertApi('/api/alerts/'+id+'/check',{});
     await refreshAlerts();
     ['alertAllConfig','alertApis','alert-'+id].forEach(k=>{document.getElementById(k).open=true;});
-    feedback((providers.find(p=>p.id===id)?.name||id)+' API successful: '+(id==='avioadsb'?'key verified':at(result.aircraft))+
-     (id==='avioadsb'?'':' aircraft near your antenna')+(result.plan?' · plan '+result.plan:'')+'. This tests API access, not a push notification.');
+    feedback((providers.find(p=>p.id===id)?.name||id)+' API successful: '+(['avioadsb','adsbiq'].includes(id)?'key verified':at(result.aircraft))+
+     (['avioadsb','adsbiq'].includes(id)?'':' aircraft near your antenna')+(result.plan?' · plan '+result.plan:'')+'. This tests API access, not a push notification.');
    }catch(err){feedback('API test failed: '+err.message,true);}
   };
   form.querySelector('[data-remove-provider]').onclick=async()=>{
