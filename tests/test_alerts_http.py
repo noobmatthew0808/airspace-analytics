@@ -81,3 +81,15 @@ class AlertsAPITest(unittest.TestCase):
   with self.assertRaises(HTTPError) as error:
    self.call('/api/alerts/rule',{'field':'type','pattern':'<>invalid'})
   self.assertEqual(error.exception.code,400)
+
+ def test_shared_preferences_api_requires_same_origin_and_synchronizes(self):
+  payload={'action':'migrate','client':'browser-http-test','excluded_days':['2026-11-09','2026-11-24'],'links':[{'id':'test','name':'Test','url':'https://example.org/'}]}
+  with self.assertRaises(HTTPError) as error:
+   self.call('/api/preferences',payload,origin='https://evil.example')
+  self.assertEqual(error.exception.code,403)
+  saved=self.call('/api/preferences',payload)
+  self.assertEqual(saved['excluded_days'],['2026-11-09','2026-11-24'])
+  self.assertEqual(self.call('/api/preferences'),saved)
+  updated=self.call('/api/preferences',{'action':'remove_day','day':'2026-11-24'})
+  self.assertEqual(updated['excluded_days'],['2026-11-09'])
+  self.assertEqual(self.call('/api/preferences'),updated)
