@@ -109,6 +109,20 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(answer,{})
         worker.assert_not_called()
 
+    def test_adsbim_icao_without_position_does_not_send_fake_coordinates(self):
+        response=MagicMock()
+        response.headers={}
+        response.read.return_value=json.dumps([{'callsign':'WZZ580C','plausible':False,'_airport_codes_iata':'RMF-WMI'}]).encode()
+        response.__enter__.return_value=response
+        opener=MagicMock(return_value=response)
+        self.assertEqual(flights_routes.fetch_routes([{'callsign':'WZZ580C','icao':'abc123'}],opener),{'WZZ580C':'RMF–WMI'})
+        self.assertEqual(json.loads(opener.call_args.args[0].data),{'planes':[{'callsign':'WZZ580C','icao':'abc123'}]})
+        self.assertEqual(opener.call_count,1)
+
+    def test_conflicting_route_candidates_are_rejected(self):
+        payload=[{'callsign':'WZZ580C','plausible':True,'_airport_codes_iata':code} for code in ('RMF-WMI','BUD-LGW')]
+        self.assertEqual(flights_routes.parse_routes(payload,['WZZ580C']),{})
+
     def test_throttle_prevents_excessive_route_lookups(self):
         flights_routes._last_request=time.monotonic()
         with patch.object(flights_routes.threading,'Thread') as worker:
