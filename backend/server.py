@@ -21,7 +21,7 @@ import sys
 import time
 import traceback
 
-from . import data, alerts, healthchecks, live_terminal, live_details, flights_log, flights_live, flights_cache
+from . import data, alerts, healthchecks, live_terminal, live_details, flights_log, flights_live, flights_cache, shared_settings
 
 BASE = Path(__file__).resolve().parents[1]
 STATIC = BASE / 'frontend'
@@ -133,6 +133,7 @@ class App(BaseHTTPRequestHandler):
         if path=='/api/live/terminal': return live_terminal.stream(self)
         if path=='/api/live/details': return self.send_json(live_details.details(q))
         if path=='/api/alerts': return self.send_json(alerts.snapshot())
+        if path=='/api/preferences': return self.send_json(shared_settings.read())
         if path=='/api/flights/records': return self.send_json(flights_log.read())
         if path=='/api/flights/live': return self.send_json(flights_cache.read(q.get('regs','')))
         if path=='/api/health': return self.send_json(data.health())
@@ -188,7 +189,7 @@ class App(BaseHTTPRequestHandler):
 
     def alerts_post(self, path):
         """Same-origin, trusted-LAN-only control plane for personal alert rules."""
-        if path not in ('/api/alerts/rule','/api/alerts/delete','/api/alerts/ntfy','/api/alerts/test','/api/alerts/receiver','/api/alerts/receiver/check','/api/alerts/flyitaly','/api/alerts/flyitaly/check','/api/alerts/adsblol','/api/alerts/adsblol/check','/api/alerts/adsbfi/check','/api/alerts/avioadsb','/api/alerts/avioadsb/check','/api/alerts/adsbiq','/api/alerts/adsbiq/check'):
+        if path not in ('/api/preferences','/api/alerts/rule','/api/alerts/delete','/api/alerts/ntfy','/api/alerts/test','/api/alerts/receiver','/api/alerts/receiver/check','/api/alerts/flyitaly','/api/alerts/flyitaly/check','/api/alerts/adsblol','/api/alerts/adsblol/check','/api/alerts/adsbfi/check','/api/alerts/avioadsb','/api/alerts/avioadsb/check','/api/alerts/adsbiq','/api/alerts/adsbiq/check'):
             return self.send_json({'error':'Unknown endpoint'},404)
         origin=self.headers.get('Origin','')
         host=self.headers.get('Host','')
@@ -206,9 +207,11 @@ class App(BaseHTTPRequestHandler):
         try:
             length=int(self.headers.get('Content-Length','0'))
         except ValueError:raise ValueError('Invalid request length')
-        if length<0 or length>alerts.API_MAX:raise ValueError('Request too large')
+        if length<0 or length>(65536 if path=='/api/preferences' else alerts.API_MAX):raise ValueError('Request too large')
         payload=json.loads(self.rfile.read(length)) if length else {}
         if not isinstance(payload,dict):raise ValueError('Expected a JSON object')
+        if path=='/api/preferences':
+            return self.send_json(shared_settings.update(payload))
         if path=='/api/alerts/rule':
             return self.send_json({'ok':True,'id':alerts.save_rule(payload)})
         if path=='/api/alerts/delete':
@@ -274,7 +277,7 @@ class App(BaseHTTPRequestHandler):
         path, _=self.get_query()
         if path.startswith('/api/flights/'):
             return self.flights_post(path)
-        if path.startswith('/api/alerts/'):
+        if path=='/api/preferences' or path.startswith('/api/alerts/'):
             return self.alerts_post(path)
         if path not in ('/api/update/apply','/api/update/rollback'):
             return self.send_json({'error':'Unknown endpoint'},404)
