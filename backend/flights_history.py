@@ -6,6 +6,7 @@ may be available on Fleet, but no user subscription is assumed. Never label
 a historical arrival as an aircraft currently parked at that airport.
 """
 from __future__ import annotations
+from . import api_budget
 
 from datetime import datetime,timezone
 import json
@@ -84,7 +85,7 @@ def parse_last_landing(payload,now=None):
 def fetch_one(reg,key,opener=None):
     reg=_reg(reg)
     if not reg or not key:raise ValueError('A saved FlyItalyADSB key and registration are required')
-    if opener is None:opener=_open
+    if opener is None:opener=lambda req,timeout:api_budget.open_request('FlyItalyADSB',_open,req,timeout)
     request=Request(URL+reg,headers={'Accept':'application/json',
             'X-Api-Key':key,'User-Agent':'AirspaceAnalytics-Flights/3'})
     try:
