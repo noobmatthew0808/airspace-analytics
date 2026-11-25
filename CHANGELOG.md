@@ -1,3 +1,8 @@
+# v1.10.34 — additional flight data sources
+
+- Add optional OpenSky OAuth (written permission required, test before activation), conservative airplanes.live feeder-IP registration lookups, and ADSBHub's authenticated-by-IP SBS stream. Keep these read-only sources separate from receiver observations and alert rules. Use known registration/hex associations, freshness validation, independent background workers, bounded requests and backoff.
+- Keep Dataero unintegrated pending its authenticated API reference; no undocumented scraping or paid services enabled. Preserve the v1.10.33 shortcut fixes.
+
 # v1.10.33 — feeder shortcut corrections
 
 - Correct only the requested ADSBiq, ADSBHub, AvioADSB and OpenSky homepage destinations. Apply the same correction once to existing server-stored shortcuts, preserve their order, secondary links and other preferences, and retain subsequent manual edits. No API, polling, flight, alert or traffic changes.
