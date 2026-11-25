@@ -21,6 +21,25 @@ class AlertsTest(unittest.TestCase):
         self.tmp.cleanup()
     def rule(self, **kw):
         return alerts.save_rule({'label':'A380','field':'type','pattern':'A388','max_km':25,'max_ft':12000,**kw})
+    def test_avio_connection_uses_working_application_user_agent(self):
+        key='avio_dummy_test_key'
+        alerts.save_avio({'key':key})
+        response=Mock()
+        response.read.return_value=json.dumps({'tier':'contributor'}).encode()
+        manager=Mock()
+        manager.__enter__=Mock(return_value=response)
+        manager.__exit__=Mock(return_value=False)
+        opener=Mock()
+        opener.open.return_value=manager
+        with patch.object(alerts,'build_opener',return_value=opener):
+            result=alerts.test_avio()
+        req=opener.open.call_args.args[0]
+        self.assertEqual(req.full_url,'https://avioadsb.org/v1/me')
+        self.assertEqual(req.get_header('User-agent'),'AirspaceAnalytics-Flights/4')
+        self.assertEqual(req.get_header('X-api-key'),key)
+        self.assertNotIn(key,req.full_url)
+        self.assertEqual(result['plan'],'contributor')
+
     def test_distinct_airframes_and_no_duplicate(self):
         self.rule()
         alerts.process_snapshot({'aircraft':[plane('abc123'),plane('def123')]},50,0,now=100)
