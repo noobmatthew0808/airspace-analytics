@@ -36,10 +36,41 @@ def links(value):
         result.append(row)
     return result
 
+# One-time correction of the four requested launcher links, including existing
+# server-side settings. Do not recreate removed links or alter other fields.
+FEEDER_LINK_FIXES={
+    "adsbiq": "https://adsbiq.com/feeder/51a27442-b77e-45a3",
+    "adsbhub": "https://www.adsbhub.org/statistic.php",
+    "avioadsb": "https://avioadsb.org/station?id=743cc25e-05b7-472d-a6a7-f7f48d164a64",
+    "opensky": "https://opensky-network.org/my-opensky/account"
+}
+FEEDER_LINK_NAMES={'adsbiq':'adsbiq','adsbhub':'adsbhub','avioadsb':'avioadsb','opensky network':'opensky'}
+
+def _fix_feeder_links(items):
+    if items is None:return False
+    changed=False
+    for row in items:
+        id=row.get('id') or FEEDER_LINK_NAMES.get(row.get('name','').strip().lower())
+        if id not in FEEDER_LINK_FIXES:continue
+        url=FEEDER_LINK_FIXES[id]
+        if row.get('url')!=url:
+            row['url']=url
+            changed=True
+        if id=='avioadsb' and row.get('sub')=='Receiver dashboard and API usage':
+            row['sub']='Your feeder statistics'
+            changed=True
+    return changed
+
+
 def _load(c):
     row=c.execute('SELECT value FROM config WHERE key=?',(KEY,)).fetchone()
     if row:
-        return json.loads(row['value'])
+        state=json.loads(row['value'])
+        if not state.get('feeder_links_v11033'):
+            if _fix_feeder_links(state['links']):state['revision']+=1
+            state['feeder_links_v11033']=True
+            c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',(KEY,json.dumps(state,separators=(',',':'))))
+        return state
     return {'excluded_days':[DEFAULT_DATE],'links':None,'revision':0,'migrated':[],'dates_initialized':False}
 
 def _public(state):
@@ -65,6 +96,7 @@ def update(payload):
                 else:state['excluded_days']=dates(sorted(set(state['excluded_days'])|(set(incoming)-set(state.get('removed_days',[])))))
                 state['dates_initialized']=True
             incoming_links=links(payload.get('links',[]))
+            _fix_feeder_links(incoming_links)
             if state['links'] is None:state['links']=incoming_links
             elif payload.get('has_legacy_links',True):
                 existing=state['links']

@@ -42,6 +42,39 @@ class SharedPreferencesTests(unittest.TestCase):
         later=self.migrate('browser-new',None,[shortcut('default')],False)
         self.assertEqual(later['links'],first['links'])
         self.assertEqual(later['excluded_days'],[])
+    def test_feeder_link_correction_preserves_all_other_settings_and_is_one_time(self):
+        old=[{'id':'adsbiq','name':'ADSBiq','url':'https://adsbiq.com/my-stations','extraUrl':'https://adsbiq.com/stats'},
+             {'id':'avioadsb','name':'AvioADSB','url':'https://avioadsb.org/dashboard','sub':'Receiver dashboard and API usage'},
+             {'id':'adsbhub','name':'ADSBHub','url':'https://www.adsbhub.org/statistic.php'},
+             {'id':'opensky','name':'OpenSky Network','url':'https://opensky-network.org/my-opensky'},
+             shortcut('custom')]
+        # Simulate the unmodified v1.10.32 SQLite record.
+        state={'excluded_days':['2026-11-24'],'links':old,'revision':7,
+               'migrated':['browser-one'],'dates_initialized':True}
+        with alerts.connect() as c:
+            c.execute('INSERT INTO config(key,value) VALUES(?,?)',(shared_settings.KEY,json.dumps(state)))
+        updated=shared_settings.read()
+        self.assertEqual(updated['revision'],8)
+        self.assertEqual(updated['excluded_days'],state['excluded_days'])
+        self.assertEqual([r['id'] for r in updated['links']],[r['id'] for r in old])
+        self.assertEqual(updated['links'][0]['extraUrl'],old[0]['extraUrl'])
+        self.assertEqual(updated['links'][-1],old[-1])
+        for row in updated['links'][:-1]:
+            self.assertEqual(row['url'],shared_settings.FEEDER_LINK_FIXES[row['id']])
+        self.assertEqual(shared_settings.read(),updated)
+        # A deliberate later user edit is not overwritten by the migration.
+        edited=updated['links']
+        edited[0]['url']='https://example.org/my-custom-adsbiq'
+        result=shared_settings.update({'action':'links','revision':8,'links':edited})
+        self.assertEqual(shared_settings.read(),result)
+        self.assertEqual(result['links'][0]['url'],'https://example.org/my-custom-adsbiq')
+
+    def test_old_browser_feeder_links_are_corrected_on_import(self):
+        old=[{'id':'adsbiq','name':'ADSBiq','url':'https://adsbiq.com/my-stations'}]
+        result=self.migrate('browser-old',['2026-11-24'],old)
+        self.assertEqual(result['links'][0]['url'],shared_settings.FEEDER_LINK_FIXES['adsbiq'])
+        self.assertEqual(result['excluded_days'],['2026-11-24'])
+
     def test_invalid_settings_rejected(self):
         with self.assertRaises(ValueError):shared_settings.update({'action':'add_day','day':'2026-02-31'})
         with self.assertRaises(ValueError):self.migrate('browser-one',[],[{'name':'Unsafe','url':'javascript:alert(1)'}])
