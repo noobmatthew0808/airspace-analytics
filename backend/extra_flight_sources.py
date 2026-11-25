@@ -30,6 +30,7 @@ _hub_running=False
 _hub_touch=0
 _hub_fields={}
 _known={}
+_airplanes_test=None
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):return None
@@ -132,7 +133,7 @@ def airplanes_lookup(reg,opener=None):
     result=[]
     for row in payload['ac']:
         if not isinstance(row,dict) or str(row.get('r','')).replace('-','').upper()!=reg.replace('-',''):continue
-        p=dict(row,_source='airplanes.live')
+        p=dict(row,r=reg,_source='airplanes.live')
         for field in ('seen','seen_pos'):
             age=p.get(field)
             if _number(age) and 0<=age<=120:p[field]=age+max(0,now-stamp)
@@ -141,22 +142,35 @@ def airplanes_lookup(reg,opener=None):
     return result
 
 def test_airplanes():
-    # This shares the background budget. A known registration is picked
-    # from the current flight log rather than submitting an unbounded query.
-    from . import flights_log
-    regs=[]
-    for row in flights_log.read_cached().get('flights',[]):
-        reg=str(row.get('registration') or '').strip().upper()
-        match=re.search(r'\(([^()]*)\)\s*$',reg)
-        if match:reg=match[1].strip()
-        if re.fullmatch(r'[A-Z0-9-]{2,16}',reg) and reg!='NO-REG':regs.append(reg)
-    if not regs:raise ValueError('Load at least one registered aircraft in Flights first')
+    # A small public-airport area verifies a real HTTP 200 response. Never
+    # report an unknown registration's 404 as successful authentication.
+    global _airplanes_test
     with _lock:
-        if time.monotonic()<_next.get('airplanes.live',0):raise ValueError('Wait for the next scheduled lookup to avoid excess requests')
-        _next['airplanes.live']=time.monotonic()+180
-    payload=_json('https://api.airplanes.live/v2/point/51.47/-0.45/10')
-    if not isinstance(payload,dict) or not isinstance(payload.get('ac'),list):raise ValueError('Invalid airplanes.live response')
-    return {'ok':True,'plan':'Feeder API accessible','aircraft':len(payload['ac'])}
+        now=time.monotonic()
+        if _airplanes_test and now-_airplanes_test[0]<900:
+            ok,value=_airplanes_test[1:]
+            if not ok:raise ValueError(value)
+            return {**value,'plan':'Recently verified feeder API'}
+        if 'airplanes.live' in _busy:
+            raise ValueError('Background lookup in progress; retry after it completes')
+        _busy.add('airplanes.live')
+        _next['airplanes.live']=max(_next.get('airplanes.live',0),now+240)
+    try:
+        payload=_json('https://api.airplanes.live/v2/point/51.47/-0.45/10')
+        if not isinstance(payload,dict) or not isinstance(payload.get('ac'),list):
+            raise ValueError('Invalid airplanes.live response')
+        value={'ok':True,'plan':'Feeder API accessible','aircraft':len(payload['ac'])}
+        with _lock:_airplanes_test=(now,True,value)
+        return value
+    except ValueError as error:
+        with _lock:
+            _airplanes_test=(now,False,str(error))
+            match=re.search(r'retry (\d+)',str(error))
+            wait=int(match[1]) if match else (86400 if 'HTTP 429' in str(error) else 900)
+            _next['airplanes.live']=max(_next['airplanes.live'],now+wait)
+        raise
+    finally:
+        with _lock:_busy.discard('airplanes.live')
 
 def _sbs(line,now):
     """Parse current SBS messages; positions and flight state have independent ages."""
@@ -187,9 +201,10 @@ def test_adsbhub(connect=None):
         with connect(('data.adsbhub.org',5002),timeout=6) as sock:
             sock.settimeout(6)
             with sock.makefile('rb') as stream:
+                deadline=time.monotonic()+6
                 for _ in range(100):
                     line=stream.readline(2048)
-                    if not line:break
+                    if not line or time.monotonic()>deadline:break
                     if _sbs(line.decode('ascii','ignore'),time.time()):
                         return {'ok':True,'plan':'Live SBS stream accessible'}
     except (OSError,ValueError):
@@ -292,11 +307,11 @@ def collect(registrations,identities,missing,credentials=None,airplanes=False,hu
         if credentials and credentials.get('permission') and clean:
             schedule('OpenSky Network',120,lambda:opensky_lookup(credentials,clean))
         if airplanes and registrations and now>=_next.get('airplanes.live',0):
-            # 480 requests/day maximum even with only the anonymous allowance.
+            # 360 scheduled requests/day plus at most 96 manual checks.
             pool=sorted(set(missing)&wanted) or sorted(wanted)
             reg=pool[_cursor%len(pool)]
             _cursor+=1
-            schedule('airplanes.live',180,lambda:airplanes_lookup(reg))
+            schedule('airplanes.live',240,lambda:airplanes_lookup(reg))
         result=[]
         for name,store in _cache.items():
             for reg,(stamp,p) in list(store.items()):
@@ -304,7 +319,7 @@ def collect(registrations,identities,missing,credentials=None,airplanes=False,hu
                 if elapsed>120 or reg not in wanted:
                     del store[reg]
                     continue
-                if name=='OpenSky Network' and not credentials or name=='airplanes.live' and not airplanes:continue
+                if (name=='OpenSky Network' and not credentials) or (name=='airplanes.live' and not airplanes):continue
                 plane=dict(p)
                 for field in ('seen','seen_pos'):
                     if _number(plane.get(field)):plane[field]+=elapsed
@@ -314,6 +329,6 @@ def collect(registrations,identities,missing,credentials=None,airplanes=False,hu
 
 def health():
     with _lock:
-        return {name:{'matching_aircraft':len(_cache.get(name,{})),'error':_errors.get(name),
+        return {name:{'matching_aircraft':len(_hub_planes()) if name=='ADSBHub' else len(_cache.get(name,{})),'error':_errors.get(name),
                       'retry_seconds':round(max(0,_next.get(name,0)-time.monotonic()))}
                 for name in ('OpenSky Network','airplanes.live','ADSBHub')}
