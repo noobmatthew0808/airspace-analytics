@@ -427,3 +427,29 @@
 @media(max-width:360px){
  .flights-table tbody tr.flights-row .flights-cell-date,.flights-table tbody tr.flights-row .flights-cell-code,.flights-table tbody tr.flights-row .flights-cell-route,.flights-table tbody tr.flights-row .flights-cell-who,.flights-table .flights-reg-line .flights-reg,.flights-table .flights-reg-line .flights-live-chip{font-size:8px!important}
 }
+
+/* v1.10.30: consistent status alignment and full-width expansion. */
+.flights-table .flights-reg-line{display:grid!important;grid-template-columns:minmax(0,1fr) 11ch;align-items:center;gap:5px;width:100%;max-width:100%}
+.flights-table .flights-reg-line .flights-reg,.flights-table .flights-reg-line .flights-no-reg{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.flights-table .flights-reg-line .flights-live-chip{justify-self:start;min-width:0;font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+.flights-table .flights-reg-line .flights-live-chip.flights-lgw{color:var(--aqua)!important;font-weight:750!important;background:color-mix(in srgb,var(--aqua) 14%,transparent)!important;border:1px solid color-mix(in srgb,var(--aqua) 48%,transparent)!important;border-radius:4px;padding:1px 2px!important}
+.flights-table .flights-highlight .flights-cell-route{color:var(--text)!important}
+.flights-inline-live>strong{color:var(--text)}
+.flights-inline-live>strong.flights-lgw{color:var(--aqua);font-weight:750}
+.flights-inline-sighting{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:11px;color:var(--muted);padding:6px 0;border-top:1px solid var(--line)}
+.flights-inline-sighting strong{font-weight:500;color:var(--text)}
+.flights-inline-sighting a{color:var(--aqua)}
+.flights-table .flights-inline-card{box-sizing:border-box;width:100%;max-width:100%;padding:12px 13px;background:var(--panel2);border-left:2px solid var(--aqua);gap:7px}
+.flights-table .flights-inline-card .flights-inline-summary{flex-wrap:wrap}
+.flights-inline-facts span{color:var(--text)}
+@media(max-width:700px){
+ .flights-table tbody tr.flights-inline-detail{display:block!important;width:100%!important;max-width:100%!important;box-sizing:border-box}
+ .flights-table tbody tr.flights-inline-detail>td{display:block!important;width:100%!important;min-width:100%!important;max-width:100%!important;box-sizing:border-box;padding:0!important;white-space:normal!important;overflow:visible!important}
+ .flights-table .flights-reg-line{grid-template-columns:minmax(0,1fr) 11ch;gap:3px}
+ .flights-table .flights-reg-line .flights-live-chip{font-size:9px!important;max-width:none!important;line-height:1.2}
+ .flights-table .flights-inline-card{font-size:11px}
+}
+@media(max-width:360px){
+ .flights-table .flights-reg-line{gap:2px;grid-template-columns:minmax(0,1fr) 11ch}
+ .flights-table .flights-reg-line .flights-live-chip{font-size:8px!important}
+}

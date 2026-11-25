@@ -129,7 +129,7 @@ function liveFor(row){return lastLive[currentReg(row).toUpperCase()]||{status:'N
 function isCurrentGatwick(item){
  return String(item.status||'').startsWith('Flying')&&item.route_confidence!=='usual'&&lgw(item.route);
 }
-function liveGatwick(row){return isCurrentGatwick(liveFor(row));}
+function liveGatwick(row){return lgw(compactStatus(liveFor(row)));}
 function compactDate(value){
  const iso=toInputDate(value);
  return iso?iso.slice(8,10)+'/'+iso.slice(5,7)+'/'+iso.slice(2,4):normalizeText(value);
@@ -266,7 +266,7 @@ function flightDetailsHtml(row){
   '<a class="btn small" target="_blank" rel="noopener noreferrer" href="http://'+
   location.hostname+':1099/map/?icao='+hex+'&noIsolation">Live local map</a>');
  const status=compactStatus(live);
- const facts=[row.airline,row.airplane,row.who].filter(Boolean).map(escapeHtml).join(' · ');
+ const facts=[row.airline,row.airplane].filter(Boolean).map(escapeHtml).join(' · ');
  const original=String(row.registration||'').replace(/\s*\([^()]*\)\s*$/,'').trim();
  const info=[];
  if(live.callsign)info.push('Callsign '+live.callsign);
@@ -276,15 +276,20 @@ function flightDetailsHtml(row){
  if(live.last_landed_at)info.push('Last observed airport '+new Date(live.last_landed_at*1000).toLocaleString('en-GB',{timeZone:'Europe/London'}));
  else if(live.at_airport)info.push('Observed on the ground');
  if(live.source)info.push(live.source);
+ if(live.last_observed_at&&!live.last_landed_at)info.push('Updated '+relativeLocalSeen(live.last_observed_at).replace(/^Seen /,''));
+ if(live.source==='adsb.fi')links.push('<a class="flights-attribution" target="_blank" rel="noopener noreferrer" href="https://adsb.fi">Data: adsb.fi</a>');
+ if(live.source==='ADSBiq')links.push('<a class="flights-attribution" target="_blank" rel="noopener noreferrer" href="https://adsbiq.com">Data: ADSBiq</a>');
  if(live.source==='AvioADSB')links.push('<a class="flights-attribution" target="_blank" rel="noopener noreferrer" href="https://avioadsb.org">Data: AvioADSB (CC BY-NC 4.0)</a>');
  return '<tr class="flights-inline-detail"><td colspan="7"><div class="flightsDetailsContent flights-inline-card">'+
   '<div class="flights-inline-summary"><strong>'+escapeHtml(row.flight_code||'Flight')+' · '+escapeHtml(route)+'</strong>'+
   '<span>'+escapeHtml(niceDate(row.date))+'</span></div>'+
   (facts?'<div class="flights-inline-facts">'+facts+'</div>':'')+
+  (row.who?'<div class="flights-inline-facts"><span>Passengers:</span> '+escapeHtml(row.who)+'</div>':'')+
   (original&&reg&&original.toUpperCase()!==reg.toUpperCase()?'<div class="flights-inline-facts">Registration at flight: <b>'+escapeHtml(original)+'</b> · Current: <b>'+escapeHtml(reg)+'</b></div>':'')+
-  '<div class="flights-inline-live"><span>Aircraft now'+(reg?' · '+escapeHtml(reg):'')+'</span><strong>'+escapeHtml(status)+'</strong>'+
+  '<div class="flights-inline-live"><span>Current aircraft'+(reg?' · '+escapeHtml(reg):'')+'</span><strong class="'+(liveGatwick(row)?'flights-lgw':'')+'">'+escapeHtml(status)+'</strong>'+
   (info.length?'<small>'+escapeHtml(info.join(' · '))+'</small>':'')+'</div>'+
-  '<div class="flights-detail-links">'+localLastSeen(row)+links.join('')+'</div></div></td></tr>';
+  '<div class="flights-inline-sighting"><span>Last seen by your receiver</span><strong>'+(localLastSeen(row)||'Not recorded')+'</strong></div>'+
+  '<div class="flights-detail-links">'+links.join('')+'</div></div></td></tr>';
 }
 
 function renderFilters(){

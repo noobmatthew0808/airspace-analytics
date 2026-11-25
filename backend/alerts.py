@@ -224,6 +224,30 @@ def save_adsblol(data):
     if changed:adsblol.clear()
 
 
+def _adsbiq_key(c):
+    row=c.execute("SELECT value FROM config WHERE key='adsbiq_key'").fetchone()
+    return row['value'] if row else ''
+
+
+def save_adsbiq(data):
+    with _lock,connect() as c:
+        if data.get('clear'):
+            c.execute("DELETE FROM config WHERE key='adsbiq_key'")
+        else:
+            key=str(data.get('key','')).strip()
+            if not re.fullmatch(r'iq_[A-Za-z0-9_-]{8,500}',key):
+                raise ValueError('Invalid ADSBiq API key format')
+            c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',('adsbiq_key',key))
+
+
+def test_adsbiq():
+    with _lock,connect() as c:key=_adsbiq_key(c)
+    if not key:raise ValueError('Save your ADSBiq key first')
+    from .flights_live import _NoRedirect as NoRedirect, _global_snapshot
+    planes=_global_snapshot([],key,build_opener(ProxyHandler({}),NoRedirect()).open,'ADSBiq')
+    return {'ok':True,'plan':'API accessible'}
+
+
 def _avio_key(c):
     row=c.execute("SELECT value FROM config WHERE key='avioadsb_key'").fetchone()
     return row['value'] if row else ''
@@ -250,9 +274,15 @@ def test_avio():
             payload=json.loads(response.read(50000))
         if not isinstance(payload,dict):raise ValueError('Invalid response')
         tier=str(payload.get('tier','unknown'))[:40]
+        if tier!='contributor':raise ValueError('AvioADSB tier '+tier+'; claim an active station to unlock global aircraft access')
         return {'ok':True,'plan':tier,'aircraft':None}
-    except (HTTPError,URLError,OSError,ValueError,TypeError):
-        raise ValueError('AvioADSB key test failed; check your key and feeder status') from None
+    except HTTPError as error:
+        raise ValueError('AvioADSB HTTP '+str(error.code)+'; check key or feeder status') from None
+    except (URLError,OSError,TimeoutError):
+        raise ValueError('AvioADSB network connection failed') from None
+    except (ValueError,TypeError) as error:
+        if str(error).startswith('AvioADSB tier '):raise
+        raise ValueError('AvioADSB returned an invalid response') from None
 
 
 def _adsblol_key(c):
@@ -396,7 +426,7 @@ def snapshot():
         pub,_=notifier(c)
         return {'rules':rules,'events':events,'ntfy':pub,'flyitaly':flyitaly.status(bool(_flyitaly_key(c))), 'receiver':dict(_last_sample),
                 'adsblol':adsblol.status(bool(_adsblol_key(c))),'adsbfi':adsbfi.status(),
-                'avioadsb':{'key_set':bool(_avio_key(c))},
+                'avioadsb':{'key_set':bool(_avio_key(c))},'adsbiq':{'key_set':bool(_adsbiq_key(c))},
                 'receiver_settings':receiver_settings(c)}
 
 

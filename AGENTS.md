@@ -20,3 +20,8 @@ Core principles:
   `node --check frontend/app.js`, and `bash -n scripts/install.sh`.
 - When changing version, update `VERSION` and `CHANGELOG.md`.
 - User wants one terminal command to install and then entirely UI-led updates.
+
+## Mandatory release regression rule (user request, 25 November 2026)
+- Before every update, inspect the actual previous main revision and preserve its existing features, UI controls, data, settings, links and behaviours unless the user explicitly requests a change.
+- Compare the final branch against that exact baseline. Review the changed-file list and relevant diffs; do not alter unrelated tabs or services. Add targeted regression coverage and run the full existing suite. Verify responsive layout at phone widths when browser testing is possible.
+- Merge only after regression checks pass, then verify the new VERSION on main. Disclose any device/live-provider checks that could not be performed; never claim they passed.
