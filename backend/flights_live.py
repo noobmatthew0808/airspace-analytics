@@ -26,12 +26,14 @@ _OTHER_REMOTE={
     'FlyItalyADSB':{'updated':0.,'aircraft':[],'error':None},
     'adsb.lol':{'updated':0.,'aircraft':[],'error':None},
     'AvioADSB':{'updated':0.,'aircraft':[],'error':None},
+    'ADSBiq':{'updated':0.,'aircraft':[],'error':None},
 }
 _ROTATION={'at':0.,'cursor':0,'retry_until':{}}
 MAX_BYTES=1_750_000
 MAX_REGS=80
-MIN_REMOTE_PERIOD=35
-MAX_CACHED_AGE=40
+MIN_REMOTE_PERIOD=15
+MAX_CACHED_AGE=150
+PROVIDER_INTERVAL={'adsb.fi':60,'FlyItalyADSB':45,'adsb.lol':90,'AvioADSB':480,'ADSBiq':300}
 AIRPORT_FILE=Path('/opt/aerodrome/static/airports.json')
 # Airport reference fallback for common UK airports when Aerodrome isn't mounted.
 COMMON_AIRPORTS=(
@@ -68,9 +70,9 @@ def _lookup_provider(regs,provider='adsb.fi',key='',opener=None):
     codes=list(dict.fromkeys(str(r).strip().upper() for r in regs
         if re.fullmatch(r'[A-Z0-9-]{2,16}',str(r).strip().upper())))[:MAX_REGS]
     if not codes:return []
-    if provider=='AvioADSB':
-        if not key:raise ValueError('API key unavailable')
-        return _avio_snapshot(codes,key,opener)
+    if provider in ('AvioADSB','ADSBiq') or (provider=='adsb.fi' and len(codes)>1):
+        if provider!='adsb.fi' and not key:raise ValueError('API key unavailable')
+        return _global_snapshot(codes,key,opener,provider)
     configurations={
         'adsb.fi':('https://opendata.adsb.fi/api/v2/registration/',MAX_REGS,{}),
         'adsb.lol':('https://api.adsb.lol/v2/reg/',MAX_REGS,{'X-API-Key':key}),
@@ -126,27 +128,30 @@ def _lookup_provider(regs,provider='adsb.fi',key='',opener=None):
     return aircraft
 
 
-def _avio_snapshot(regs,key,opener):
-    request=Request('https://avioadsb.org/v1/aircraft',headers={
-        'Accept':'application/json','X-API-Key':key,'User-Agent':'AirspaceAnalytics-Flights/3'})
+def _global_snapshot(regs,key,opener,provider):
+    endpoints={'AvioADSB':('https://avioadsb.org/v1/aircraft',{'X-API-Key':key}),
+               'adsb.fi':('https://opendata.adsb.fi/api/v2/snapshot',{}),
+               'ADSBiq':('https://api.adsbiq.com/v2/all',{'Authorization':'Bearer '+key})}
+    url,auth=endpoints[provider]
+    request=Request(url,headers={'Accept':'application/json','User-Agent':'AirspaceAnalytics-Flights/4',**auth})
     limit=24_000_000
     try:
         with opener(request,timeout=12) as response:
             raw=response.read(limit+1)
-        if len(raw)>limit:raise ValueError('AvioADSB response too large')
+        if len(raw)>limit:raise ValueError(provider+' response too large')
         payload=json.loads(raw)
         when=payload.get('now')
         if not isinstance(when,(int,float)) or not math.isfinite(when):
-            raise ValueError('AvioADSB timestamp missing')
+            raise ValueError(provider+' timestamp missing')
         if when>1e11:when/=1000
         delta=time.time()-when
         if not -10<=delta<=50 or not isinstance(payload.get('ac'),list):
-            raise ValueError('AvioADSB stale or invalid response')
+            raise ValueError(provider+' stale or invalid response')
         targets={normal_reg(r) for r in regs}
         result=[]
         for record in payload['ac']:
             if not isinstance(record,dict) or normal_reg(record.get('r','')) not in targets:continue
-            plane=dict(record,_source='AvioADSB')
+            plane=dict(record,_source=provider)
             for field in ('seen','seen_pos'):
                 age=plane.get(field)
                 if isinstance(age,(float,int)) and math.isfinite(age) and 0<=age<=120:
@@ -155,10 +160,12 @@ def _avio_snapshot(regs,key,opener):
             result.append(plane)
         return result
     except HTTPError as e:
-        if e.code==429:raise ValueError('AvioADSB API rate limited') from None
-        raise ValueError('AvioADSB HTTP '+str(e.code)) from None
+        if e.code==429:
+            delay=e.headers.get('Retry-After','') if e.headers else ''
+            raise ValueError(provider+' API rate limited'+(' retry '+delay if delay.isdigit() else '')) from None
+        raise ValueError(provider+' HTTP '+str(e.code)) from None
     except (URLError,OSError,TimeoutError,TypeError,AttributeError,ValueError):
-        raise ValueError('AvioADSB unavailable or invalid response') from None
+        raise ValueError(provider+' unavailable or invalid response') from None
 
 
 def _lookup_network(regs,opener=None):
@@ -171,7 +178,7 @@ def _configured_keys():
     try:
         with alerts._lock,alerts.connect() as db:
             return {'FlyItalyADSB':alerts._flyitaly_key(db),
-                    'adsb.lol':alerts._adsblol_key(db),'AvioADSB':alerts._avio_key(db)}
+                    'adsb.lol':alerts._adsblol_key(db),'AvioADSB':alerts._avio_key(db),'ADSBiq':alerts._adsbiq_key(db)}
     except (OSError,ValueError):
         return {'FlyItalyADSB':'','adsb.lol':''}
 
@@ -276,13 +283,14 @@ def _local_planes():
 
 def _active(p):
     age=p.get('seen')
-    return isinstance(age,(int,float)) and math.isfinite(age) and 0<=age<=30
+    return isinstance(age,(int,float)) and math.isfinite(age) and 0<=age<=120
 
 
 def _prefer(current,other):
     if current is None:return other
-    # Prefer current local reception over remote when both are fresh.
-    if other.get('_source')=='Your antenna' and current.get('_source')!='Your antenna':
+    # Prefer fresher observations, keeping local reception as a tie-breaker.
+    a,b=current.get('seen',999),other.get('seen',999)
+    if b+3<a or (abs(a-b)<=3 and other.get('_source')=='Your antenna'):
         return other
     return current
 
@@ -315,7 +323,7 @@ def snapshot(value='',network_fetch=_lookup_network):
         now=time.monotonic()
         if network_fetch is _lookup_network:
             if not _ROTATION['at'] or now-_ROTATION['at']>=MIN_REMOTE_PERIOD:
-                eligible=[key for key in ('adsb.fi','FlyItalyADSB','adsb.lol','AvioADSB')
+                eligible=[key for key in ('adsb.fi','FlyItalyADSB','adsb.lol','ADSBiq','AvioADSB')
                           if key in provider_keys and now>=_ROTATION['retry_until'].get(key,0)]
                 if eligible:
                     provider=eligible[_ROTATION['cursor']%len(eligible)]
@@ -323,8 +331,7 @@ def snapshot(value='',network_fetch=_lookup_network):
                     _ROTATION['at']=now
                     selected=_REMOTE if provider=='adsb.fi' else _OTHER_REMOTE[provider]
                     selected['updated']=now
-                    if provider=='AvioADSB':
-                        _ROTATION['retry_until'][provider]=now+480  # < 5,600 requests in a 31-day month
+                    _ROTATION['retry_until'][provider]=now+PROVIDER_INTERVAL[provider]
                     try:
                         selected['aircraft']=_lookup_provider(registrations,provider,provider_keys[provider])
                         selected['error']=None
@@ -334,6 +341,8 @@ def snapshot(value='',network_fetch=_lookup_network):
                         _ROTATION['retry_until'][provider]=max(_ROTATION['retry_until'].get(provider,0),time.monotonic()+(
                             86400 if provider=='AvioADSB' and 'rate limit' in str(error).lower() else
                             900 if 'rate limit' in str(error).lower() else 150))
+                        retry=re.search(r'retry (\d+)',str(error))
+                        if retry:_ROTATION['retry_until'][provider]=max(_ROTATION['retry_until'][provider],time.monotonic()+int(retry[1]))
         elif not _REMOTE['updated'] or now-_REMOTE['updated']>=MIN_REMOTE_PERIOD:
             # Keep old injection point for deterministic offline regressions.
             _REMOTE['updated']=now
@@ -379,10 +388,15 @@ def snapshot(value='',network_fetch=_lookup_network):
     route_map.update(plausible_routes)
     # Observed usual callsign routes are a fallback, *not* a confirmation.
     usual_routes={}
+    direct_routes={}
     for item in remote+others+local:
         if not isinstance(item,dict):continue
         reg=normal_reg(item.get('r',''))
         if reg not in targets:continue
+        if _active(item) and item.get('flight'):
+            a,b=(str(item.get(k) or '').strip().upper() for k in ('route_origin','route_dest'))
+            if re.fullmatch(r'[A-Z]{3}',a) and re.fullmatch(r'[A-Z]{3}',b) and a!=b:
+                direct_routes[str(item['flight']).strip().upper()]=a+'–'+b
         route_info=item.get('route')
         if not isinstance(route_info,dict) or not item.get('flight'):continue
         orig=str(route_info.get('from_iata') or '').strip().upper()
@@ -404,15 +418,20 @@ def snapshot(value='',network_fetch=_lookup_network):
         if plane is None:
             recent=flights_history.cached(registration)
             if recent:
-                result.update(status='Last landed '+recent['airport'],
+                raw_airport=recent['airport']
+                airport=raw_airport if len(raw_airport)==3 else live_details._iata(raw_airport)
+                if airport:result.update(status='Last landed '+airport,
                               source='FlyItalyADSB observed history',
                               last_landed_at=recent['time'],
-                              at_airport=recent['airport'])
+                              at_airport=airport)
             output[registration]=result
             continue
         flight=str(plane.get('flight') or '').strip().upper()
         route=route_map.get(flight,'')
         confidence='plausible' if flight in plausible_routes else ('cached' if route else '')
+        if flight in direct_routes:
+            route=direct_routes[flight]
+            confidence='reported'
         if not route and flight in usual_routes:
             route=usual_routes[flight]
             confidence='usual'
@@ -434,6 +453,7 @@ def snapshot(value='',network_fetch=_lookup_network):
                       route_confidence=confidence if status.startswith('Flying') else '',
                       source=str(plane.get('_source',''))[:30],hex=hexcode,
                       at_airport=airport,callsign=flight,
-                      updated_seconds_ago=plane.get('seen'))
+                      updated_seconds_ago=plane.get('seen'),
+                      last_observed_at=int(time.time()-plane['seen']))
         output[registration]=result
     return {'aircraft':output,'checked_at':int(time.time())}
