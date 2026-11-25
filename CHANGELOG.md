@@ -1,3 +1,10 @@
+# v1.10.32 — shared settings, API status cards and faster flight log
+
+- Retain existing launcher entries and add the nine missing currently enabled feeders, with official site/feeder statistics links and existing favicon fallback. Add FR24 account stats as an optional second link.
+- Present consistent API verification icons and in-card results. Persist explicit test results on the server, bound to credentials. List keyless route and flight-log helpers and other enabled feeder services separately; do not imply unintegrated sources supply data.
+- Synchronize exclusions and launcher shortcuts across devices through private server settings; migrate old browser entries once, merge distinct entries and preserve subsequent removals. Existing manual-only exclusion suggestions and alert rules remain unchanged.
+- Keep a private, read-only persistent SheetDB snapshot for immediate flight-log loading, background refresh (two hours by default, explicit Refresh still available) and confirmed Google Sheets writes. Highlight only live Gatwick status text, not the full row.
+
 # v1.10.31 — AvioADSB connection test
 
 - Use the same application User-Agent for the AvioADSB connection test as the existing aircraft snapshot request, verified by the user's terminal comparison. Add an offline regression test. No other behavior changed.
