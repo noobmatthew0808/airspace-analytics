@@ -1,3 +1,9 @@
+# v1.10.30 — aligned live status and durable evidence
+
+- Align registration and live status in separate fixed subcolumns, use a full-width expanded row with receiver last-seen and tracking links, and emphasize LGW in the live status, not the historical route.
+- Use adsb.fi's documented feeder snapshot for multiple registrations; add optional ADSBiq contributor snapshot and its route fields, stagger source requests, retain actual observation times and local sightings through misses, normalize ICAO airport history to IATA, and expose provider health in the cached live response. Expire airborne evidence after 120 seconds and retain observed landing evidence up to seven days with time shown in details. Preserve previous route and registration handling.
+- Add ADSBiq key configuration and more informative AvioADSB test errors; keep secrets in existing private local state. No external keys committed. No Traffic, exclusion, notification or receiver logic changed.
+
 # v1.10.29 — mobile fit, recovered callsign routes, registration changes and AvioADSB
 
 - Inset the mobile table, align full-width dividers, simplify expanded details, and retain the registration at the time of flight while tracking the current registration.
