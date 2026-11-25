@@ -421,9 +421,44 @@ def notifier(c):
 
 # Explicit test results belong to the server, not to the browser. A result is
 # bound to the credential used, so replacing a key never inherits verification.
+def _opensky_key(c):
+    row=c.execute("SELECT value FROM config WHERE key='opensky_credentials'").fetchone()
+    return row['value'] if row else ''
+
+def _opensky_credentials(c):
+    raw=_opensky_key(c)
+    if not raw:return None
+    try:credentials=json.loads(raw)
+    except (ValueError,TypeError):return None
+    return credentials if isinstance(credentials,dict) and credentials.get('permission') else None
+
+def save_opensky(payload):
+    with _lock,connect() as c:
+        if payload.get('clear'):
+            c.execute("DELETE FROM config WHERE key='opensky_credentials'")
+            return
+        if payload.get('permission') is not True:
+            raise ValueError('Confirm written OpenSky permission before enabling automated access')
+        client=str(payload.get('client_id','')).strip()
+        secret=str(payload.get('key','')).strip()
+        if not re.fullmatch(r'[A-Za-z0-9_.@-]{2,200}',client) or not secret or len(secret)>512 or any(ord(x)<32 for x in secret):
+            raise ValueError('Enter a valid OAuth client ID and client secret')
+        c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',
+                  ('opensky_credentials',json.dumps({'client_id':client,'client_secret':secret,'permission':True})))
+
+def test_opensky():
+    from . import extra_flight_sources
+    with _lock,connect() as c:credentials=_opensky_credentials(c)
+    if not credentials:raise ValueError('Save permitted OpenSky OAuth credentials first')
+    return extra_flight_sources.test_opensky(credentials)
+
+def test_airplaneslive():
+    from . import extra_flight_sources
+    return extra_flight_sources.test_airplanes()
+
 def _provider_key(c,provider):
     getters={'flyitaly':_flyitaly_key,'adsblol':_adsblol_key,
-             'avioadsb':_avio_key,'adsbiq':_adsbiq_key}
+             'avioadsb':_avio_key,'adsbiq':_adsbiq_key,'opensky':_opensky_key}
     return getters[provider](c) if provider in getters else ''
 
 def _provider_fingerprint(key):
@@ -431,7 +466,7 @@ def _provider_fingerprint(key):
 
 def _provider_tests(c):
     result={}
-    for provider in ('flyitaly','adsblol','avioadsb','adsbiq','adsbfi'):
+    for provider in ('flyitaly','adsblol','avioadsb','adsbiq','adsbfi','opensky','airplaneslive'):
         row=c.execute('SELECT value FROM config WHERE key=?',('provider_test_'+provider,)).fetchone()
         if not row:continue
         try:entry=json.loads(row['value'])
@@ -442,7 +477,7 @@ def _provider_tests(c):
 
 def save_provider_key(provider,payload):
     functions={'flyitaly':save_flyitaly,'adsblol':save_adsblol,
-               'avioadsb':save_avio,'adsbiq':save_adsbiq}
+               'avioadsb':save_avio,'adsbiq':save_adsbiq,'opensky':save_opensky}
     if provider not in functions:raise ValueError('Unknown API source')
     with _lock:
         functions[provider](payload)
@@ -452,7 +487,8 @@ def save_provider_key(provider,payload):
 
 def run_provider_test(provider):
     functions={'flyitaly':test_flyitaly,'adsblol':test_adsblol,
-               'avioadsb':test_avio,'adsbiq':test_adsbiq,'adsbfi':test_adsbfi}
+               'avioadsb':test_avio,'adsbiq':test_adsbiq,'adsbfi':test_adsbfi,
+               'opensky':test_opensky,'airplaneslive':test_airplaneslive}
     if provider not in functions:raise ValueError('Unknown API source')
     with _lock,connect() as c:
         key=_provider_key(c,provider)
@@ -487,6 +523,7 @@ def snapshot():
         return {'rules':rules,'events':events,'ntfy':pub,'flyitaly':flyitaly.status(bool(_flyitaly_key(c))), 'receiver':dict(_last_sample),
                 'adsblol':adsblol.status(bool(_adsblol_key(c))),'adsbfi':adsbfi.status(),
                 'avioadsb':{'key_set':bool(_avio_key(c))},'adsbiq':{'key_set':bool(_adsbiq_key(c))},
+                'opensky':{'key_set':bool(_opensky_key(c))},'airplaneslive':{'key_required':False},
                 'provider_tests':_provider_tests(c),
                 'receiver_settings':receiver_settings(c)}
 
