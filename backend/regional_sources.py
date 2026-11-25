@@ -104,7 +104,7 @@ def configure(area,keys,verified):
         now=time.monotonic()
         extra.set_region(area,'ADSBHub' in _enabled)
         if not area:return
-        for name,delay in [('AvioADSB',900),('ADSBiq',300),('airplanes.live',240),('OpenSky Network',240)]:
+        for name,delay in [('AvioADSB',900),('ADSBiq',300),('airplanes.live',480),('OpenSky Network',240)]:
             if name not in _enabled or name in _busy or now<_next.get(name,0) or api_budget.remaining(name)>0:continue
             if name in _cache and now-_cache[name][0]<45:continue
             _next[name]=now+delay
