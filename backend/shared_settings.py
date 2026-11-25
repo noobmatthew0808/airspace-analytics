@@ -62,15 +62,17 @@ def update(payload):
             if incoming is not None:
                 incoming=dates(incoming)
                 if not state['dates_initialized']:state['excluded_days']=incoming
-                else:state['excluded_days']=dates(sorted(set(state['excluded_days'])|set(incoming)))
+                else:state['excluded_days']=dates(sorted(set(state['excluded_days'])|(set(incoming)-set(state.get('removed_days',[])))))
                 state['dates_initialized']=True
             incoming_links=links(payload.get('links',[]))
             if state['links'] is None:state['links']=incoming_links
-            else:
+            elif payload.get('has_legacy_links',True):
                 existing=state['links']
                 ids={r.get('id') for r in existing if r.get('id')}
                 names={r['name'].strip().lower() for r in existing}
+                removed=set(state.get('removed_links',[]))
                 for r in incoming_links:
+                    if 'name:'+r['name'].strip().lower() in removed or (r.get('id') and 'id:'+r['id'] in removed):continue
                     if r.get('id') in ids or r['name'].strip().lower() in names:continue
                     existing.append(r)
                     if r.get('id'):ids.add(r['id'])
@@ -80,13 +82,23 @@ def update(payload):
         elif action in ('add_day','remove_day'):
             day=dates([payload.get('day')])[0]
             current=set(state['excluded_days'])
-            if action=='add_day':current.add(day)
-            else:current.discard(day)
+            removed=set(state.get('removed_days',[]))
+            if action=='add_day':
+                current.add(day);removed.discard(day)
+            else:
+                current.discard(day);removed.add(day)
+            state['removed_days']=sorted(removed)
             state['excluded_days']=dates(sorted(current))
             state['dates_initialized']=True
         elif action=='links':
             if payload.get('revision')!=state['revision']:raise ValueError('Settings changed on another device. Reopen Settings before saving.')
-            state['links']=links(payload.get('links'))
+            previous=state['links'] or []
+            new=links(payload.get('links'))
+            def identities(rows):
+                return {'name:'+r['name'].strip().lower() for r in rows}|{'id:'+r['id'] for r in rows if r.get('id')}
+            removed=(set(state.get('removed_links',[]))|(identities(previous)-identities(new)))-identities(new)
+            state['removed_links']=sorted(removed)
+            state['links']=new
         else:raise ValueError('Unknown settings action')
         state['revision']+=1
         c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',(KEY,json.dumps(state,separators=(',',':'))))
