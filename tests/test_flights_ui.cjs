@@ -197,3 +197,10 @@ test('mobile details span full width and live statuses use fixed aligned columns
  assert.match(source,/Last seen by your receiver/);
  assert.match(source,/lgw\(compactStatus\(liveFor\(row\)\)\)/);
 });
+
+test('local receiver sighting is restored in the compact row and details',()=>{
+ assert.match(source,/regLink\+statusBadge\(row\)\+localLastSeen\(row\)/);
+ assert.match(source,/Last seen by your receiver/);
+ const css=fs.readFileSync('frontend/flights.css','utf8');
+ assert.match(css,/\.flights-reg-line>\.flights-local-seen\{grid-column:1;grid-row:2/);
+});

@@ -46,6 +46,10 @@ def _merge(old, item, now):
     if str(old.get('status','')).startswith('Flying') and 0<=now-old_stamp<=LIVE_TTL:
         if not new_stamp or new_stamp<old_stamp:
             result=dict(old)
+            if item.get('route') and item.get('callsign') and item.get('callsign')==old.get('callsign') and item.get('hex')==old.get('hex') and new_stamp and now-new_stamp<=LIVE_TTL and str(item.get('status','')).startswith('Flying'):
+                if not old.get('route') or (old.get('route_confidence')=='usual' and item.get('route_confidence')!='usual'):
+                    result.update(route=item['route'],route_confidence=item.get('route_confidence',''),
+                                  _route_memory={'callsign':item['callsign'],'route':item['route'],'confidence':item.get('route_confidence',''),'at':now})
             for k in ('local_last_seen_at','local_hex'):
                 if item.get(k):result[k]=item[k]
             return result

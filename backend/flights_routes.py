@@ -45,14 +45,16 @@ def _code(value):
     return value if re.fullmatch(r'[A-Z]{3}',value) else ''
 
 
-def parse_routes(payload, requested):
-    """Return only plausible 2-airport routes for the corresponding callsigns.
+def parse_routes(payload, requested, unpositioned=()):
+    """Return unambiguous 2-airport routes for corresponding callsigns.
 
-    Unknown, multi-stop, ambiguous or implausible results remain blank.
+    Require plausibility for position-based requests. ADSB.im requests without
+    a position may return a usual itinerary, labelled as such by the cache.
     adsb.lol may supply a list of lists (one per plane) or a flat list.
     """
     wanted=set(requested)
     answer={}
+    conflicts=set()
     if not isinstance(payload,list):return answer
     records=[]
     for item in payload:
@@ -61,7 +63,7 @@ def parse_routes(payload, requested):
     for entry in records[:100]:
         if not isinstance(entry,dict):continue
         callsign=str(entry.get('callsign') or '').strip().upper()
-        if callsign not in wanted or entry.get('plausible') not in (True,1):
+        if callsign not in wanted or (callsign not in unpositioned and entry.get('plausible') not in (True,1)):
             continue
         path=str(entry.get('_airport_codes_iata') or '').upper()
         parts=path.split('-')
@@ -73,8 +75,10 @@ def parse_routes(payload, requested):
         if len(parts)!=2:continue
         orig,dest=(_code(v) for v in parts)
         if orig and dest and orig!=dest:
-            answer[callsign]=orig+'–'+dest
-    return answer
+            value=orig+'–'+dest
+            if callsign in answer and answer[callsign]!=value:conflicts.add(callsign)
+            answer[callsign]=value
+    return {call:route for call,route in answer.items() if call not in conflicts}
 
 
 def _clean_planes(planes):
@@ -86,10 +90,15 @@ def _clean_planes(planes):
         if not re.fullmatch(r'[A-Z]{3}[0-9][A-Z0-9]{0,4}',call) or call in seen:
             continue
         lat,lon=item.get('lat'),item.get('lon')
-        if not all(isinstance(x,(float,int)) and math.isfinite(x) for x in (lat,lon)):
+        record={'callsign':call}
+        if all(isinstance(x,(float,int)) and math.isfinite(x) for x in (lat,lon)) and -90<=lat<=90 and -180<=lon<=180:
+            record.update(lat=round(lat,5),lng=round(lon,5))
+        elif lat is not None or lon is not None:
             continue
-        if not (-90<=lat<=90 and -180<=lon<=180):continue
-        clean.append({'callsign':call,'lat':round(lat,5),'lng':round(lon,5)})
+        hexcode=str(item.get('icao') or '').lower()
+        if re.fullmatch(r'[0-9a-f]{6}',hexcode):record['icao']=hexcode
+        if 'lat' not in record and 'icao' not in record:continue
+        clean.append(record)
         seen.add(call)
         if len(clean)>=MAX_PER_BATCH:break
     return clean
@@ -109,7 +118,8 @@ def _request_source(clean,url,opener):
     if len(blob)>MAX_RESPONSE_BYTES:raise ValueError('Route lookup response too large')
     payload=json.loads(blob)
     if not isinstance(payload,list):raise ValueError('Invalid routeset response shape')
-    return parse_routes(payload,[p['callsign'] for p in clean])
+    return parse_routes(payload,[p['callsign'] for p in clean],
+                        {p['callsign'] for p in clean if 'lat' not in p})
 
 
 def fetch_routes(planes, opener=None):
@@ -125,8 +135,8 @@ def fetch_routes(planes, opener=None):
     combined={}
     used=''
     for url in SOURCES:
-        remaining=[p for p in clean if p['callsign'] not in combined]
-        if not remaining:break
+        remaining=[p for p in clean if p['callsign'] not in combined and (url==SOURCES[0] or 'lat' in p)]
+        if not remaining:continue
         try:
             matched=_request_source(remaining,url,opener)
             if matched:used=url
@@ -146,7 +156,33 @@ def health():
     with _lock:return dict(_health)
 
 
-def cached_routes(planes):
+def historical_route(call,key,opener=None):
+    """A usual itinerary only, from observed completed flights of this callsign."""
+    from . import api_budget, live_details
+    if not key or not re.fullmatch(r'[A-Z]{3}[0-9][A-Z0-9]{0,4}',call):return ''
+    if opener is None:
+        if api_budget.remaining('FlyItalyADSB')>0:return ''
+        opener=lambda req,timeout:api_budget.open_request('FlyItalyADSB',_open,req,timeout)
+    req=Request('https://api.flyitalyadsb.com/v2/flights/callsign/'+call+'?days=7',
+                headers={'X-Api-Key':key,'Accept':'application/json','User-Agent':'AirspaceAnalytics-Flights/4'})
+    with opener(req,timeout=5) as response:
+        raw=response.read(MAX_RESPONSE_BYTES+1)
+    if len(raw)>MAX_RESPONSE_BYTES:raise ValueError('History response too large')
+    payload=json.loads(raw)
+    if not isinstance(payload,dict):return ''
+    rows=payload.get('flights',[])
+    if not isinstance(rows,list):return ''
+    routes=set()
+    for row in rows:
+        if not isinstance(row,dict) or str(row.get('callsign') or '').strip().upper()!=call:continue
+        a,b=row.get('from'),row.get('to')
+        if not isinstance(a,dict) or not isinstance(b,dict):continue
+        route=live_details._route(a.get('iata') or a.get('airport'),b.get('iata') or b.get('airport'))
+        if route:routes.add(route.replace(' – ','–'))
+    return next(iter(routes)) if len(routes)==1 else ''
+
+
+def cached_routes(planes,history_key=''):
     """Return cached routes and optionally schedule a polite refresh.
 
     Flight-tab requests are answered immediately; no outgoing HTTP waits.
@@ -163,27 +199,47 @@ def cached_routes(planes):
             saved=_cache.get(call)
         if saved and saved[0]>now:
             if saved[1]:found[call]=saved[1]
-        elif item.get('lat') is not None and item.get('lon') is not None:
+            if len(saved)>2 and saved[2]=='usual' and item.get('lat') is not None and item.get('lon') is not None and _clean_planes([item]):pending.append(item)
+        elif _clean_planes([item]):
             pending.append(item)
     with _lock:
         if pending and not _busy and (not _last_request or now-_last_request>=MIN_POLL_SECONDS):
             _busy=True
             _last_request=now
             batch=pending[:MAX_PER_BATCH]
-            threading.Thread(target=_refresh,args=(batch,),daemon=True,
+            threading.Thread(target=_refresh,args=(batch,history_key),daemon=True,
                              name='airspace-flight-routes').start()
     return found
 
 
-def _refresh(batch):
+def confidence(call):
+    with _lock:
+        saved=_cache.get(call)
+        return saved[2] if saved and len(saved)>2 else 'plausible'
+
+
+def _refresh(batch,history_key=''):
     global _busy
     try:
         routes=fetch_routes(batch)
+        from_history=set()
+        if history_key:
+            missing=[str(p.get('callsign') or '').strip().upper() for p in batch if p.get('callsign') not in routes]
+            # One extra history call at most per three-minute route batch.
+            if missing:
+                call=missing[0]
+                try:
+                    route=historical_route(call,history_key)
+                    if route:routes[call]=route;from_history.add(call)
+                except (OSError,ValueError,TypeError):pass
         now=time.monotonic()
         with _lock:
             for aircraft in batch:
                 call=str(aircraft.get('callsign') or '').strip().upper()
                 route=routes.get(call,'')
-                _cache[call]=(now+(GOOD_TTL_SECONDS if route else MISS_TTL_SECONDS),route)
+                previous=_cache.get(call)
+                if not route and previous and previous[0]>now and previous[1]:continue
+                _cache[call]=(now+(GOOD_TTL_SECONDS if route else MISS_TTL_SECONDS),route,
+                              'plausible' if call not in from_history and aircraft.get('lat') is not None and aircraft.get('lon') is not None else 'usual')
     finally:
         with _lock:_busy=False

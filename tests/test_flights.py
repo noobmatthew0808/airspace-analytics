@@ -163,7 +163,7 @@ class LiveStatusTests(unittest.TestCase):
         self.assertEqual(routes.call_args.args[0][0]['callsign'],'EZY76')
         self.assertEqual(routes.call_args.args[0][0]['lat'],51.2)
 
-    def test_route_api_not_queried_for_old_or_positionless_detection(self):
+    def test_current_positionless_detection_uses_icao_without_stale_coordinates(self):
         local={'hex':'407abc','r':'G-WUKU','flight':'EZY76',
                'alt_baro':33000,'seen':0,'seen_pos':999,
                '_source':'Your antenna'}
@@ -172,7 +172,7 @@ class LiveStatusTests(unittest.TestCase):
                 with patch.object(flights_live.flights_routes,'cached_routes',return_value={}) as routes:
                     result=flights_live.snapshot('G-WUKU',network_fetch=lambda regs:[])
         self.assertEqual(result['aircraft']['G-WUKU']['status'],'Flying')
-        routes.assert_called_once_with([])
+        routes.assert_called_once_with([{'callsign':'EZY76','icao':'407abc'}])
 
     def test_observed_usual_route_is_labelled_as_likely(self):
         local={'hex':'407abc','r':'G-WUKU','flight':'EZY76',
@@ -324,6 +324,14 @@ class LiveStatusTests(unittest.TestCase):
             result=flights_live.snapshot('G-WUKU',network_fetch=lambda regs:[aircraft])
         self.assertEqual(result['aircraft']['G-WUKU']['route'],'LGW–BTS')
         self.assertEqual(result['aircraft']['G-WUKU']['route_confidence'],'reported')
+
+    def test_reported_route_on_same_airframe_is_not_lost_to_fresher_position(self):
+        local={'hex':'4080f7','r':'HA-LDG','flight':'WZZ580C','seen':0,'alt_baro':30000,'_source':'Your antenna'}
+        remote=dict(local,seen=10,_source='ADSBiq',route_origin='HEMA',route_dest='EPMO')
+        with patch.object(flights_live,'_local_planes',return_value=[local]),patch.object(flights_live,'_routes',return_value={}),patch.object(flights_live.live_details,'_iata',side_effect=lambda c:{'HEMA':'RMF','EPMO':'WMI'}.get(c,c or '')):
+            item=flights_live.snapshot('HA-LDG',network_fetch=lambda regs:[remote])['aircraft']['HA-LDG']
+        self.assertEqual(item['route'],'RMF–WMI')
+        self.assertEqual(item['route_confidence'],'reported')
 
     def test_invalid_registration_or_too_many_rejected_without_network_calls(self):
         with self.assertRaises(ValueError):
