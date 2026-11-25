@@ -1,3 +1,9 @@
+# v1.10.36 — free API inventory and shared backup coverage
+
+- Only integrated free/feeder data providers appear in the API panel, each with an existing real connection test and separate background-use diagnostics. Remove the informational SheetDB, route helper and unintegrated/paid provider cards without changing their underlying functionality or homepage shortcuts.
+- Extend AvioADSB, ADSBiq, airplanes.live, ADSBHub and authorized OpenSky to nearby opt-in backup alert coverage, reuse nearby global-snapshot observations, and share available observations with the flight log. Keep the local receiver, historical statistics and local-only alerts independent.
+- Coordinate provider-specific HTTP cooldowns and 429 Retry-After between existing live/history/nearby requests; preserve prior verification on temporary throttling. Merge compatible fresh observations for the same airframe. Dataero still requires its authenticated read API contract; no untested URL or unused key input.
+
 # v1.10.35 — separate API key and connection indicators
 
 - Show a normal or crossed-out key alongside a separate verified, saved, failed or unverified status on API cards. Preserve stored test results, existing controls and all backend behavior. Helpers without connection tests are not marked verified.
