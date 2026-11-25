@@ -189,3 +189,11 @@ test('historical registration display and current registration lookup are separa
  assert.match(source,/Current registration:/);
  assert.match(source,/escapeHtml\(historical\)/);
 });
+
+test('mobile details span full width and live statuses use fixed aligned columns',()=>{
+ const css=fs.readFileSync('frontend/flights.css','utf8');
+ assert.match(css,/\.flights-table tbody tr\.flights-inline-detail>td\{display:block!important;width:100%!important;min-width:100%!important;max-width:100%!important/);
+ assert.match(css,/grid-template-columns:minmax\(0,1fr\) 8\.2ch/);
+ assert.match(source,/Last seen by your receiver/);
+ assert.match(source,/lgw\(compactStatus\(liveFor\(row\)\)\)/);
+});
