@@ -77,7 +77,7 @@ function providerCard(p,d){
   (p.keyless?'':'<label class="alert-field alert-wide">API key <small>'+(saved?'Key saved on server. Enter a replacement only if needed.':'Paste your API key.')+'</small>'+
   '<span class="alert-secret-row"><input name="key" type="password" autocomplete="new-password" placeholder="'+(saved?'Key saved — enter replacement':'Paste API key')+'"><button type="button" class="btn small" data-showkey="'+p.id+'">Show</button></span></label>')+
   '<div class="alert-editor-buttons">'+(p.keyless?'':'<button class="btn primary" type="submit">Save key</button>')+
-  '<button class="btn small" type="button" data-test-provider="'+p.id+'">Test connection</button>'+
+  '<button class="btn small" type="button" '+(p.id==='adsbfi'?'id="alertAdsbfiTest" ':'')+'data-test-provider="'+p.id+'">Test connection</button>'+
   (p.keyless?'':'<button class="btn small alert-delete" type="button" data-remove-provider="'+p.id+'" '+(saved?'':'disabled')+'>Remove key</button>')+'</div>'+
   result+
   (info.monthly_used?'<p class="alert-provider-note">Requests '+ae(info.monthly_used)+'/'+ae(info.monthly_quota||'?')+'</p>':'')+
