@@ -397,3 +397,33 @@
  .flights-table .flights-reg-line{gap:2px}
  .flights-table .flights-reg-line .flights-reg,.flights-table .flights-reg-line .flights-live-chip{font-size:9px!important}
 }
+
+/* v1.10.29 — inset mobile table, consistent dividers and simple inline details. */
+.flights-inline-card{display:grid;gap:6px;padding:9px 10px;border:0;border-radius:0;background:transparent}
+.flights-inline-summary{display:flex;align-items:baseline;justify-content:space-between;gap:6px;flex-wrap:wrap;font-size:12px}
+.flights-inline-summary span,.flights-inline-facts,.flights-inline-live small{font-size:10px;color:var(--muted);line-height:1.4}
+.flights-inline-live{display:grid;grid-template-columns:auto 1fr;gap:3px 8px;align-items:baseline;border-top:1px solid var(--line);padding-top:6px;font-size:11px}
+.flights-inline-live>span{color:var(--muted)}
+.flights-inline-live>strong{color:var(--aqua);font-weight:600}
+.flights-inline-live small{grid-column:1/-1}
+.flights-inline-card .flights-detail-links{display:flex;flex-wrap:wrap;gap:5px;margin:0}
+.flights-inline-card .flights-detail-links .btn{font-size:10px;padding:5px 7px}
+.flights-rereg{font-size:7px;line-height:0;color:var(--aqua)}
+@media(max-width:700px){
+ .flights-list{width:100%!important;max-width:100%!important;margin:8px 0 0!important}
+ .flights-list .flights-results-row{padding:0 3px}
+ .flights-table thead tr,.flights-table tbody tr.flights-row{grid-template-columns:minmax(0,15%) minmax(0,16%) minmax(0,14%) minmax(0,39%) minmax(0,16%)!important;align-items:stretch!important;border-bottom:1px solid var(--line)}
+ .flights-table thead th,.flights-table tbody tr.flights-row td{border-bottom:0!important;display:flex!important;align-items:center;padding:7px 2px!important;min-width:0!important;font-size:9px!important}
+ .flights-table thead th:nth-child(4),.flights-table thead th:nth-child(5),.flights-table tbody tr.flights-row td:nth-child(4),.flights-table tbody tr.flights-row td:nth-child(5){display:none!important}
+ .flights-table thead th:first-child,.flights-table tbody tr.flights-row td:first-child{padding-left:5px!important}
+ .flights-table thead th:last-child,.flights-table tbody tr.flights-row td:last-child{padding-right:4px!important}
+ .flights-table tbody tr.flights-row .flights-cell-date,.flights-table tbody tr.flights-row .flights-cell-route,.flights-table tbody tr.flights-row .flights-cell-code,.flights-table tbody tr.flights-row .flights-cell-who{font-size:9px!important}
+ .flights-table .flights-reg-line{gap:2px;min-width:0;max-width:100%}
+ .flights-table .flights-reg-line .flights-reg,.flights-table .flights-reg-line .flights-live-chip{font-size:9px!important;flex-shrink:0}
+ .flights-table .flights-reg-line .flights-live-chip{border:0!important;background:transparent!important;padding:0!important}
+ .flights-who-short{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .flights-inline-detail td{padding:0!important;border-bottom:1px solid var(--line)}
+}
+@media(max-width:360px){
+ .flights-table tbody tr.flights-row .flights-cell-date,.flights-table tbody tr.flights-row .flights-cell-code,.flights-table tbody tr.flights-row .flights-cell-route,.flights-table tbody tr.flights-row .flights-cell-who,.flights-table .flights-reg-line .flights-reg,.flights-table .flights-reg-line .flights-live-chip{font-size:8px!important}
+}
