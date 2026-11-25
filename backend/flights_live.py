@@ -439,7 +439,8 @@ def snapshot(value='',network_fetch=_lookup_network):
         hexcode=str(plane.get('hex') or '').lower()
         if re.fullmatch(r'[0-9a-f]{6}',hexcode):request['icao']=hexcode
         if 'lat' in request or 'icao' in request:missing_routes.append(request)
-    plausible_routes=flights_routes.cached_routes(missing_routes)
+    route_key=configured.get('FlyItalyADSB','')
+    plausible_routes=flights_routes.cached_routes(missing_routes,route_key) if route_key else flights_routes.cached_routes(missing_routes)
     route_map.update(plausible_routes)
     # Observed usual callsign routes are a fallback, *not* a confirmation.
     usual_routes={}
