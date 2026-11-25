@@ -39,3 +39,21 @@ assert.match(providerCard(providers.find(p=>p.id==='opensky'),{}),/name="client_
 assert.match(providerCard(providers.find(p=>p.id==='opensky'),{}),/written permission/);
 assert(providers.some(p=>p.id==='airplaneslive'&&p.keyless));
 assert(providers.some(p=>p.id==='adsbhub'&&p.keyless));
+
+// Credential type and connection status are independent, including keyless APIs.
+const summary=html=>html.split('</summary>')[0];
+for(const p of providers){
+ const base=p.keyless?{}:{[p.id]:{key_set:true}};
+ const tested=ok=>({...base,provider_tests:{[p.id]:{ok,message:'test',at:1800000000}}});
+ const key=p.keyless?'keyless':'key';
+ for(const [data,state] of [[base,p.keyless?'pending':'saved'],[tested(true),'verified'],[tested(false),'missing']]){
+  const html=summary(providerCard(p,data));
+  assert.match(html,new RegExp('alert-api-icon '+key+'"'));
+  assert.match(html,new RegExp('alert-api-icon '+state+'"'));
+  assert.equal((html.match(/<svg /g)||[]).length,2);
+ }
+}
+assert.match(summary(providerCard(fi,{adsbfi:{connected:true}})),/alert-api-icon verified/);
+assert.match(summary(providerCard(fi,{adsbfi:{connected:true},provider_tests:{adsbfi:{ok:false}}})),/alert-api-icon missing/);
+assert.match(summary(providerCard(avio,{})),/alert-api-icon key"[^]*alert-api-icon missing/);
+for(const p of otherSources)assert.equal((summary(otherProviderCard(p)).match(/<svg /g)||[]).length,2);

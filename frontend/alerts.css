@@ -108,3 +108,10 @@
 .alert-provider-result.is-good{color:var(--green,#22a65c)}
 .alert-provider-result.is-error{color:var(--red,#d84a54)}
 .alert-provider .alert-field{margin-top:10px}
+
+/* v1.10.35: separate credential type from connection status. */
+.alert-api-summary>span.alert-api-icons{display:inline-flex;flex:0 0 auto;flex-wrap:nowrap;align-items:center;gap:5px}
+.alert-api-icons .alert-api-icon{width:17px;height:17px;flex:0 0 17px}
+.alert-api-icon.key,.alert-api-icon.pending{color:var(--muted)}
+.alert-api-legend>span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+@media(max-width:380px){.alert-provider>summary.alert-api-summary{gap:7px}.alert-api-summary>span.alert-api-icons{gap:3px}.alert-api-icons .alert-api-icon{width:15px;height:15px;flex-basis:15px}}

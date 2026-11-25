@@ -34,8 +34,13 @@ function providerIcon(state){
  const paths={verified:'<circle cx="12" cy="12" r="10" fill="currentColor" stroke="none"/><path d="m7 12 3 3 7-7" stroke="var(--panel)" stroke-width="2.8"/>',
  saved:'<circle cx="12" cy="12" r="10"/><path d="m7 12 3 3 7-7"/>',
  missing:'<circle cx="12" cy="12" r="10"/><path d="m8 8 8 8m0-8-8 8"/>',
- keyless:'<path d="m3 3 18 18M14 7a5 5 0 0 1 3 9m-7-2-7 7v-4l4-4m3-3a5 5 0 0 1 1-4"/>'};
+ key:'<circle cx="16" cy="8" r="5"/><path d="m12.5 11.5-9 9H2v-4l3-3h3v-3l4-4"/>',
+ keyless:'<path d="m3 3 18 18M12 4a5 5 0 0 1 7 7m-9 2-7 7H2v-4l3-3h3l1-1"/>',
+ pending:'<circle cx="12" cy="12" r="10"/><path d="M8 12h8"/>'};
  return '<svg class="alert-api-icon '+state+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+paths[state]+'</svg>';
+}
+function providerIcons(keyless,state){
+ return '<span class="alert-api-icons" aria-hidden="true">'+providerIcon(keyless?'keyless':'key')+providerIcon(state)+'</span>';
 }
 async function alertApi(path,body){
  const opts=body===undefined?{cache:'no-store'}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'};
@@ -64,13 +69,13 @@ function providerCard(p,d){
  const info=d[p.id]||{},saved=!!info.key_set,test=d.provider_tests?.[p.id],local=providerMessages[p.id]?.until>Date.now()?providerMessages[p.id]:null;
  const verified=test?test.ok:!!(info.connected||info.last_success&&!info.error);
  const failed=test?test.ok===false:!!info.error;
- const state=p.keyless?'keyless':!saved||failed?'missing':verified?'verified':'saved';
+ const state=failed||(!p.keyless&&!saved)?'missing':verified?'verified':p.keyless?'pending':'saved';
  const subtitle=p.keyless?(failed?'No key required · Test failed':verified?'No key required · Verified':(['airplaneslive','adsbhub'].includes(p.id)?'No key required · Test to activate':'No key required')):
   !saved?'No key saved':failed?'Connection failed':verified?'Verified':'Key saved · Not tested';
  const message=local?.message||test?.message||(info.error?'Connection failed: '+info.error:info.last_success?'Last successful connection: '+whenAlert(info.last_success):'');
  const error=local?local.error:failed;
  const result='<div id="provider-result-'+p.id+'" role="status" class="alert-provider-result'+(message?(error?' is-error':' is-good'):'')+'">'+ae(message)+(test?.at&&!local?' · '+ae(whenAlert(test.at)):'')+'</div>';
- return '<details class="foldout alert-config alert-provider" id="alert-'+p.id+'"><summary class="alert-api-summary">'+providerIcon(state)+'<span><strong>'+ae(p.name)+'</strong><small>'+ae(subtitle)+'</small></span></summary>'+
+ return '<details class="foldout alert-config alert-provider" id="alert-'+p.id+'"><summary class="alert-api-summary">'+providerIcons(p.keyless,state)+'<span><strong>'+ae(p.name)+'</strong><small>'+ae(subtitle)+'</small></span></summary>'+
   '<form class="alert-config-content alert-provider-form" data-provider="'+p.id+'" autocomplete="off">'+
   '<div class="alert-provider-endpoint"><span>API endpoint</span><code>'+ae(p.url)+'</code></div>'+
   '<p class="alert-provider-note">'+ae(p.hint)+'</p>'+
@@ -85,10 +90,10 @@ function providerCard(p,d){
   '</form></details>';
 }
 function helperCard(id,name,description){
- return '<details class="foldout alert-config alert-provider" id="api-helper-'+id+'"><summary class="alert-api-summary">'+providerIcon('keyless')+'<span><strong>'+ae(name)+'</strong><small>No key to enter · In use</small></span></summary><div class="alert-config-content"><p class="alert-provider-note">'+ae(description)+'</p></div></details>';
+ return '<details class="foldout alert-config alert-provider" id="api-helper-'+id+'"><summary class="alert-api-summary">'+providerIcons(true,'pending')+'<span><strong>'+ae(name)+'</strong><small>No key to enter · In use</small></span></summary><div class="alert-config-content"><p class="alert-provider-note">'+ae(description)+'</p></div></details>';
 }
 function otherProviderCard(p){
- return '<details class="foldout alert-config alert-provider" id="other-api-'+p.id+'"><summary class="alert-api-summary">'+providerIcon(p.keyless?'keyless':'missing')+
+ return '<details class="foldout alert-config alert-provider" id="other-api-'+p.id+'"><summary class="alert-api-summary">'+providerIcons(p.keyless,'missing')+
   '<span><strong>'+ae(p.name)+'</strong><small>'+ (p.keyless?'No key required · Not integrated':'Not integrated')+'</small></span></summary>'+
   '<div class="alert-config-content"><p class="alert-provider-note">'+ae(p.hint)+'</p><a class="btn small" href="'+ae(p.url)+'" target="_blank" rel="noopener noreferrer">Provider website</a></div></details>';
 }
@@ -107,7 +112,7 @@ function renderAlertPageContents(){
   '<div class="alert-config-stack"><details class="foldout alert-config" id="alertApis"><summary><span>APIs <small>Manage backup sources</small></span></summary>'+
   '<div class="alert-config-stack alert-nested">'+
   '<p class="alert-explainer">Configured sources supply Flights; backup alert sources apply only to rules with Backup APIs enabled. Your receiver remains the primary source.</p>'+
-  '<div class="alert-api-legend">'+providerIcon('verified')+' Verified '+providerIcon('saved')+' Key saved '+providerIcon('missing')+' Missing / failed '+providerIcon('keyless')+' Keyless</div>'+
+  '<div class="alert-api-legend"><span>'+providerIcon('key')+' Key required</span><span>'+providerIcon('keyless')+' Keyless</span><span>'+providerIcon('verified')+' Verified</span><span>'+providerIcon('saved')+' Key saved</span><span>'+providerIcon('missing')+' Missing / failed</span><span>'+providerIcon('pending')+' Not verified</span></div>'+
   providers.map(p=>providerCard(p,d)).join('')+
   helperCard('routes','ADSB.im / adsb.lol routeset','Keyless callsign and position route enrichment for Flights. No separate credentials; automatic lookups use the existing rate limits.')+
   helperCard('sheet','Google Sheets (SheetDB)','Existing flight-log bridge. No separate key to enter here; the Refresh button in Flights checks the sheet.')+
