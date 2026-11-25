@@ -15,7 +15,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import flyitaly, adsblol, adsbfi
+from . import flyitaly, adsblol, adsbfi, regional_sources, api_budget
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler, ProxyHandler
 from urllib.parse import urlsplit
@@ -245,7 +245,8 @@ def test_adsbiq():
     with _lock,connect() as c:key=_adsbiq_key(c)
     if not key:raise ValueError('Save your ADSBiq key first')
     from .flights_live import _NoRedirect as NoRedirect, _global_snapshot
-    planes=_global_snapshot([],key,build_opener(ProxyHandler({}),NoRedirect()).open,'ADSBiq')
+    base=build_opener(ProxyHandler({}),NoRedirect()).open
+    _global_snapshot([],key,lambda req,timeout:api_budget.open_request('ADSBiq',base,req,timeout),'ADSBiq')
     return {'ok':True,'plan':'API accessible'}
 
 
@@ -508,7 +509,10 @@ def run_provider_test(provider):
     try:
         result=functions[provider]()
     except (ValueError,OSError) as error:
-        save(False,str(error))
+        # A temporary cooldown is not a revoked key or a failed authorization.
+        # Preserve activation so a provider can resume automatically.
+        if not any(x in str(error).lower() for x in ('rate limit','http 429','retry later','background lookup in progress')):
+            save(False,str(error))
         raise
     message='Connection successful'
     if result.get('plan'):message+=' · '+str(result['plan'])[:50]
@@ -517,7 +521,30 @@ def run_provider_test(provider):
     return result
 
 
+def provider_usage():
+    from . import flights_live
+    global_status=flights_live.source_health()
+    regional=regional_sources.health()
+    ids={'flyitaly':'FlyItalyADSB','adsblol':'adsb.lol','adsbfi':'adsb.fi',
+         'avioadsb':'AvioADSB','adsbiq':'ADSBiq','airplaneslive':'airplanes.live',
+         'adsbhub':'ADSBHub','opensky':'OpenSky Network'}
+    result={}
+    for id,name in ids.items():
+        combined=dict(global_status.get(name,{}))
+        near=regional.get(name,{})
+        if 'nearby_aircraft' in near:combined['nearby_aircraft']=near['nearby_aircraft']
+        if near.get('error') and not combined.get('error'):combined['error']=near['error']
+        combined['retry_seconds']=max(combined.get('retry_seconds',0),near.get('retry_seconds',0),
+                                      round(api_budget.remaining(name)))
+        if id in ('flyitaly','adsblol','adsbfi'):
+            state={'flyitaly':flyitaly,'adsblol':adsblol,'adsbfi':adsbfi}[id].status()
+            combined['nearby_aircraft']=state.get('aircraft',0) if state.get('connected') else 0
+        result[id]=combined
+    return result
+
+
 def snapshot():
+    usage=provider_usage()
     with _lock, connect() as c:
         rules=[dict(x) for x in c.execute('SELECT id,label,field,pattern,max_km,min_ft,max_ft,enabled,use_flyitaly,network_only,min_rssi FROM rules ORDER BY id DESC')]
         active={r['rule_id']:r['n'] for r in c.execute("SELECT rule_id,count(*) n FROM occupancy WHERE state='active' GROUP BY rule_id")}
@@ -528,7 +555,7 @@ def snapshot():
                 'adsblol':adsblol.status(bool(_adsblol_key(c))),'adsbfi':adsbfi.status(),
                 'avioadsb':{'key_set':bool(_avio_key(c))},'adsbiq':{'key_set':bool(_adsbiq_key(c))},
                 'opensky':{'key_set':bool(_opensky_key(c))},'airplaneslive':{'key_required':False},'adsbhub':{'key_required':False},
-                'provider_tests':_provider_tests(c),
+                'provider_tests':_provider_tests(c),'provider_usage':usage,
                 'receiver_settings':receiver_settings(c)}
 
 
@@ -949,13 +976,31 @@ def loop():
         try:
             payload,lat,lon=read_receiver()
             process_snapshot(payload,lat,lon,
-                             external=flyitaly.aircraft()+adsblol.aircraft()+adsbfi.aircraft())
+                             external=flyitaly.aircraft()+adsblol.aircraft()+adsbfi.aircraft()+regional_sources.aircraft())
             with _lock:_last_sample['source']=_last_good_url
         except Exception as exc:
             with _lock:_last_sample['error']=str(exc)[:180]
         try:deliver_pending()
         except Exception as exc:print('[alerts] ntfy:',str(exc)[:180],flush=True)
         time.sleep(POLL_SECONDS)
+
+
+def regional_loop():
+    """Additional sources are optional, shared and never block receiver matching."""
+    while True:
+        try:
+            with _lock,connect() as c:
+                receiver=receiver_settings(c)
+                rows=c.execute('SELECT max_km FROM rules WHERE enabled=1 AND use_flyitaly=1 AND max_km IS NOT NULL').fetchall()
+                keys={'AvioADSB':_avio_key(c),'ADSBiq':_adsbiq_key(c),'OpenSky Network':_opensky_credentials(c)}
+                verified=_provider_tests(c)
+            area=None
+            if rows and receiver['lat'] is not None and receiver['lon'] is not None:
+                area=(receiver['lat'],receiver['lon'],min(450.,max(10.,*(float(r['max_km'])+5 for r in rows))))
+            regional_sources.configure(area,keys,verified)
+        except Exception:
+            pass
+        time.sleep(10)
 
 
 def flyitaly_loop():
@@ -1029,3 +1074,4 @@ def start():
                          daemon=True).start()
         threading.Thread(target=adsbfi_loop,name='airspace-adsbfi',
                          daemon=True).start()
+        threading.Thread(target=regional_loop,name='airspace-regional-sources',daemon=True).start()

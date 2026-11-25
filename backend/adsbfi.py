@@ -5,6 +5,7 @@ Contributor-only /v2/snapshot access is automatically granted by source IP.
 This poller does not request or download the global snapshot.
 """
 from __future__ import annotations
+from . import api_budget
 import json
 import math
 import threading
@@ -42,7 +43,7 @@ def status():
 
 def fetch(lat,lon,radius_km,opener=None):
     """At most one local geographic request each caller-controlled 60s cycle."""
-    if opener is None:opener=_open
+    if opener is None:opener=lambda req,timeout:api_budget.open_request('adsb.fi',_open,req,timeout)
     if not all(isinstance(v,(int,float)) and math.isfinite(v) for v in (lat,lon,radius_km)):
         raise ValueError('Set antenna coordinates in Receiver configuration')
     if not (-90<=lat<=90 and -180<=lon<=180 and .1<=radius_km<=450):

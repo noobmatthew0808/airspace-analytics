@@ -3,7 +3,7 @@ const fs=require('node:fs');
 const assert=require('node:assert/strict');
 const src=fs.readFileSync('frontend/alerts-ui.js','utf8');
 const end=src.indexOf('function renderAlertPageContents(){');
-const {providers,otherSources,providerCard,otherProviderCard}=new Function(src.slice(0,end)+';return {providers,otherSources,providerCard,otherProviderCard}')();
+const {providers,providerCard}=new Function(src.slice(0,end)+';return {providers,providerCard}')();
 const avio=providers.find(p=>p.id==='avioadsb');
 const fi=providers.find(p=>p.id==='adsbfi');
 const render=(data={})=>providerCard(avio,data);
@@ -14,8 +14,11 @@ assert.match(render({avioadsb:{key_set:true},provider_tests:{avioadsb:{ok:false,
 assert.match(render({avioadsb:{key_set:true},provider_tests:{avioadsb:{ok:false,message:'HTTP 403',at:1800000000}}}),/provider-result-avioadsb[^]*HTTP 403/);
 assert.match(providerCard(fi,{}),/alert-api-icon keyless/);
 assert.doesNotMatch(providerCard(fi,{}),/name="key"/);
-assert.equal(providers.length+otherSources.length,15);
-assert(otherSources.every(p=>otherProviderCard(p).includes('Not integrated')));
+assert.deepEqual(providers.map(p=>p.id),['flyitaly','adsblol','avioadsb','adsbiq','adsbfi','airplaneslive','adsbhub','opensky']);
+assert(!src.includes('alertOtherSources'));
+assert(!src.includes('helperCard('));
+for(const p of providers)assert.match(providerCard(p,{}),new RegExp('data-test-provider="'+p.id+'"'));
+assert.match(providerCard(avio,{provider_usage:{avioadsb:{matching_aircraft:3,nearby_aircraft:2,last_attempt_seconds_ago:10,retry_seconds:20}}}),/3 tracked matches[^]*2 nearby matches/);
 const app=fs.readFileSync('frontend/app.js','utf8');
 assert.match(app,/\/api\/preferences/);
 assert.match(app,/\$\$\('\[data-include-day\]'\)\.forEach/);
@@ -56,4 +59,4 @@ for(const p of providers){
 assert.match(summary(providerCard(fi,{adsbfi:{connected:true}})),/alert-api-icon verified/);
 assert.match(summary(providerCard(fi,{adsbfi:{connected:true},provider_tests:{adsbfi:{ok:false}}})),/alert-api-icon missing/);
 assert.match(summary(providerCard(avio,{})),/alert-api-icon key"[^]*alert-api-icon missing/);
-for(const p of otherSources)assert.equal((summary(otherProviderCard(p)).match(/<svg /g)||[]).length,2);
+for(const p of providers)assert.equal((summary(providerCard(p,{})).match(/<svg /g)||[]).length,2);
