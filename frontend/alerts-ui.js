@@ -10,10 +10,10 @@ const providers=[
  {id:'adsbiq',name:'ADSBiq',url:'https://api.adsbiq.com/v2/all',hint:'Flights only. Enable ADSBiq in ADSB.im, claim your station at adsbiq.com/join and copy your dashboard API key.'},
  {id:'adsbfi',name:'adsb.fi',url:'https://opendata.adsb.fi/api',hint:'Free public API; worldwide snapshot access uses your feeder IP.',keyless:true},
  {id:'airplaneslive',name:'airplanes.live',keyless:true,url:'https://api.airplanes.live/v2/reg/',hint:'Flights only. Test connection from your feeder network to enable conservative registration lookups.'},
+ {id:'adsbhub',name:'ADSBHub',keyless:true,url:'tcp://data.adsbhub.org:5002',hint:'Flights only. Enable your Data Access IP in ADSBHub account settings, then Test connection to activate the read-only SBS stream.'},
  {id:'opensky',name:'OpenSky Network',oauth:true,url:'https://opensky-network.org/api/states/all',hint:'Flights only. Create an OAuth API client on the OpenSky account page. Written permission for automated live use is required.'}
 ];
 const otherSources=[
- {id:'adsbhub',name:'ADSBHub',keyless:true,url:'https://www.adsbhub.org/howtogetdata.php',hint:'IP-authorized data stream, not a REST API. Not integrated.'},
  {id:'fr24',name:'Flightradar24',url:'https://fr24api.flightradar24.com/',hint:'Separate API subscription; feeder sharing key is not an API key. Not integrated.'},
  {id:'flightaware',name:'FlightAware',url:'https://www.flightaware.com/commercial/aeroapi/',hint:'AeroAPI; separate API access. Not integrated.'},
  {id:'adsbx',name:'ADS-B Exchange',url:'https://www.adsbexchange.com/',hint:'Separate API access. Not integrated.'},
@@ -65,7 +65,7 @@ function providerCard(p,d){
  const verified=test?test.ok:!!(info.connected||info.last_success&&!info.error);
  const failed=test?test.ok===false:!!info.error;
  const state=p.keyless?'keyless':!saved||failed?'missing':verified?'verified':'saved';
- const subtitle=p.keyless?(failed?'No key required · Test failed':verified?'No key required · Verified':'No key required'):
+ const subtitle=p.keyless?(failed?'No key required · Test failed':verified?'No key required · Verified':(['airplaneslive','adsbhub'].includes(p.id)?'No key required · Test to activate':'No key required')):
   !saved?'No key saved':failed?'Connection failed':verified?'Verified':'Key saved · Not tested';
  const message=local?.message||test?.message||(info.error?'Connection failed: '+info.error:info.last_success?'Last successful connection: '+whenAlert(info.last_success):'');
  const error=local?local.error:failed;
@@ -258,7 +258,7 @@ export async function renderAlertsPage(){
  const poll=async()=>{
   if(location.hash!=='#alerts')return;
   try{
-   if(!pendingProviders.size&&!document.querySelector('#alertEditorForm')&&!document.querySelector('.alert-config-stack :focus-within')&&![...document.querySelectorAll('.alert-provider-form input[name="key"]')].some(el=>el.value)){
+   if(!pendingProviders.size&&!document.querySelector('#alertEditorForm')&&!document.querySelector('.alert-config-stack :focus-within')&&![...document.querySelectorAll('.alert-provider-form input[name="key"]')].some(el=>el.value)&&!document.querySelector('.alert-provider-form input[name="client_id"]')?.value&&!document.querySelector('.alert-provider-form input[name="permission"]')?.checked){
     await refreshAlerts();
    }
   }catch{}
