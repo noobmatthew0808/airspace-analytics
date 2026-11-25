@@ -50,3 +50,11 @@ class CacheTests(unittest.TestCase):
         recent=c._merge({}, {'status':'At LGW','at_airport':'LGW','last_observed_at':now},now)
         old=c._merge(recent,{'status':'Last landed BTS','at_airport':'BTS','last_landed_at':now-3600},now+30)
         self.assertEqual(old['at_airport'],'LGW')
+
+    def test_new_route_can_enrich_newer_position_without_changing_timestamp(self):
+        now=1800000000
+        current=c._merge({}, {'status':'Flying','hex':'abc123','callsign':'WZZ580C','last_observed_at':now},now)
+        result=c._merge(current,{'status':'Flying RMF–WMI','hex':'abc123','callsign':'WZZ580C',
+             'route':'RMF–WMI','route_confidence':'reported','last_observed_at':now-5},now+2)
+        self.assertEqual(result['route'],'RMF–WMI')
+        self.assertEqual(result['last_observed_at'],now)
