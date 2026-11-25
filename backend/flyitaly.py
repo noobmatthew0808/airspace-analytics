@@ -5,6 +5,7 @@ existing private Alerts config DB and sent solely as HTTPS X-Api-Key headers.
 Never put credentials in URLs, repository files, logs or API responses.
 """
 from __future__ import annotations
+from . import api_budget
 
 import json
 import math
@@ -73,7 +74,7 @@ def fetch(key, lat, lon, radius_km, opener=None):
     receiver loop. Bad JSON, stale responses or an HTTP error cannot create
     network-only alerts; the last cache expires after MAX_AGE seconds.
     """
-    if opener is None:opener=_private_open
+    if opener is None:opener=lambda req,timeout:api_budget.open_request('FlyItalyADSB',_private_open,req,timeout)
     if not isinstance(key, str) or not key.strip():
         raise ValueError('FlyItalyADSB key is missing')
     if not all(isinstance(x, (float, int)) and math.isfinite(x)
