@@ -33,6 +33,7 @@ const savedViewsKey='airspace-analytics-views-v1';
 const exclusionKey='airspace-analytics-excluded-average-days';
 let sharedPrefs=null;
 let sharedRequest=null;
+let sharedSyncError='';
 function excludedAverageDays(){
  if(sharedPrefs)return sharedPrefs.excluded_days.slice();
  try{
@@ -278,20 +279,21 @@ async function syncShared(){
    const legacy=localStorage.getItem(exclusionKey);
    let oldDates=null;
    if(legacy!==null){try{const parsed=JSON.parse(legacy);if(Array.isArray(parsed))oldDates=parsed.filter(x=>typeof x==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(x)).slice(0,64)}catch{}}
-   const result=await postShared({action:'migrate',client:pending,excluded_days:oldDates,links:legacyLinks()});
+   const hasLegacyLinks=localStorage.getItem(linksKey)!==null;
+   const result=await postShared({action:'migrate',client:pending,excluded_days:oldDates,links:legacyLinks(),has_legacy_links:hasLegacyLinks});
    localStorage.setItem(marker,pending);
    localStorage.removeItem(marker+'-pending');
    return storeShared(result);
   }
   return storeShared(await api('/api/preferences'));
- })().finally(()=>{sharedRequest=null});
+ })().then(value=>{sharedSyncError='';return value;},error=>{sharedSyncError=error.message||'Shared settings unavailable';throw error;}).finally(()=>{sharedRequest=null});
  return sharedRequest;
 }
 async function writeShared(payload){
  if(!sharedPrefs)await syncShared();
  return storeShared(await postShared(payload));
 }
-async function putLinks(links){await writeShared({action:'links',revision:sharedPrefs?.revision,links})}
+async function putLinks(links){if(!sharedPrefs)await syncShared();await writeShared({action:'links',revision:sharedPrefs.revision,links})}
 function icon(name,size=18){
  const paths={
   grid:'<rect x="3" y="3" width="7" height="7" rx="1.4"/><rect x="14" y="3" width="7" height="7" rx="1.4"/><rect x="3" y="14" width="7" height="7" rx="1.4"/><rect x="14" y="14" width="7" height="7" rx="1.4"/>',
@@ -1053,7 +1055,7 @@ async function loadSuggestedAverageExclusions(){
      '<span class="tiny">Observations: <b>'+fmt(x.observations)+'</b> vs typical '+fmt(x.usualObservations)+' (−'+x.observationDrop+'%)</span>'+
      '</div><button class="btn small" type="button" data-suggest-exclude="'+esc(x.date)+'">Add to excluded</button></div>';
    }).join('')+'</div>';
-  $('[data-suggest-exclude]',target).forEach(btn=>btn.onclick=async()=>{
+  $$('[data-suggest-exclude]',target).forEach(btn=>btn.onclick=async()=>{
    const day=btn.dataset.suggestExclude,excluded=excludedAverageDays();
    if(excluded.includes(day))return;
    if(excluded.length>=64){
@@ -1144,7 +1146,7 @@ async function refreshHealthchecks(force=false){
 
 async function renderSettings(){const rid=++renderId;
  $('#page').innerHTML=title('','Settings')+
- `<div class="panel"><div id="sharedSettingsFeedback" role="status" class="muted tiny"></div>
+ `<div class="panel"><div id="sharedSettingsFeedback" role="status" class="muted tiny">${sharedSyncError?esc('Shared settings unavailable; showing local copy. '+sharedSyncError):''}</div>
  ${settingsRow('Launcher links','',`<details class="foldout" id="launcherEditor" ${launcherEditorExpanded?'open':''}><summary>Manage launcher links</summary>${settingsLinks()}</details>`)}
  ${settingsRow('Excluded days from averages','',averageExclusionSettings())}
  ${settingsRow('GitHub updates','',updateBox())}
@@ -1161,13 +1163,13 @@ async function renderSettings(){const rid=++renderId;
  function settingsError(e){const area=$('#sharedSettingsFeedback');if(area){area.textContent=e.message||String(e);area.className='notice error-note'}}
  async function changeDates(next){try{await setExcludedAverageDays(next);renderSettings()}catch(e){settingsError(e)}}
  $('#addExcludedDay').onclick=()=>{const day=$('#excludeDate').value;if(day)changeDates([...excludedAverageDays(),day])};
- $('[data-include-day]').forEach(b=>b.onclick=()=>changeDates(excludedAverageDays().filter(day=>day!==b.dataset.includeDay)));
+ $$('[data-include-day]').forEach(b=>b.onclick=()=>changeDates(excludedAverageDays().filter(day=>day!==b.dataset.includeDay)));
  async function saveLinks(){try{await putLinks(collectSettingsLinks());const area=$('#sharedSettingsFeedback');if(area){area.textContent='Shortcuts saved on server';area.className='muted tiny'}return true}catch(e){settingsError(e);return false}}
  $('#saveLinks').onclick=()=>saveLinks();
- $('#addLink').onclick=async()=>{if(!await saveLinks())return;const xs=getLinks().slice();xs.push({name:'New link',group:'stats',sub:'Application shortcut',port:'',path:'/',url:'',icon:'external'});try{await putLinks(xs);await renderSettings();const rows=$('.shortcut-edit-row');if(rows.length)rows[rows.length-1].open=true}catch(e){settingsError(e)}};
+ $('#addLink').onclick=async()=>{if(!await saveLinks())return;const xs=getLinks().slice();xs.push({name:'New link',group:'stats',sub:'Application shortcut',port:'',path:'/',url:'',icon:'external'});try{await putLinks(xs);await renderSettings();const rows=$$('.shortcut-edit-row');if(rows.length)rows[rows.length-1].open=true}catch(e){settingsError(e)}};
  $('#restoreLinks').onclick=async()=>{try{await putLinks(defaultLinks);renderSettings()}catch(e){settingsError(e)}};
- $('[data-remove]').forEach(b=>b.onclick=async()=>{if(!await saveLinks())return;const xs=getLinks().slice();xs.splice(+b.dataset.remove,1);try{await putLinks(xs);renderSettings()}catch(e){settingsError(e)}});
- $('[data-reorder]').forEach(b=>b.onclick=async()=>{if(!await saveLinks())return;const xs=getLinks().slice(),i=+b.dataset.pos,j=i+(b.dataset.reorder==='up'?-1:1);if(j<0||j>=xs.length)return;[xs[i],xs[j]]=[xs[j],xs[i]];try{await putLinks(xs);renderSettings()}catch(e){settingsError(e)}});
+ $$('[data-remove]').forEach(b=>b.onclick=async()=>{if(!await saveLinks())return;const xs=getLinks().slice();xs.splice(+b.dataset.remove,1);try{await putLinks(xs);renderSettings()}catch(e){settingsError(e)}});
+ $$('[data-reorder]').forEach(b=>b.onclick=async()=>{if(!await saveLinks())return;const xs=getLinks().slice(),i=+b.dataset.pos,j=i+(b.dataset.reorder==='up'?-1:1);if(j<0||j>=xs.length)return;[xs[i],xs[j]]=[xs[j],xs[i]];try{await putLinks(xs);renderSettings()}catch(e){settingsError(e)}});
  $('#checkUpdates').onclick=async()=>{
   $('#updateDetails').textContent='Checking GitHub…';try{const d=await api('/api/update/check',{refresh:1});setUpdateInfo(d)}catch(e){$('#updateDetails').textContent=e.message}
  };
