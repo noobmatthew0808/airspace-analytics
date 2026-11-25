@@ -33,3 +33,9 @@ const css=fs.readFileSync('frontend/flights.css','utf8');
 assert.match(css,/\.flights-table \.flights-highlight\{background:transparent!important\}/);
 assert.match(css,/\.flights-table \.flights-reg-line \.flights-live-chip\.flights-lgw\{color:var\(--green,#36bc76\)!important;background:transparent!important;border:0!important/);
 console.log('API cards, shared settings, cache UI and Gatwick text checks passed');
+
+assert(providers.some(p=>p.id==='opensky'&&p.oauth));
+assert.match(providerCard(providers.find(p=>p.id==='opensky'),{}),/name="client_id"/);
+assert.match(providerCard(providers.find(p=>p.id==='opensky'),{}),/written permission/);
+assert(providers.some(p=>p.id==='airplaneslive'&&p.keyless));
+assert(providers.some(p=>p.id==='adsbhub'&&p.keyless));

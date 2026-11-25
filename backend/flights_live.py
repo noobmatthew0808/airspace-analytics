@@ -17,7 +17,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHandler
 
-from . import alerts, adsbfi, adsblol, flyitaly, data, live_details, flights_routes, flights_history
+from . import alerts, adsbfi, adsblol, flyitaly, data, live_details, flights_routes, flights_history, extra_flight_sources
 
 _CACHE_LOCK=threading.Lock()
 # Keep the original adsb.fi cache shape for existing callers and regressions.
@@ -299,11 +299,11 @@ def source_health():
     # No network I/O and no secrets. Avoid blocking the HTTP cache reader
     # while the background thread holds the remote lookup lock.
     now=time.monotonic()
-    return {name:{'last_attempt_seconds_ago':round(max(0,now-store['updated'])) if store['updated'] else None,
+    return {**extra_flight_sources.health(),**{name:{'last_attempt_seconds_ago':round(max(0,now-store['updated'])) if store['updated'] else None,
                   'matching_aircraft':len(store['aircraft']),
                   'error':store.get('error'),
                   'retry_seconds':round(max(0,_ROTATION['retry_until'].get(name,0)-now))}
-            for name,store in [('adsb.fi',_REMOTE),*_OTHER_REMOTE.items()]}
+            for name,store in [('adsb.fi',_REMOTE),*_OTHER_REMOTE.items()]}}
 
 
 def snapshot(value='',network_fetch=_lookup_network):
@@ -375,6 +375,29 @@ def snapshot(value='',network_fetch=_lookup_network):
                         plane[field]=age+elapsed
                 plane.setdefault('_source',provider)
                 remote.append(plane)
+
+    if network_fetch is _lookup_network:
+        # OpenSky only accepts hex identifiers. Learn these from the current
+        # registration, local sightings and fresh existing providers.
+        identities={h['hex']:targets[k] for k,h in local_history.items()
+                    if k in targets and time.time()-h['last_seen_at']<=7*86400}
+        current=set()
+        for p in remote+others+local:
+            k=normal_reg(p.get('r',''))
+            hexcode=str(p.get('hex') or '').lower()
+            if k in targets and _active(p):
+                current.add(targets[k])
+                if re.fullmatch(r'[a-f0-9]{6}',hexcode):
+                    for old in [h for h,r in identities.items() if r==targets[k] and h!=hexcode]:
+                        identities.pop(old,None)
+                    identities[hexcode]=targets[k]
+        with alerts._lock,alerts.connect() as db:
+            tests=alerts._provider_tests(db)
+            credentials=alerts._opensky_credentials(db) if tests.get('opensky',{}).get('ok') else None
+            airplanes=bool(tests.get('airplaneslive',{}).get('ok'))
+            hub=bool(tests.get('adsbhub',{}).get('ok'))
+        remote+=extra_flight_sources.collect(registrations,identities,set(registrations)-current,
+                                           credentials,airplanes,hub)
 
     seen={}
     for plane in remote+others+local:

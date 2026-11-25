@@ -189,7 +189,7 @@ class App(BaseHTTPRequestHandler):
 
     def alerts_post(self, path):
         """Same-origin, trusted-LAN-only control plane for personal alert rules."""
-        if path not in ('/api/preferences','/api/alerts/rule','/api/alerts/delete','/api/alerts/ntfy','/api/alerts/test','/api/alerts/receiver','/api/alerts/receiver/check','/api/alerts/flyitaly','/api/alerts/flyitaly/check','/api/alerts/adsblol','/api/alerts/adsblol/check','/api/alerts/adsbfi/check','/api/alerts/avioadsb','/api/alerts/avioadsb/check','/api/alerts/adsbiq','/api/alerts/adsbiq/check'):
+        if path not in ('/api/preferences','/api/alerts/rule','/api/alerts/delete','/api/alerts/ntfy','/api/alerts/test','/api/alerts/receiver','/api/alerts/receiver/check','/api/alerts/flyitaly','/api/alerts/flyitaly/check','/api/alerts/adsblol','/api/alerts/adsblol/check','/api/alerts/adsbfi/check','/api/alerts/avioadsb','/api/alerts/avioadsb/check','/api/alerts/adsbiq','/api/alerts/adsbiq/check','/api/alerts/opensky','/api/alerts/opensky/check','/api/alerts/airplaneslive/check','/api/alerts/adsbhub/check'):
             return self.send_json({'error':'Unknown endpoint'},404)
         origin=self.headers.get('Origin','')
         host=self.headers.get('Host','')
@@ -222,6 +222,15 @@ class App(BaseHTTPRequestHandler):
             return self.send_json({'ok':True})
         if path=='/api/alerts/adsbfi/check':
             return self.send_json(alerts.run_provider_test('adsbfi'))
+        if path=='/api/alerts/opensky':
+            alerts.save_provider_key('opensky',payload)
+            return self.send_json({'ok':True})
+        if path=='/api/alerts/opensky/check':
+            return self.send_json(alerts.run_provider_test('opensky'))
+        if path=='/api/alerts/adsbhub/check':
+            return self.send_json(alerts.run_provider_test('adsbhub'))
+        if path=='/api/alerts/airplaneslive/check':
+            return self.send_json(alerts.run_provider_test('airplaneslive'))
         if path=='/api/alerts/adsbiq':
             alerts.save_provider_key('adsbiq',payload)
             return self.send_json({'ok':True})
