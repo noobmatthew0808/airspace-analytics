@@ -21,7 +21,7 @@ import sys
 import time
 import traceback
 
-from . import data, alerts, healthchecks, live_terminal, live_details, flights_log, flights_live
+from . import data, alerts, healthchecks, live_terminal, live_details, flights_log, flights_live, flights_cache
 
 BASE = Path(__file__).resolve().parents[1]
 STATIC = BASE / 'frontend'
@@ -134,7 +134,7 @@ class App(BaseHTTPRequestHandler):
         if path=='/api/live/details': return self.send_json(live_details.details(q))
         if path=='/api/alerts': return self.send_json(alerts.snapshot())
         if path=='/api/flights/records': return self.send_json(flights_log.read())
-        if path=='/api/flights/live': return self.send_json(flights_live.snapshot(q.get('regs','')))
+        if path=='/api/flights/live': return self.send_json(flights_cache.read(q.get('regs','')))
         if path=='/api/health': return self.send_json(data.health())
         if path=='/api/monitoring/healthchecks': return self.send_json(healthchecks.snapshot(refresh=q.get('refresh')=='1'))
         if path=='/api/overview': return self.send_json(data.overview())
@@ -339,6 +339,7 @@ def run():
     ThreadingHTTPServer.daemon_threads=True
     server=ThreadingHTTPServer((host,port),App)
     alerts.start()
+    flights_cache.start()
     print(f'Airspace Analytics v{VERSION} on http://{host}:{port}; Aerodrome DB {data.db_path()}',flush=True)
     try: server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt: pass

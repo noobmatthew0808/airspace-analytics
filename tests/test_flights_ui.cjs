@@ -168,3 +168,16 @@ test('no bold route or registration; highlight only credible current LGW route',
  assert.match(css,/\.flights-table \.flights-reg,[\s\S]*?font-weight:400!important/);
  assert.match(css,/\.flights-table \.flights-cell-route\{font-size:11px!important;font-weight:400!important\}/);
 });
+
+test('compact display accepts only airport, credible route, Flying or N/A',async()=>{
+ const {flightStatusTestHelpers:h}=await exportsPromise;
+ assert.equal(h.compactDate('2026-11-25'),'25/11/26');
+ assert.equal(h.compactStatus({status:'At LGW',at_airport:'LGW'}),'LGW');
+ assert.equal(h.compactStatus({status:'Last landed MAN',at_airport:'MAN'}),'MAN');
+ assert.equal(h.compactStatus({status:'Flying LGW – BTS',route:'LGW – BTS',route_confidence:'plausible'}),'LGW-BTS');
+ assert.equal(h.compactStatus({status:'Flying · likely LYS–LGW',route:'LYS–LGW',route_confidence:'usual'}),'Flying');
+ assert.equal(h.compactStatus({status:'Ground'}),'N/A');
+ assert.match(source,/regLink\+statusBadge\(row\)/);
+ assert.match(source,/flights-inline-detail/);
+ assert.doesNotMatch(source,/id="flightsDetails"/);
+});
