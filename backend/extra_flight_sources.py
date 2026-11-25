@@ -35,6 +35,7 @@ _airplanes_test=None
 _hub_region=None
 _hub_region_enabled=False
 _hub_region_touch=0
+_hub_last_message=0
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):return None
@@ -215,6 +216,10 @@ def _sbs(line,now):
     return fields[4].lower(),stamp,values
 
 def test_adsbhub(connect=None):
+    if connect is None:
+        with _lock:
+            if _hub_running and _hub_last_message and time.monotonic()-_hub_last_message<30:
+                return {'ok':True,'plan':'Live SBS stream receiving data'}
     connect=connect or socket.create_connection
     try:
         with connect(('data.adsbhub.org',5002),timeout=6) as sock:
@@ -246,7 +251,7 @@ def set_region(area,enabled):
             threading.Thread(target=_hub_work,daemon=True,name='airspace-adsbhub').start()
 
 def _hub_work():
-    global _hub_running
+    global _hub_running,_hub_last_message
     try:
         while True:
             with _lock:
@@ -264,6 +269,7 @@ def _hub_work():
                             if not item:continue
                             hexcode,stamp,values=item
                             with _lock:
+                                _hub_last_message=time.monotonic()
                                 _errors.pop('ADSBHub',None)
                                 if hexcode not in _targets:
                                     if not _hub_region_enabled:continue
@@ -334,7 +340,7 @@ def collect(registrations,identities,missing,credentials=None,airplanes=False,hu
             _hub_running=True
             threading.Thread(target=_hub_work,daemon=True,name='airspace-adsbhub').start()
         def schedule(name,delay,work):
-            if name in _busy or now<_next.get(name,0):return
+            if name in _busy or now<_next.get(name,0) or api_budget.remaining(name)>0:return
             _busy.add(name)
             _next[name]=now+delay
             def task():
@@ -359,11 +365,11 @@ def collect(registrations,identities,missing,credentials=None,airplanes=False,hu
         if credentials and credentials.get('permission') and clean:
             schedule('OpenSky Network',120,lambda:opensky_lookup(credentials,clean))
         if airplanes and registrations and now>=_next.get('airplanes.live',0):
-            # 360 scheduled requests/day plus at most 96 manual checks.
+            # Two 480-second schedules (registration and nearby) total <=360/day, plus manual checks.
             pool=sorted(set(missing)&wanted) or sorted(wanted)
             reg=pool[_cursor%len(pool)]
             _cursor+=1
-            schedule('airplanes.live',240,lambda:airplanes_lookup(reg))
+            schedule('airplanes.live',480,lambda:airplanes_lookup(reg))
         result=[]
         for name,store in _cache.items():
             for reg,(stamp,p) in list(store.items()):
