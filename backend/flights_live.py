@@ -302,9 +302,14 @@ def _prefer(current,other):
     if current is None:return other
     # Prefer fresher observations, keeping local reception as a tie-breaker.
     a,b=current.get('seen',999),other.get('seen',999)
-    if b+3<a or (abs(a-b)<=3 and other.get('_source')=='Your antenna'):
-        return other
-    return current
+    primary,secondary=(other,current) if b+3<a or (abs(a-b)<=3 and other.get('_source')=='Your antenna') else (current,other)
+    # Combine independently observed fields only for the same airframe and
+    # compatible callsign; do not apply a different flight's route or altitude.
+    if not primary.get('hex') or primary.get('hex','').lower()!=secondary.get('hex','').lower():return primary
+    if abs(a-b)>30:return primary
+    x,y=(str(p.get('flight') or '').strip().upper() for p in (primary,secondary))
+    if x and y and x!=y:return primary
+    return alerts._merge_external(primary,secondary)
 
 
 def source_health():
