@@ -1,13 +1,14 @@
 """Original personal flight log's SheetDB/Google Sheets storage, unchanged in place.
 
 All sheet writes still go through the exact original SheetDB API and preserve
-its nine columns. No aircraft history or copy of the sheet is written to disk.
+its nine columns. A private, read-only sheet snapshot accelerates page loads.
 This tiny server-side bridge is only used to avoid relaxing the dashboard CSP.
 """
 from __future__ import annotations
 
 from contextlib import closing
 from datetime import datetime
+from pathlib import Path
 import json
 import os
 import re
@@ -24,6 +25,12 @@ COLUMNS = ('id','date','from_airport','to_airport','flight_code','airline',
 MAX_RESPONSE = 2_000_000
 _LOCK = threading.RLock()
 _CACHE = {'rows':None,'at':0.0,'error':None}
+CACHE_PATH=Path(__file__).resolve().parents[1]/'.airspace-state'/'flights-sheet.json'
+REFRESH_PERIOD=2*3600
+_RETRY_PERIOD=300
+_cache_enabled=False
+_refresh_gate=threading.Lock()
+_last_attempt=None
 HEADERS = {'User-Agent':'AirspaceAnalytics-Flights/1',
            'Accept':'application/json','Cache-Control':'no-cache, no-store'}
 
@@ -78,7 +85,7 @@ def _read_locked(force=False):
                 'cached':False,'source':'Google Sheets via SheetDB'}
     try:
         result=_rows(_fetch())
-        _CACHE.update(rows=result,at=time.monotonic(),error=None)
+        _remember(result)
         return {'flights':[dict(row) for row in result],
                 'cached':False,'source':'Google Sheets via SheetDB'}
     except SheetError as exc:
@@ -94,6 +101,76 @@ def _read_locked(force=False):
 
 def read():
     with _LOCK:return _read_locked()
+
+
+def _remember(rows):
+    stamp=time.time()
+    _CACHE.update(rows=rows,at=time.monotonic(),error=None,wall=stamp)
+    if not _cache_enabled:return
+    try:
+        CACHE_PATH.parent.mkdir(mode=0o700,parents=True,exist_ok=True)
+        temp=CACHE_PATH.with_suffix('.tmp')
+        fd=os.open(temp,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
+        with os.fdopen(fd,'w') as handle:
+            json.dump({'at':stamp,'flights':rows},handle,separators=(',',':'))
+        os.replace(temp,CACHE_PATH)
+    except OSError:
+        pass
+
+
+def start_cache():
+    global _cache_enabled
+    with _LOCK:
+        if _cache_enabled:return
+        _cache_enabled=True
+        try:
+            if CACHE_PATH.stat().st_size>MAX_RESPONSE*2:return
+            saved=json.loads(CACHE_PATH.read_text())
+            stamp=float(saved['at'])
+            if not 0<stamp<=time.time()+60:return
+            rows=_rows(saved['flights'])
+            _CACHE.update(rows=rows,at=time.monotonic()-max(0,time.time()-stamp),error=None,wall=stamp)
+        except (OSError,ValueError,TypeError,KeyError):
+            pass
+
+
+def _schedule_refresh(force=False):
+    global _last_attempt
+    now=time.monotonic()
+    if not force and _last_attempt is not None and now-_last_attempt<_RETRY_PERIOD:return False
+    if force and _last_attempt is not None and now-_last_attempt<15:return False
+    if not _refresh_gate.acquire(blocking=False):return False
+    _last_attempt=now
+    def worker():
+        try:
+            with _LOCK:
+                _read_locked(force=True)
+        except (SheetError,OSError):
+            pass
+        finally:_refresh_gate.release()
+    try:threading.Thread(target=worker,name='airspace-sheet-refresh',daemon=True).start()
+    except RuntimeError:
+        _refresh_gate.release()
+        return False
+    return True
+
+
+def read_cached(force=False):
+    """Return cached rows immediately; the sole refresh worker owns network I/O."""
+    if not _cache_enabled:return read()
+    current=dict(_CACHE)
+    if current['rows'] is None:
+        # First ever run without a snapshot must fetch once.
+        result=read()
+        return {**result,'refreshing':False,'updated_at':_CACHE.get('wall')}
+    age=max(0,time.monotonic()-current['at'])
+    if force or age>=REFRESH_PERIOD:_schedule_refresh(force)
+    current=dict(_CACHE)
+    return {'flights':[dict(row) for row in current['rows']],
+            'cached':True,'refreshing':_refresh_gate.locked(),
+            'updated_at':current.get('wall'),'source':'Google Sheets via SheetDB',
+            **({'warning':'Google Sheets temporarily unavailable; showing saved flights.'} if current['error'] else {})}
+
 
 
 def _clean(data):
@@ -154,12 +231,14 @@ def mutate(payload):
             if not any(row['id']==id_value for row in existing):
                 raise SheetError('Flight not found')
             _fetch('/id/'+quote(id_value,safe=''),method='DELETE')
+            updated=[row for row in existing if row['id']!=id_value]
         else:
             cleaned=_clean(payload.get('data'))
             if action=='create':
                 current=_rows(_fetch())
                 id_value=_next_numeric_id(current)
                 _fetch(method='POST',payload={'data':[{'id':id_value,**cleaned}]})
+                updated=[*current,{'id':id_value,**cleaned}]
             else:
                 id_value=_id(payload.get('id'))
                 current=_rows(_fetch())
@@ -167,5 +246,7 @@ def mutate(payload):
                     raise SheetError('Flight not found')
                 _fetch('/id/'+quote(id_value,safe=''),method='PATCH',
                        payload={'data':{'id':id_value,**cleaned}})
-        _CACHE.update(rows=None,at=0.0,error=None)
+                updated=[{'id':id_value,**cleaned} if row['id']==id_value else row for row in current]
+        if _cache_enabled:_remember(updated)
+        else:_CACHE.update(rows=None,at=0.0,error=None)
         return {'ok':True,'id':id_value,'source':'Google Sheets via SheetDB'}
