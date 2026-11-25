@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 import socket
+from . import api_budget
 import math
 import re
 import threading
@@ -31,6 +32,9 @@ _hub_touch=0
 _hub_fields={}
 _known={}
 _airplanes_test=None
+_hub_region=None
+_hub_region_enabled=False
+_hub_region_touch=0
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):return None
@@ -38,10 +42,11 @@ class NoRedirect(HTTPRedirectHandler):
 def _open(request,timeout=8):
     return build_opener(ProxyHandler({}),NoRedirect()).open(request,timeout=timeout)
 
-def _json(url,headers=None,body=None,opener=None,limit=4_000_000):
+def _json(url,headers=None,body=None,opener=None,limit=4_000_000,provider=None):
     request=Request(url,data=body,headers={'User-Agent':AGENT,'Accept':'application/json',**(headers or {})})
     try:
-        with (opener or _open)(request,timeout=8) as response:
+        open_call=(lambda req,timeout:api_budget.open_request(provider,_open,req,timeout)) if provider and opener is None else (opener or _open)
+        with open_call(request,timeout=8) as response:
             raw=response.read(limit+1)
             if len(raw)>limit:raise ValueError('Response too large')
             result=json.loads(raw)
@@ -49,7 +54,10 @@ def _json(url,headers=None,body=None,opener=None,limit=4_000_000):
     except HTTPError as e:
         retry=e.headers.get('X-Rate-Limit-Retry-After-Seconds',e.headers.get('Retry-After','')) if e.headers else ''
         raise ValueError('HTTP '+str(e.code)+(' retry '+retry if retry.isdigit() else '')) from None
-    except (URLError,OSError,TypeError,UnicodeError,ValueError):
+    except ValueError as error:
+        if 'rate limited; retry' in str(error):raise
+        raise ValueError('Network or invalid API response') from None
+    except (URLError,OSError,TypeError,UnicodeError):
         raise ValueError('Network or invalid API response') from None
 
 def _number(value):
@@ -72,7 +80,7 @@ def _token(credentials,opener=None):
         _tokens[identity]=(token,time.monotonic()+max(1,min(duration,1800)-30))
     return token
 
-def parse_opensky(payload,identities,now=None):
+def parse_opensky(payload,identities,now=None,allow_unknown=False):
     """The API reports ICAO hex, not registration. Never guess a registration."""
     now=time.time() if now is None else now
     if not isinstance(payload,dict) or not _number(payload.get('time')) or not -10<=now-payload['time']<=50:
@@ -84,8 +92,8 @@ def parse_opensky(payload,identities,now=None):
     for row in states:
         if not isinstance(row,list) or len(row)<17:continue
         hexcode=str(row[0]).lower()
-        if hexcode not in identities or not _number(row[4]) or not -10<=now-row[4]<=120:continue
-        plane={'hex':hexcode,'r':identities[hexcode],'flight':str(row[1] or '').strip(),
+        if not re.fullmatch(r'[a-f0-9]{6}',hexcode) or (not allow_unknown and hexcode not in identities) or not _number(row[4]) or not -10<=now-row[4]<=120:continue
+        plane={'hex':hexcode,'r':identities.get(hexcode,''),'flight':str(row[1] or '').strip(),
                'seen':max(0,now-row[4]),'_source':'OpenSky Network'}
         if row[8] is True:plane['alt_baro']='ground'
         elif _number(row[7]):plane['alt_baro']=row[7]*3.280839895
@@ -100,12 +108,23 @@ def opensky_lookup(credentials,identities,opener=None):
     if not identities:return []
     url=STATES_URL+'?'+urlencode([('icao24',h) for h in sorted(identities)[:80]])
     token=_token(credentials,opener)
-    try:payload=_json(url,{'Authorization':'Bearer '+token},opener=opener)
+    try:payload=_json(url,{'Authorization':'Bearer '+token},opener=opener,provider='OpenSky Network')
     except ValueError as error:
         if str(error)!='HTTP 401':raise
         with _lock:_tokens.clear()
-        payload=_json(url,{'Authorization':'Bearer '+_token(credentials,opener)},opener=opener)
+        payload=_json(url,{'Authorization':'Bearer '+_token(credentials,opener)},opener=opener,provider='OpenSky Network')
     return parse_opensky(payload,identities)
+
+def opensky_region(credentials,area):
+    if not credentials.get('permission'):raise ValueError('Written OpenSky permission required for automated use')
+    lat,lon,km=area
+    dlat=min(2.,km/110.5)
+    dlon=min(3.,km/(111.32*max(.2,math.cos(math.radians(lat)))))
+    url=STATES_URL+'?'+urlencode({'lamin':max(-90,lat-dlat),'lamax':min(90,lat+dlat),
+                                  'lomin':max(-180,lon-dlon),'lomax':min(180,lon+dlon)})
+    payload=_json(url,{'Authorization':'Bearer '+_token(credentials)},provider='OpenSky Network')
+    with _lock:identities=dict(_targets)
+    return parse_opensky(payload,identities,allow_unknown=True)
 
 def test_opensky(credentials,opener=None):
     # No unfiltered global query. Test OAuth, then check one valid hex from
@@ -120,7 +139,7 @@ def test_opensky(credentials,opener=None):
 
 def airplanes_lookup(reg,opener=None):
     if not re.fullmatch(r'[A-Z0-9-]{2,16}',reg):raise ValueError('Invalid registration')
-    try:payload=_json(AIRPLANES_URL+reg,opener=opener)
+    try:payload=_json(AIRPLANES_URL+reg,opener=opener,provider='airplanes.live')
     except ValueError as error:
         if str(error)=='HTTP 404':return []
         raise
@@ -156,7 +175,7 @@ def test_airplanes():
         _busy.add('airplanes.live')
         _next['airplanes.live']=max(_next.get('airplanes.live',0),now+240)
     try:
-        payload=_json('https://api.airplanes.live/v2/point/51.47/-0.45/10')
+        payload=_json('https://api.airplanes.live/v2/point/51.47/-0.45/10',provider='airplanes.live')
         if not isinstance(payload,dict) or not isinstance(payload.get('ac'),list):
             raise ValueError('Invalid airplanes.live response')
         value={'ok':True,'plan':'Feeder API accessible','aircraft':len(payload['ac'])}
@@ -211,19 +230,34 @@ def test_adsbhub(connect=None):
         pass
     raise ValueError('ADSBHub stream unavailable; check your active station and Data Access IP')
 
+def _hub_wanted():
+    now=time.monotonic()
+    return bool((_hub_enabled and now-_hub_touch<=90 and _targets) or
+                (_hub_region_enabled and now-_hub_region_touch<=90 and _hub_region))
+
+def set_region(area,enabled):
+    global _hub_region,_hub_region_enabled,_hub_region_touch,_hub_running
+    with _lock:
+        _hub_region=area
+        _hub_region_enabled=bool(area and enabled)
+        _hub_region_touch=time.monotonic()
+        if _hub_wanted() and not _hub_running:
+            _hub_running=True
+            threading.Thread(target=_hub_work,daemon=True,name='airspace-adsbhub').start()
+
 def _hub_work():
     global _hub_running
     try:
         while True:
             with _lock:
-                if not _hub_enabled or time.monotonic()-_hub_touch>90 or not _targets:return
+                if not _hub_wanted():return
             try:
                 with socket.create_connection(('data.adsbhub.org',5002),timeout=8) as sock:
                     sock.settimeout(10)
                     with sock.makefile('rb') as stream:
                         while True:
                             with _lock:
-                                if not _hub_enabled or time.monotonic()-_hub_touch>90:return
+                                if not _hub_wanted():return
                             line=stream.readline(2048)
                             if not line:raise OSError('Stream disconnected')
                             item=_sbs(line.decode('ascii','ignore'),time.time())
@@ -231,7 +265,15 @@ def _hub_work():
                             hexcode,stamp,values=item
                             with _lock:
                                 _errors.pop('ADSBHub',None)
-                                if hexcode not in _targets:continue
+                                if hexcode not in _targets:
+                                    if not _hub_region_enabled:continue
+                                    if 'position' in values:
+                                        from .regional_sources import nearby
+                                        if not nearby(dict(zip(('lat','lon'),values['position'])),_hub_region):
+                                            _hub_fields.pop(hexcode,None)
+                                            continue
+                                    elif hexcode not in _hub_fields:continue
+                                    if hexcode not in _hub_fields and len(_hub_fields)>=3000:continue
                                 record=_hub_fields.setdefault(hexcode,{})
                                 for field,value in values.items():
                                     if stamp>=record.get(field,(0,None))[0]:record[field]=(stamp,value)
@@ -241,25 +283,35 @@ def _hub_work():
                 for _ in range(6):
                     time.sleep(10)
                     with _lock:
-                        if not _hub_enabled or time.monotonic()-_hub_touch>90:return
+                        if not _hub_wanted():return
     finally:
         with _lock:_hub_running=False
 
-def _hub_planes():
+def _hub_planes(regional=False):
     now=time.time()
     result=[]
     for hexcode,record in list(_hub_fields.items()):
-        if hexcode not in _targets or now-record.get('seen',(0,None))[0]>120:
+        if now-record.get('seen',(0,None))[0]>120 or (hexcode not in _targets and not _hub_region_enabled):
             del _hub_fields[hexcode]
             continue
-        p={'hex':hexcode,'r':_targets[hexcode],'_source':'ADSBHub','seen':max(0,now-record['seen'][0])}
+        if not regional and hexcode not in _targets:continue
+        p={'hex':hexcode,'r':_targets.get(hexcode,''),'_source':'ADSBHub','seen':max(0,now-record['seen'][0])}
         for field,ttl in (('flight',120),('alt_baro',35),('gs',35),('position',35)):
             stamp,value=record.get(field,(0,None))
             if now-stamp>ttl:continue
             if field=='position':p.update(lat=value[0],lon=value[1],seen_pos=max(0,now-stamp))
             else:p[field]=value
-        if 'alt_baro' in p or 'gs' in p:result.append(p)
+        if 'alt_baro' in p or 'gs' in p:
+            if regional:
+                from .regional_sources import nearby
+                if not nearby(p,_hub_region):continue
+                p['_network_source']='ADSBHub'
+            result.append(p)
     return result
+
+def hub_nearby():
+    with _lock:
+        return _hub_planes(regional=True) if _hub_region_enabled else []
 
 def collect(registrations,identities,missing,credentials=None,airplanes=False,hub=False):
     """Schedule independent, bounded work; return only fresh completed lookups."""
@@ -278,7 +330,7 @@ def collect(registrations,identities,missing,credentials=None,airplanes=False,hu
         _targets=clean
         _hub_enabled=hub
         _hub_touch=now
-        if hub and clean and not _hub_running:
+        if _hub_wanted() and not _hub_running:
             _hub_running=True
             threading.Thread(target=_hub_work,daemon=True,name='airspace-adsbhub').start()
         def schedule(name,delay,work):
