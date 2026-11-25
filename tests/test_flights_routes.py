@@ -119,6 +119,19 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(json.loads(opener.call_args.args[0].data),{'planes':[{'callsign':'WZZ580C','icao':'abc123'}]})
         self.assertEqual(opener.call_count,1)
 
+    def test_flyitaly_observed_history_is_unambiguous_and_uses_exact_callsign(self):
+        payload={'flights':[{'callsign':'WZZ580C','from':{'iata':'RMF'},'to':{'iata':'WMI'}},
+                            {'callsign':'OTHER1','from':{'iata':'BUD'},'to':{'iata':'LGW'}}]}
+        response=MagicMock()
+        response.read.return_value=json.dumps(payload).encode()
+        response.__enter__.return_value=response
+        opener=MagicMock(return_value=response)
+        self.assertEqual(flights_routes.historical_route('WZZ580C','demo',opener),'RMF–WMI')
+        self.assertEqual(opener.call_args.args[0].full_url,'https://api.flyitalyadsb.com/v2/flights/callsign/WZZ580C?days=7')
+        payload['flights'].append({'callsign':'WZZ580C','from':{'iata':'BUD'},'to':{'iata':'LGW'}})
+        response.read.return_value=json.dumps(payload).encode()
+        self.assertEqual(flights_routes.historical_route('WZZ580C','demo',opener),'')
+
     def test_conflicting_route_candidates_are_rejected(self):
         payload=[{'callsign':'WZZ580C','plausible':True,'_airport_codes_iata':code} for code in ('RMF-WMI','BUD-LGW')]
         self.assertEqual(flights_routes.parse_routes(payload,['WZZ580C']),{})
