@@ -5,6 +5,7 @@ import fnmatch
 from contextlib import contextmanager, closing
 import ipaddress
 import json
+import hashlib
 import math
 import os
 import re
@@ -418,6 +419,54 @@ def notifier(c):
             'token_set':bool(cfg.get('token',''))}, cfg.get('token','')
 
 
+# Explicit test results belong to the server, not to the browser. A result is
+# bound to the credential used, so replacing a key never inherits verification.
+def _provider_key(c,provider):
+    getters={'flyitaly':_flyitaly_key,'adsblol':_adsblol_key,
+             'avioadsb':_avio_key,'adsbiq':_adsbiq_key}
+    return getters[provider](c) if provider in getters else ''
+
+def _provider_fingerprint(key):
+    return hashlib.sha256(key.encode()).hexdigest()
+
+def _provider_tests(c):
+    result={}
+    for provider in ('flyitaly','adsblol','avioadsb','adsbiq','adsbfi'):
+        row=c.execute('SELECT value FROM config WHERE key=?',('provider_test_'+provider,)).fetchone()
+        if not row:continue
+        try:entry=json.loads(row['value'])
+        except (TypeError,ValueError):continue
+        if entry.get('credential')!=_provider_fingerprint(_provider_key(c,provider)):continue
+        result[provider]={k:entry[k] for k in ('ok','at','message') if k in entry}
+    return result
+
+def run_provider_test(provider):
+    functions={'flyitaly':test_flyitaly,'adsblol':test_adsblol,
+               'avioadsb':test_avio,'adsbiq':test_adsbiq,'adsbfi':test_adsbfi}
+    if provider not in functions:raise ValueError('Unknown API source')
+    with _lock,connect() as c:
+        key=_provider_key(c,provider)
+    fingerprint=_provider_fingerprint(key)
+    def save(ok,message):
+        with _lock,connect() as c:
+            if _provider_fingerprint(_provider_key(c,provider))!=fingerprint:return
+            # Do not expose credential text, even if an upstream error echoes it.
+            if key:message=message.replace(key,'[redacted]')
+            record={'credential':fingerprint,'ok':ok,'at':int(time.time()),'message':message[:300]}
+            c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',
+                      ('provider_test_'+provider,json.dumps(record)))
+    try:
+        result=functions[provider]()
+    except (ValueError,OSError) as error:
+        save(False,str(error))
+        raise
+    message='Connection successful'
+    if result.get('plan'):message+=' · '+str(result['plan'])[:50]
+    if result.get('aircraft') is not None:message+=' · '+str(result['aircraft'])+' aircraft'
+    save(True,message)
+    return result
+
+
 def snapshot():
     with _lock, connect() as c:
         rules=[dict(x) for x in c.execute('SELECT id,label,field,pattern,max_km,min_ft,max_ft,enabled,use_flyitaly,network_only,min_rssi FROM rules ORDER BY id DESC')]
@@ -428,6 +477,7 @@ def snapshot():
         return {'rules':rules,'events':events,'ntfy':pub,'flyitaly':flyitaly.status(bool(_flyitaly_key(c))), 'receiver':dict(_last_sample),
                 'adsblol':adsblol.status(bool(_adsblol_key(c))),'adsbfi':adsbfi.status(),
                 'avioadsb':{'key_set':bool(_avio_key(c))},'adsbiq':{'key_set':bool(_adsbiq_key(c))},
+                'provider_tests':_provider_tests(c),
                 'receiver_settings':receiver_settings(c)}
 
 
