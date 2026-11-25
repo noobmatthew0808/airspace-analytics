@@ -26,7 +26,7 @@ let alertsData=null,alertsTimer=null,editingRule=null,alertsBusy=false;
 const pendingProviders=new Set();
 const providerMessages={};
 function providerFeedback(id,message,error=false){
- providerMessages[id]={message,error};
+ providerMessages[id]={message,error,until:Date.now()+8000};
  const el=document.querySelector('#provider-result-'+id);
  if(el){el.textContent=message;el.className='alert-provider-result'+(error?' is-error':' is-good');}
 }
@@ -61,7 +61,7 @@ function eventCard(e){
   '<div class="alert-event-time">'+whenAlert(e.created)+'<div>'+ae(e.delivery)+'</div></div></div>';
 }
 function providerCard(p,d){
- const info=d[p.id]||{},saved=!!info.key_set,test=d.provider_tests?.[p.id],local=providerMessages[p.id];
+ const info=d[p.id]||{},saved=!!info.key_set,test=d.provider_tests?.[p.id],local=providerMessages[p.id]?.until>Date.now()?providerMessages[p.id]:null;
  const verified=test?test.ok:!!(info.connected||info.last_success&&!info.error);
  const failed=test?test.ok===false:!!info.error;
  const state=p.keyless?'keyless':!saved||failed?'missing':verified?'verified':'saved';
@@ -84,7 +84,7 @@ function providerCard(p,d){
   '</form></details>';
 }
 function otherProviderCard(p){
- return '<details class="foldout alert-config alert-provider"><summary class="alert-api-summary">'+providerIcon(p.keyless?'keyless':'missing')+
+ return '<details class="foldout alert-config alert-provider" id="other-api-'+p.id+'"><summary class="alert-api-summary">'+providerIcon(p.keyless?'keyless':'missing')+
   '<span><strong>'+ae(p.name)+'</strong><small>'+ (p.keyless?'No key required · Not integrated':'Not integrated')+'</small></span></summary>'+
   '<div class="alert-config-content"><p class="alert-provider-note">'+ae(p.hint)+'</p><a class="btn small" href="'+ae(p.url)+'" target="_blank" rel="noopener noreferrer">Provider website</a></div></details>';
 }
