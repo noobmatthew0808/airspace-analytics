@@ -372,3 +372,28 @@
  .flights-table tbody tr.flights-row .flights-cell-route{font-size:10.5px!important}
  .flights-table tbody tr.flights-row .flights-cell-who{font-size:10px!important}
 }
+
+/* v1.10.28 — single line registration + status; details open in the table. */
+.flights-table .flights-reg-line{display:flex;align-items:center;gap:5px;flex-wrap:nowrap;min-width:0}
+.flights-table .flights-reg-line .flights-reg{white-space:nowrap;overflow-wrap:normal!important}
+.flights-table .flights-reg-line .flights-live-chip{display:inline-block;margin:0;white-space:nowrap;overflow-wrap:normal;padding:1px 3px;font-weight:400}
+.flights-table .flights-row[aria-expanded="true"]{background:var(--panel2)}
+.flights-inline-detail td{padding:8px!important;background:var(--panel2)}
+.flights-inline-card{border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--panel)}
+.flights-inline-card .flights-detail-grid{gap:8px}
+.flights-inline-card .flights-detail-links{align-items:center}
+@media(max-width:700px){
+ .flights-table thead tr,.flights-table tbody tr.flights-row{grid-template-columns:15% 17% 14% 36% 18%!important;align-items:center}
+ .flights-table thead th,.flights-table tbody tr.flights-row td{padding:7px 2px!important;white-space:nowrap!important;font-size:10px!important;line-height:1.25!important}
+ .flights-table tbody tr.flights-row .flights-cell-date,.flights-table tbody tr.flights-row .flights-cell-route,.flights-table tbody tr.flights-row .flights-cell-code,.flights-table tbody tr.flights-row .flights-cell-who{font-size:10px!important}
+ .flights-table .flights-reg-line{gap:3px}
+ .flights-table .flights-reg-line .flights-reg{font-size:10px!important}
+ .flights-table .flights-reg-line .flights-live-chip{font-size:9px!important;padding:1px 2px!important}
+ .flights-table .flights-cell-who{text-overflow:ellipsis!important}
+ .flights-inline-detail td{white-space:normal!important}
+}
+@media(max-width:380px){
+ .flights-table thead tr,.flights-table tbody tr.flights-row{grid-template-columns:15% 17% 14% 37% 17%!important}
+ .flights-table .flights-reg-line{gap:2px}
+ .flights-table .flights-reg-line .flights-reg,.flights-table .flights-reg-line .flights-live-chip{font-size:9px!important}
+}
