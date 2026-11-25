@@ -1,3 +1,7 @@
+# v1.10.31 — AvioADSB connection test
+
+- Use the same application User-Agent for the AvioADSB connection test as the existing aircraft snapshot request, verified by the user's terminal comparison. Add an offline regression test. No other behavior changed.
+
 # v1.10.30 — aligned live status and durable evidence
 
 - Align registration and live status in separate fixed subcolumns, use a full-width expanded row with receiver last-seen and tracking links, and emphasize LGW in the live status, not the historical route.
