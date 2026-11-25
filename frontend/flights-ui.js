@@ -206,7 +206,7 @@ function rowHtml(row){
 function renderTable(){
  const rows=filteredRows();updateStats(rows);
  const count=document.getElementById('flightsResults');
- if(count)count.textContent=rows.length+' flight'+(rows.length===1?'':'s')+' shown';
+ if(count){count.textContent=rows.length+' flight'+(rows.length===1?'':'s')+' shown';if(rows.some(row=>liveFor(row).source==='AvioADSB')){const credit=document.createElement('a');credit.href='https://avioadsb.org';credit.target='_blank';credit.rel='noopener noreferrer';credit.textContent=' · Data: AvioADSB (CC BY-NC 4.0)';count.append(credit);}}
  const table=document.getElementById('flightsTableBody');
  if(!table)return;
  table.innerHTML=rows.length?rows.map(row=>rowHtml(row)+(expandedFlightId===row.id&&!manageMode?flightDetailsHtml(row):'')).join(''):
