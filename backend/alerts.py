@@ -268,7 +268,8 @@ def test_avio():
     with _lock,connect() as c:key=_avio_key(c)
     if not key:raise ValueError('Save your AvioADSB key first')
     from .flights_live import _NoRedirect as NoRedirect
-    request=Request('https://avioadsb.org/v1/me',headers={'X-API-Key':key,'Accept':'application/json'})
+    request=Request('https://avioadsb.org/v1/me',headers={'X-API-Key':key,'Accept':'application/json',
+                    'User-Agent':'AirspaceAnalytics-Flights/4'})
     try:
         with build_opener(ProxyHandler({}),NoRedirect()).open(request,timeout=6) as response:
             payload=json.loads(response.read(50000))
