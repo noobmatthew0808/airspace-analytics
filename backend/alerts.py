@@ -436,7 +436,7 @@ def _provider_tests(c):
         if not row:continue
         try:entry=json.loads(row['value'])
         except (TypeError,ValueError):continue
-        if entry.get('credential')!=_provider_fingerprint(_provider_key(c,provider)):continue
+        if not isinstance(entry,dict) or entry.get('credential')!=_provider_fingerprint(_provider_key(c,provider)):continue
         result[provider]={k:entry[k] for k in ('ok','at','message') if k in entry}
     return result
 
