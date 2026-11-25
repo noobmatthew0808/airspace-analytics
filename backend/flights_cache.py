@@ -179,13 +179,13 @@ def _run():
             if not last_sheet or time.monotonic()-last_sheet >= SHEET_PERIOD:
                 last_sheet = time.monotonic()
                 try:
-                    rows = flights_log.read().get('flights', [])
+                    rows = flights_log.read_cached().get('flights', [])
                 except (ValueError, OSError):
                     pass  # Continue using known registrations if SheetDB is down.
             # Reuse a fresher SheetDB response from an ordinary page load/edit.
-            with flights_log._LOCK:
-                if flights_log._CACHE['rows'] is not None:
-                    rows = list(flights_log._CACHE['rows'])
+            current_rows=flights_log._CACHE.get('rows')
+            if current_rows is not None:
+                rows=list(current_rows)
             _refresh(_registrations(rows))
         except Exception as error:
             print('Flights background refresh failed: '+type(error).__name__, flush=True)

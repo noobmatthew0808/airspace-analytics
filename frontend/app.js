@@ -31,7 +31,11 @@ function readPrefs(){try {return JSON.parse(localStorage.getItem(key))||{}}catch
 function persist(){localStorage.setItem(key,JSON.stringify(state))}
 const savedViewsKey='airspace-analytics-views-v1';
 const exclusionKey='airspace-analytics-excluded-average-days';
+let sharedPrefs=null;
+let sharedRequest=null;
+let sharedSyncError='';
 function excludedAverageDays(){
+ if(sharedPrefs)return sharedPrefs.excluded_days.slice();
  try{
   const stored=localStorage.getItem(exclusionKey);
   if(stored===null)return ['2026-11-09'];
@@ -39,7 +43,12 @@ function excludedAverageDays(){
   return Array.isArray(list)?[...new Set(list.filter(s=>typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s)))].sort().slice(0,64):[];
  }catch{return ['2026-11-09']}
 }
-function setExcludedAverageDays(days){localStorage.setItem(exclusionKey,JSON.stringify([...new Set(days)].sort().slice(0,64)))}
+async function setExcludedAverageDays(days){
+ const before=excludedAverageDays(),next=[...new Set(days)].sort();
+ if(next.length>64)throw Error('Maximum of 64 excluded dates. Include another date again first.');
+ for(const day of next.filter(day=>!before.includes(day)))await writeShared({action:'add_day',day});
+ for(const day of before.filter(day=>!next.includes(day)))await writeShared({action:'remove_day',day});
+}
 let launcherEditorExpanded=false;
 let followingToday=false;
 function ukToday(){return new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/London'})}
@@ -86,6 +95,124 @@ const defaultLinks=[
  {id:'adsbx',name:'ADS-B Exchange',group:'feeders',sub:'Feeder status',url:'https://www.adsbexchange.com/myip/',extraLabel:'Feeder map',extraUrl:'https://globe.adsbexchange.com/?feed=CGyw2ZDXE-Y2',icon:'plane',brand:'AX',logoDomain:'adsbexchange.com',tone:'green'},
  {id:'flightaware',name:'FlightAware',group:'feeders',sub:'Local feeder status',port:'1093',path:'/',icon:'plane',brand:'FA',logoDomain:'flightaware.com',tone:'navy'}
 ];
+const newFeederLinks=[
+ {
+  "id": "adsblol",
+  "name": "adsb.lol",
+  "group": "feeders",
+  "sub": "Your feeder map and status",
+  "url": "https://my.adsb.lol/",
+  "extraLabel": "Feeder API key",
+  "extraUrl": "https://www.adsb.lol/receiver",
+  "icon": "radar",
+  "brand": "LOL",
+  "logoDomain": "adsb.lol",
+  "tone": "teal"
+ },
+ {
+  "id": "airplaneslive",
+  "name": "airplanes.live",
+  "group": "feeders",
+  "sub": "Your feeder statistics",
+  "url": "https://airplanes.live/myfeed/",
+  "extraLabel": "Live map",
+  "extraUrl": "https://globe.airplanes.live/",
+  "icon": "plane",
+  "brand": "AL",
+  "logoDomain": "airplanes.live",
+  "tone": "blue"
+ },
+ {
+  "id": "adsbhub",
+  "name": "ADSBHub",
+  "group": "feeders",
+  "sub": "Station statistics and graphs",
+  "url": "https://www.adsbhub.org/statistic.php",
+  "extraLabel": "Station list",
+  "extraUrl": "https://www.adsbhub.org/stations.php",
+  "icon": "radar",
+  "brand": "AH",
+  "logoDomain": "adsbhub.org",
+  "tone": "teal"
+ },
+ {
+  "id": "flyitaly",
+  "name": "Fly Italy ADSB",
+  "group": "feeders",
+  "sub": "Feeder status",
+  "url": "https://flyitalyadsb.com/en/community/feeder-status/",
+  "extraLabel": "Lightcone stats",
+  "extraUrl": "https://flyitalyadsb.com/en/community/lightcone/",
+  "icon": "plane",
+  "brand": "IT",
+  "logoDomain": "flyitalyadsb.com",
+  "tone": "green"
+ },
+ {
+  "id": "adsbiq",
+  "name": "ADSBiq",
+  "group": "feeders",
+  "sub": "Your stations and signal statistics",
+  "url": "https://adsbiq.com/my-stations",
+  "extraLabel": "Network stats",
+  "extraUrl": "https://adsbiq.com/stats",
+  "icon": "radar",
+  "brand": "IQ",
+  "logoDomain": "adsbiq.com",
+  "tone": "blue"
+ },
+ {
+  "id": "avioadsb",
+  "name": "AvioADSB",
+  "group": "feeders",
+  "sub": "Receiver dashboard and API usage",
+  "url": "https://avioadsb.org/dashboard",
+  "icon": "plane",
+  "brand": "AV",
+  "logoDomain": "avioadsb.org",
+  "tone": "teal"
+ },
+ {
+  "id": "adsbfi",
+  "name": "adsb.fi",
+  "group": "feeders",
+  "sub": "Feeder connection status",
+  "url": "https://adsb.fi/",
+  "extraLabel": "Network map",
+  "extraUrl": "https://adsb.fi/network",
+  "icon": "radar",
+  "brand": "FI",
+  "logoDomain": "adsb.fi",
+  "tone": "blue"
+ },
+ {
+  "id": "opensky",
+  "name": "OpenSky Network",
+  "group": "feeders",
+  "sub": "My sensors and account",
+  "url": "https://opensky-network.org/my-opensky",
+  "icon": "plane",
+  "brand": "OS",
+  "logoDomain": "opensky-network.org",
+  "tone": "navy"
+ },
+ {
+  "id": "dataero",
+  "name": "Dataero",
+  "group": "feeders",
+  "sub": "Receiver account and coverage",
+  "url": "https://radar.dataero.eu/map",
+  "extraLabel": "Claim receiver",
+  "extraUrl": "https://radar.dataero.eu/contribute/connect",
+  "icon": "radar",
+  "brand": "DE",
+  "logoDomain": "radar.dataero.eu",
+  "tone": "sky"
+ }
+];
+defaultLinks.push(...newFeederLinks);
+const fr24Stats={extraLabel:'Feeder stats',extraUrl:'https://www.flightradar24.com/account/feed-stats/'};
+Object.assign(defaultLinks.find(x=>x.id==='fr24'),fr24Stats);
 const linksKey='airspace-analytics-links';
 const linksMigration='airspace-links-v19';
 function migrateLinks(){
@@ -117,8 +244,60 @@ function restoreV193Launcher(){
  }catch{localStorage.setItem(linksKey,JSON.stringify(defaultLinks));}
  localStorage.setItem(marker,'1');
 }
-function getLinks(){try{migrateLinks();restoreV193Launcher();const x=JSON.parse(localStorage.getItem(linksKey));return Array.isArray(x)?x:defaultLinks}catch{return defaultLinks}}
-function putLinks(links){localStorage.setItem('airspace-analytics-links',JSON.stringify(links))}
+function legacyLinks(){
+ try{
+  migrateLinks();restoreV193Launcher();
+  let list=JSON.parse(localStorage.getItem(linksKey));
+  if(!Array.isArray(list))list=defaultLinks.slice();
+  if(!localStorage.getItem('airspace-feeder-links-v11032')){
+   for(const item of newFeederLinks)if(!list.some(x=>x.id===item.id||String(x.name).trim().toLowerCase()===item.name.toLowerCase()))list.push(item);
+   const fr24=list.find(x=>x.id==='fr24');if(fr24&&!fr24.extraLabel&&!fr24.extraUrl&&!fr24.extraPort)Object.assign(fr24,fr24Stats);
+   localStorage.setItem(linksKey,JSON.stringify(list));
+   localStorage.setItem('airspace-feeder-links-v11032','1');
+  }
+  return list;
+ }catch{return defaultLinks.slice()}
+}
+function getLinks(){return sharedPrefs&&Array.isArray(sharedPrefs.links)?sharedPrefs.links:legacyLinks()}
+function storeShared(value){
+ sharedPrefs=value;
+ try{localStorage.setItem(exclusionKey,JSON.stringify(value.excluded_days));if(value.links)localStorage.setItem(linksKey,JSON.stringify(value.links));}catch{}
+ return value;
+}
+async function postShared(payload){
+ const response=await fetch('/api/preferences',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),cache:'no-store'});
+ const result=await response.json();
+ if(!response.ok)throw Error(result.error||'Could not save shared settings');
+ return result;
+}
+async function syncShared(){
+ if(sharedRequest)return sharedRequest;
+ sharedRequest=(async()=>{
+  const marker='airspace-shared-browser-v1';
+  let client=localStorage.getItem(marker);
+  if(!client){
+   // Capture old values before downloading shared state. Import each browser once.
+   client=globalThis.crypto?.randomUUID?.()||('browser-'+Date.now()+'-'+Math.random().toString(36).slice(2));
+   const pending=localStorage.getItem(marker+'-pending')||client;
+   localStorage.setItem(marker+'-pending',pending);
+   const legacy=localStorage.getItem(exclusionKey);
+   let oldDates=null;
+   if(legacy!==null){try{const parsed=JSON.parse(legacy);if(Array.isArray(parsed))oldDates=parsed.filter(x=>typeof x==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(x)).slice(0,64)}catch{}}
+   const hasLegacyLinks=localStorage.getItem(linksKey)!==null;
+   const result=await postShared({action:'migrate',client:pending,excluded_days:oldDates,links:legacyLinks(),has_legacy_links:hasLegacyLinks});
+   localStorage.setItem(marker,pending);
+   localStorage.removeItem(marker+'-pending');
+   return storeShared(result);
+  }
+  return storeShared(await api('/api/preferences'));
+ })().then(value=>{sharedSyncError='';return value;},error=>{sharedSyncError=error.message||'Shared settings unavailable';throw error;}).finally(()=>{sharedRequest=null});
+ return sharedRequest;
+}
+async function writeShared(payload){
+ if(!sharedPrefs)await syncShared();
+ return storeShared(await postShared(payload));
+}
+async function putLinks(links){if(!sharedPrefs)await syncShared();await writeShared({action:'links',revision:sharedPrefs.revision,links})}
 function icon(name,size=18){
  const paths={
   grid:'<rect x="3" y="3" width="7" height="7" rx="1.4"/><rect x="14" y="3" width="7" height="7" rx="1.4"/><rect x="3" y="14" width="7" height="7" rx="1.4"/><rect x="14" y="14" width="7" height="7" rx="1.4"/>',
@@ -829,7 +1008,7 @@ function averageExclusionSettings(){
  return '<details class="foldout" id="excludedDaysEditor" '+(excludedEditorExpanded?'open':'')+'><summary>'+days.length+' excluded date(s)</summary>'+
   '<div class="setting-actions"><input id="excludeDate" type="date" value="2026-11-09" aria-label="Date to exclude"><button class="btn" id="addExcludedDay" type="button">Exclude</button></div>'+
   '<div id="excludedDaysList">'+list+'</div>'+
-  '<small class="muted">Affects weekday/hour averages in this browser only. Aerodrome data stays unchanged.</small>'+
+  '<small class="muted">Affects weekday/hour averages on all devices. Aerodrome data stays unchanged.</small>'+
   '<section class="suggested-exclusions" aria-label="Suggested dates to exclude"><div class="suggested-exclusions-head"><strong>Suggested dates to exclude</strong><small class="muted">Review only · never automatic</small></div>'+
   '<div id="suggestedExclusions" aria-live="polite"><p class="muted tiny">Open this section to check for unusually low data.</p></div></section></details>';
 }
@@ -880,16 +1059,16 @@ async function loadSuggestedAverageExclusions(){
      '<span class="tiny">Observations: <b>'+fmt(x.observations)+'</b> vs typical '+fmt(x.usualObservations)+' (−'+x.observationDrop+'%)</span>'+
      '</div><button class="btn small" type="button" data-suggest-exclude="'+esc(x.date)+'">Add to excluded</button></div>';
    }).join('')+'</div>';
-  $$('[data-suggest-exclude]',target).forEach(btn=>btn.onclick=()=>{
+  $$('[data-suggest-exclude]',target).forEach(btn=>btn.onclick=async()=>{
    const day=btn.dataset.suggestExclude,excluded=excludedAverageDays();
    if(excluded.includes(day))return;
    if(excluded.length>=64){
     target.insertAdjacentHTML('afterbegin','<p class="muted tiny">Maximum of 64 excluded dates. Include another date again first.</p>');
     return;
    }
-   setExcludedAverageDays([...excluded,day]);
-   excludedEditorExpanded=true;
-   renderSettings();
+   btn.disabled=true;
+   try{await setExcludedAverageDays([...excluded,day]);excludedEditorExpanded=true;renderSettings();}
+   catch(e){btn.disabled=false;target.insertAdjacentHTML('afterbegin','<p class="notice error-note">'+esc(e.message)+'</p>')}
   });
  }catch(e){
   if(currentPage==='settings'&&$('#excludedDaysEditor')===fold&&fold.open)
@@ -971,7 +1150,7 @@ async function refreshHealthchecks(force=false){
 
 async function renderSettings(){const rid=++renderId;
  $('#page').innerHTML=title('','Settings')+
- `<div class="panel">
+ `<div class="panel"><div id="sharedSettingsFeedback" role="status" class="muted tiny">${sharedSyncError?esc('Shared settings unavailable; showing local copy. '+sharedSyncError):''}</div>
  ${settingsRow('Launcher links','',`<details class="foldout" id="launcherEditor" ${launcherEditorExpanded?'open':''}><summary>Manage launcher links</summary>${settingsLinks()}</details>`)}
  ${settingsRow('Excluded days from averages','',averageExclusionSettings())}
  ${settingsRow('GitHub updates','',updateBox())}
@@ -985,14 +1164,16 @@ async function renderSettings(){const rid=++renderId;
  $('#healthchecksFold').addEventListener('toggle',()=>{if($('#healthchecksFold').open)refreshHealthchecks()});
  $('#hcRefresh').onclick=()=>refreshHealthchecks(true);
  $$('.shortcut-edit-row').forEach(row=>row.addEventListener('toggle',()=>{if(row.open)$$('.shortcut-edit-row').forEach(other=>{if(other!==row)other.open=false});}));
- $('#addExcludedDay').onclick=()=>{const day=$('#excludeDate').value;if(!day)return;setExcludedAverageDays([...excludedAverageDays(),day]);renderSettings()};
- $$('[data-include-day]').forEach(b=>b.onclick=()=>{setExcludedAverageDays(excludedAverageDays().filter(day=>day!==b.dataset.includeDay));renderSettings()});
- function saveLinks(){try{putLinks(collectSettingsLinks());toast('Launcher links saved');return true}catch(e){toast('Invalid link',e.message,true);return false}}
+ function settingsError(e){const area=$('#sharedSettingsFeedback');if(area){area.textContent=e.message||String(e);area.className='notice error-note'}}
+ async function changeDates(next){try{await setExcludedAverageDays(next);renderSettings()}catch(e){settingsError(e)}}
+ $('#addExcludedDay').onclick=()=>{const day=$('#excludeDate').value;if(day)changeDates([...excludedAverageDays(),day])};
+ $$('[data-include-day]').forEach(b=>b.onclick=()=>changeDates(excludedAverageDays().filter(day=>day!==b.dataset.includeDay)));
+ async function saveLinks(){try{await putLinks(collectSettingsLinks());const area=$('#sharedSettingsFeedback');if(area){area.textContent='Shortcuts saved on server';area.className='muted tiny'}return true}catch(e){settingsError(e);return false}}
  $('#saveLinks').onclick=()=>saveLinks();
- $('#addLink').onclick=()=>{if(!saveLinks())return;const xs=getLinks();xs.push({name:'New link',group:'stats',sub:'Application shortcut',port:'',path:'/',url:'',icon:'external'});putLinks(xs);renderSettings();const rows=$$('.shortcut-edit-row');if(rows.length)rows[rows.length-1].open=true};
- $('#restoreLinks').onclick=()=>{putLinks(defaultLinks);toast('Default links restored');renderSettings()};
- $$('[data-remove]').forEach(b=>b.onclick=()=>{if(!saveLinks())return;const xs=getLinks();xs.splice(+b.dataset.remove,1);putLinks(xs);renderSettings()});
- $$('[data-reorder]').forEach(b=>b.onclick=()=>{if(!saveLinks())return;const xs=getLinks(),i=+b.dataset.pos,j=i+(b.dataset.reorder==='up'?-1:1);if(j<0||j>=xs.length)return;[xs[i],xs[j]]=[xs[j],xs[i]];putLinks(xs);renderSettings()});
+ $('#addLink').onclick=async()=>{if(!await saveLinks())return;const xs=getLinks().slice();xs.push({name:'New link',group:'stats',sub:'Application shortcut',port:'',path:'/',url:'',icon:'external'});try{await putLinks(xs);await renderSettings();const rows=$$('.shortcut-edit-row');if(rows.length)rows[rows.length-1].open=true}catch(e){settingsError(e)}};
+ $('#restoreLinks').onclick=async()=>{try{await putLinks(defaultLinks);renderSettings()}catch(e){settingsError(e)}};
+ $$('[data-remove]').forEach(b=>b.onclick=async()=>{if(!await saveLinks())return;const xs=getLinks().slice();xs.splice(+b.dataset.remove,1);try{await putLinks(xs);renderSettings()}catch(e){settingsError(e)}});
+ $$('[data-reorder]').forEach(b=>b.onclick=async()=>{if(!await saveLinks())return;const xs=getLinks().slice(),i=+b.dataset.pos,j=i+(b.dataset.reorder==='up'?-1:1);if(j<0||j>=xs.length)return;[xs[i],xs[j]]=[xs[j],xs[i]];try{await putLinks(xs);renderSettings()}catch(e){settingsError(e)}});
  $('#checkUpdates').onclick=async()=>{
   $('#updateDetails').textContent='Checking GitHub…';try{const d=await api('/api/update/check',{refresh:1});setUpdateInfo(d)}catch(e){$('#updateDetails').textContent=e.message}
  };
@@ -1033,7 +1214,12 @@ async function loadPage(){stopLiveTerminal();stopFlightsPage();const fallback=lo
  window.scrollTo({top:0,behavior:'instant'});
  if(currentPage==='explore'&&followingToday&&state.start.slice(0,10)!==ukToday())setTodayWindow();
  const routes={home:renderHome,explore:renderExplore,live:renderLiveTerminal,alerts:renderAlertsPage,flights:renderFlightsPage,database:renderDatabase,settings:renderSettings};
- try{await routes[currentPage]()}catch(e){$('#page').innerHTML=safeError(e)}
+ const page=currentPage,request=renderId;
+ try{
+  if(['home','settings','explore'].includes(page)){try{await syncShared()}catch(e){console.warn('Shared settings unavailable',e.message)}}
+  if(currentPage!==page||renderId!==request)return;
+  await routes[page]();
+ }catch(e){if(currentPage===page)$('#page').innerHTML=safeError(e)}
 }
 async function refreshStatus(){try{const h=await api('/api/health');setStatus(h)}catch{setStatus(null)}}
 function boot(){shell();window.addEventListener('hashchange',loadPage);loadPage();refreshStatus();api('/api/config').then(d=>$$('.versionValue').forEach(x=>x.textContent='v'+d.version)).catch(()=>{});activeTimer=setInterval(()=>{refreshStatus();checkTodayRollover();if(currentPage==='settings'&&$('#healthchecksFold')?.open)refreshHealthchecks()},60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkTodayRollover()})}

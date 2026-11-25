@@ -390,16 +390,39 @@ function showModal(row=null){
  modal.classList.add('show');modal.setAttribute('aria-hidden','false');
  document.getElementById('flightField_date').focus();
 }
-async function loadFlights(showLoading=false){
- if(showLoading)feedback('Loading Google Sheets…');
- const d=await api('/api/flights/records');
- allFlights=Array.isArray(d.flights)?d.flights:[];
- sheetWarning=d.cached?d.warning||'SheetDB temporarily unavailable':'';
- closeFilter();renderFilters();renderTable();
- if(sheetWarning)feedback(sheetWarning,true);
- else if(showLoading)feedback('');
- // Aircraft status is strictly optional and must not hold up SheetDB loading.
- requestStatuses().catch(()=>{});
+let sheetRequestNumber=0;
+async function loadFlights(showLoading=false,force=false){
+ const generation=flightsGeneration,serial=++sheetRequestNumber;
+ const active=()=>generation===flightsGeneration&&serial===sheetRequestNumber&&!!document.getElementById('flightsTableBody');
+ if(showLoading&&!allFlights.length)feedback('Loading Google Sheets…');
+ const d=await api('/api/flights/records'+(force?'?refresh=1':''));
+ if(!active())return;
+ function apply(result,initial){
+  if(!active())return;
+  allFlights=Array.isArray(result.flights)?result.flights:[];
+  sheetWarning=result.warning||'';
+  if(initial)closeFilter();
+  renderFilters();renderTable();
+  if(sheetWarning)feedback(sheetWarning,true);
+  else if(result.refreshing)feedback('Showing saved flights · refreshing Google Sheets…');
+  else feedback('');
+  requestStatuses().catch(()=>{});
+ }
+ apply(d,true);
+ if(d.refreshing){
+  // The server coalesces all requests. These are local cache checks, not
+  // additional SheetDB calls, and never delay displaying the first snapshot.
+  (async()=>{
+   for(let i=0;i<12&&active();i++){
+    await new Promise(r=>setTimeout(r,1000));
+    if(!active())return;
+    const latest=await api('/api/flights/records');
+    if(!active())return;
+    if(!latest.refreshing){apply(latest,false);return;}
+   }
+   if(active()&&!sheetWarning)feedback('Showing saved flights. Use Refresh to check Google Sheets again.');
+  })().catch(()=>{if(active())feedback('Showing saved flights; refresh unavailable.',true)});
+ }
 }
 function payloadFromForm(){
  const payload={};
@@ -512,7 +535,7 @@ export async function renderFlightsPage(){
  document.getElementById('flightsManageEdit').onclick=()=>{manageActive=true;manageMode='edit';renderManage();};
  document.getElementById('flightsManageDelete').onclick=()=>{manageActive=true;manageMode='delete';renderManage();};
  document.getElementById('flightsManageDone').onclick=exitManage;
- document.getElementById('flightsRefresh').onclick=()=>loadFlights(true).catch(e=>feedback(e.message,true));
+ document.getElementById('flightsRefresh').onclick=()=>loadFlights(true,true).catch(e=>feedback(e.message,true));
  document.getElementById('flightsCopy').onclick=e=>copyRegs(e.currentTarget);
  document.getElementById('flightsClear').onclick=clearFilters;
  document.getElementById('flightsRegSearch').oninput=e=>{searchTerm=e.target.value||'';renderTable();requestStatuses();};

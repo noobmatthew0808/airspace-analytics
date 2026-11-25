@@ -32,6 +32,7 @@ jobs:
           node tests/test_flights_ui.cjs
           node tests/test_traffic_month_ranking.cjs
           node tests/test_suggested_exclusions.cjs
+          node tests/test_refinement_ui.cjs
       - name: Installation script syntax
         run: bash -n scripts/install.sh
       - name: Verify unchanged Traffic anchors

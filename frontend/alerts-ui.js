@@ -8,9 +8,35 @@ const providers=[
  {id:'adsblol',name:'adsb.lol',url:'https://api.adsb.lol/v2',hint:'Ready for your feeder key when eligible. No key needed until then.'},
  {id:'avioadsb',name:'AvioADSB',url:'https://avioadsb.org/v1',hint:'Flights only. Claim your feeding station and create a contributor key on avioadsb.org/dashboard.'},
  {id:'adsbiq',name:'ADSBiq',url:'https://api.adsbiq.com/v2/all',hint:'Flights only. Enable ADSBiq in ADSB.im, claim your station at adsbiq.com/join and copy your dashboard API key.'},
- {id:'adsbfi',name:'adsb.fi',url:'https://opendata.adsb.fi/api',hint:'Free API · no key required.'}
+ {id:'adsbfi',name:'adsb.fi',url:'https://opendata.adsb.fi/api',hint:'Free public API; worldwide snapshot access uses your feeder IP.',keyless:true}
+];
+const otherSources=[
+ {id:'airplaneslive',name:'airplanes.live',keyless:true,url:'https://airplanes.live/api-docs/',hint:'Public API; not integrated into Airspace Analytics.'},
+ {id:'adsbhub',name:'ADSBHub',keyless:true,url:'https://www.adsbhub.org/howtogetdata.php',hint:'IP-authorized data stream, not a REST API. Not integrated.'},
+ {id:'opensky',name:'OpenSky Network',url:'https://opensky-network.org/',hint:'OAuth API credentials; not integrated.'},
+ {id:'fr24',name:'Flightradar24',url:'https://fr24api.flightradar24.com/',hint:'Separate API subscription; feeder sharing key is not an API key. Not integrated.'},
+ {id:'flightaware',name:'FlightAware',url:'https://www.flightaware.com/commercial/aeroapi/',hint:'AeroAPI; separate API access. Not integrated.'},
+ {id:'adsbx',name:'ADS-B Exchange',url:'https://www.adsbexchange.com/',hint:'Separate API access. Not integrated.'},
+ {id:'airnav',name:'AirNav Radar',url:'https://www.airnavradar.com/',hint:'Separate API access. Not integrated.'},
+ {id:'planefinder',name:'Plane Finder',url:'https://planefinder.net/',hint:'No verified free feeder API integration.'},
+ {id:'flightdeck',name:'FlightDeck',url:'https://www.tryflightdeck.com/',hint:'No verified free feeder API integration.'},
+ {id:'dataero',name:'Dataero',url:'https://radar.dataero.eu/contribute',hint:'No verified free feeder API integration.'}
 ];
 let alertsData=null,alertsTimer=null,editingRule=null,alertsBusy=false;
+const pendingProviders=new Set();
+const providerMessages={};
+function providerFeedback(id,message,error=false){
+ providerMessages[id]={message,error,until:Date.now()+8000};
+ const el=document.querySelector('#provider-result-'+id);
+ if(el){el.textContent=message;el.className='alert-provider-result'+(error?' is-error':' is-good');}
+}
+function providerIcon(state){
+ const paths={verified:'<circle cx="12" cy="12" r="10" fill="currentColor" stroke="none"/><path d="m7 12 3 3 7-7" stroke="var(--panel)" stroke-width="2.8"/>',
+ saved:'<circle cx="12" cy="12" r="10"/><path d="m7 12 3 3 7-7"/>',
+ missing:'<circle cx="12" cy="12" r="10"/><path d="m8 8 8 8m0-8-8 8"/>',
+ keyless:'<path d="m3 3 18 18M14 7a5 5 0 0 1 3 9m-7-2-7 7v-4l4-4m3-3a5 5 0 0 1 1-4"/>'};
+ return '<svg class="alert-api-icon '+state+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+paths[state]+'</svg>';
+}
 async function alertApi(path,body){
  const opts=body===undefined?{cache:'no-store'}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'};
  const response=await fetch(path,opts);
@@ -35,39 +61,39 @@ function eventCard(e){
   '<div class="alert-event-time">'+whenAlert(e.created)+'<div>'+ae(e.delivery)+'</div></div></div>';
 }
 function providerCard(p,d){
- const info=d[p.id]||{},saved=!!info.key_set,connected=!!info.connected;
- if(p.id==='adsbfi'){
-  return '<details class="foldout alert-config alert-provider" id="alert-adsbfi"><summary><span>adsb.fi <small>'+
-   (connected?'Connected · no key needed':(info.last_success?'Previously tested · no key':(info.error?'Needs attention · no key':'No key required')))+
-   '</small></span></summary><div class="alert-config-content">'+
-   '<div class="alert-provider-endpoint"><span>API endpoint</span><code>'+ae(p.url)+'</code></div>'+
-   '<p class="alert-provider-note">Free public aircraft API. No key to enter. Contributor access uses your feeder IP. <a href="https://adsb.fi/" target="_blank" rel="noopener noreferrer">adsb.fi</a></p>'+
-   '<div class="alert-editor-buttons"><button class="btn small primary" id="alertAdsbfiTest" type="button">Test connection</button></div>'+
-   (info.last_success?'<p class="alert-provider-note">Last success: '+whenAlert(info.last_success)+' · '+at(info.aircraft)+' aircraft</p>':'')+
-   (info.error?'<p class="alert-provider-note">'+ae(info.error)+'</p>':'')+
-   '</div></details>';
- }
- const subtitle=saved?(connected?'Live data fresh':(info.error?'Needs attention':(info.last_success?'Key saved · last test succeeded':'Key saved · not tested'))):'No key saved';
- return '<details class="foldout alert-config alert-provider" id="alert-'+p.id+'"><summary><span>'+ae(p.name)+' <small>'+ae(subtitle)+'</small></span></summary>'+
+ const info=d[p.id]||{},saved=!!info.key_set,test=d.provider_tests?.[p.id],local=providerMessages[p.id]?.until>Date.now()?providerMessages[p.id]:null;
+ const verified=test?test.ok:!!(info.connected||info.last_success&&!info.error);
+ const failed=test?test.ok===false:!!info.error;
+ const state=p.keyless?'keyless':!saved||failed?'missing':verified?'verified':'saved';
+ const subtitle=p.keyless?(failed?'No key required · Test failed':verified?'No key required · Verified':'No key required'):
+  !saved?'No key saved':failed?'Connection failed':verified?'Verified':'Key saved · Not tested';
+ const message=local?.message||test?.message||(info.error?'Connection failed: '+info.error:info.last_success?'Last successful connection: '+whenAlert(info.last_success):'');
+ const error=local?local.error:failed;
+ const result='<div id="provider-result-'+p.id+'" role="status" class="alert-provider-result'+(message?(error?' is-error':' is-good'):'')+'">'+ae(message)+(test?.at&&!local?' · '+ae(whenAlert(test.at)):'')+'</div>';
+ return '<details class="foldout alert-config alert-provider" id="alert-'+p.id+'"><summary class="alert-api-summary">'+providerIcon(state)+'<span><strong>'+ae(p.name)+'</strong><small>'+ae(subtitle)+'</small></span></summary>'+
   '<form class="alert-config-content alert-provider-form" data-provider="'+p.id+'" autocomplete="off">'+
-  '<div class="alert-provider-endpoint"><span>API endpoint (fixed)</span><code>'+ae(p.url)+'</code></div>'+
-  '<label class="alert-field alert-wide">API key <small>'+(saved?'Saved securely on this laptop. Blank means keep the saved key.':'Not saved yet. Paste key and press Save.')+'</small>'+
-  '<span class="alert-secret-row"><input name="key" type="password" autocomplete="new-password" placeholder="'+(saved?'Key saved — enter new key to replace':'Paste API key')+'"><button type="button" class="btn small" data-showkey="'+p.id+'">Show</button></span></label>'+
-  '<div class="alert-editor-buttons"><button class="btn primary" type="submit">Save key</button>'+
-  '<button class="btn small" type="button" data-test-provider="'+p.id+'">Test connection</button>'+
-  '<button class="btn small alert-delete" type="button" data-remove-provider="'+p.id+'" '+(saved?'':'disabled')+'>Remove key</button></div>'+
+  '<div class="alert-provider-endpoint"><span>API endpoint</span><code>'+ae(p.url)+'</code></div>'+
   '<p class="alert-provider-note">'+ae(p.hint)+'</p>'+
-  (saved?'<p class="alert-provider-note"><strong>Saved ✓</strong> · '+(connected?'Live data fresh':(info.last_success?'Last API test succeeded':'Connection not tested'))+
-  (info.last_success?' · Last success '+whenAlert(info.last_success):'')+
-  (info.aircraft!=null?' · '+at(info.aircraft)+' aircraft':'')+
-  (info.plan?' · Plan '+ae(info.plan):'')+
-  (info.monthly_used?' · Requests '+ae(info.monthly_used)+'/'+ae(info.monthly_quota||'?'):'')+
-  (info.error?' · Error '+ae(info.error):'')+'</p>':'')+
+  (p.keyless?'':'<label class="alert-field alert-wide">API key <small>'+(saved?'Key saved on server. Enter a replacement only if needed.':'Paste your API key.')+'</small>'+
+  '<span class="alert-secret-row"><input name="key" type="password" autocomplete="new-password" placeholder="'+(saved?'Key saved — enter replacement':'Paste API key')+'"><button type="button" class="btn small" data-showkey="'+p.id+'">Show</button></span></label>')+
+  '<div class="alert-editor-buttons">'+(p.keyless?'':'<button class="btn primary" type="submit">Save key</button>')+
+  '<button class="btn small" type="button" '+(p.id==='adsbfi'?'id="alertAdsbfiTest" ':'')+'data-test-provider="'+p.id+'">Test connection</button>'+
+  (p.keyless?'':'<button class="btn small alert-delete" type="button" data-remove-provider="'+p.id+'" '+(saved?'':'disabled')+'>Remove key</button>')+'</div>'+
+  result+
+  (info.monthly_used?'<p class="alert-provider-note">Requests '+ae(info.monthly_used)+'/'+ae(info.monthly_quota||'?')+'</p>':'')+
   '</form></details>';
+}
+function helperCard(id,name,description){
+ return '<details class="foldout alert-config alert-provider" id="api-helper-'+id+'"><summary class="alert-api-summary">'+providerIcon('keyless')+'<span><strong>'+ae(name)+'</strong><small>No key to enter · In use</small></span></summary><div class="alert-config-content"><p class="alert-provider-note">'+ae(description)+'</p></div></details>';
+}
+function otherProviderCard(p){
+ return '<details class="foldout alert-config alert-provider" id="other-api-'+p.id+'"><summary class="alert-api-summary">'+providerIcon(p.keyless?'keyless':'missing')+
+  '<span><strong>'+ae(p.name)+'</strong><small>'+ (p.keyless?'No key required · Not integrated':'Not integrated')+'</small></span></summary>'+
+  '<div class="alert-config-content"><p class="alert-provider-note">'+ae(p.hint)+'</p><a class="btn small" href="'+ae(p.url)+'" target="_blank" rel="noopener noreferrer">Provider website</a></div></details>';
 }
 function renderAlertPageContents(){
  const host=document.querySelector('#page');if(!host||!alertsData)return;
- const wasOpen=new Set([...host.querySelectorAll('details[open]')].map(x=>x.id));
+ const wasOpen=new Set([...host.querySelectorAll('details[open]')].map(x=>x.id).filter(Boolean));
  const d=alertsData,receiver=d.receiver||{},healthy=receiver.time&&!receiver.error&&Date.now()/1000-receiver.time<20;
  host.innerHTML='<div class="alert-page">'+
   '<div class="page-heading"><h1 class="page-title">Alerts</h1><button class="btn small" id="alertAdd" type="button">+ Add rule</button></div>'+
@@ -79,8 +105,12 @@ function renderAlertPageContents(){
   '<details class="foldout alert-root-config" id="alertAllConfig"><summary><span>Configuration &amp; Logs <small>APIs · Notifications · Receiver · History</small></span></summary>'+
   '<div class="alert-config-stack"><details class="foldout alert-config" id="alertApis"><summary><span>APIs <small>Manage backup sources</small></span></summary>'+
   '<div class="alert-config-stack alert-nested">'+
-  '<p class="alert-explainer">APIs only affect rules where Backup APIs is ticked. Your own receiver remains the fastest source.</p>'+
-  providers.map(p=>providerCard(p,d)).join('')+'</div></details>'+
+  '<p class="alert-explainer">Configured sources supply Flights; backup alert sources apply only to rules with Backup APIs enabled. Your receiver remains the primary source.</p>'+
+  '<div class="alert-api-legend">'+providerIcon('verified')+' Verified '+providerIcon('saved')+' Key saved '+providerIcon('missing')+' Missing / failed '+providerIcon('keyless')+' Keyless</div>'+
+  providers.map(p=>providerCard(p,d)).join('')+
+  helperCard('routes','ADSB.im / adsb.lol routeset','Keyless callsign and position route enrichment for Flights. No separate credentials; automatic lookups use the existing rate limits.')+
+  helperCard('sheet','Google Sheets (SheetDB)','Existing flight-log bridge. No separate key to enter here; the Refresh button in Flights checks the sheet.')+
+  '<details class="foldout alert-config" id="alertOtherSources"><summary>Other feeder sources <small>Not integrated</small></summary><div class="alert-config-stack">'+otherSources.map(otherProviderCard).join('')+'</div></details></div></details>'+
   '<details class="foldout alert-config" id="alertNtfy"><summary><span>Notifications <small>'+(d.ntfy.topic?'Configured':'Not configured')+'</small></span></summary>'+
   '<form id="alertNtfyForm" class="alert-config-content"><div class="alert-form-grid">'+
   '<label class="alert-field">ntfy server<input name="server" type="url" required value="'+ae(d.ntfy.server)+'"></label>'+
@@ -156,51 +186,37 @@ function bindAlerts(){
   try{await alertApi('/api/alerts/rule',{...r,enabled:b.checked});await refreshAlerts();}
   catch(err){b.checked=!b.checked;feedback(err.message,true);}
  });
- document.querySelector('#alertAdsbfiTest').onclick=async()=>{
-  try{
-   const result=await alertApi('/api/alerts/adsbfi/check',{});
-   await refreshAlerts();
-   ['alertAllConfig','alertApis','alert-adsbfi'].forEach(k=>{document.getElementById(k).open=true;});
-   feedback('adsb.fi connected: '+at(result.aircraft)+' aircraft returned. No key required.');
-  }catch(err){feedback('adsb.fi: '+err.message,true);}
- };
  document.querySelectorAll('.alert-provider-form').forEach(form=>{
   const id=form.dataset.provider;
-  form.onsubmit=async e=>{
-   e.preventDefault();const key=form.elements.key.value.trim();
-   if(!key){feedback('Enter an API key before pressing Save, or use Test connection for the saved key.',true);return;}
+  const keepOpen=()=>['alertAllConfig','alertApis','alert-'+id].forEach(k=>{const el=document.getElementById(k);if(el)el.open=true;});
+  const act=async(work,message)=>{
+   if(pendingProviders.has(id))return;
+   pendingProviders.add(id);
+   form.querySelectorAll('button').forEach(b=>b.disabled=true);
+   providerFeedback(id,'Working…');
    try{
-    await alertApi('/api/alerts/'+id,{key});
-    form.elements.key.value='';await refreshAlerts();
-    document.getElementById('alertAllConfig').open=true;
-    document.getElementById('alertApis').open=true;
-    document.getElementById('alert-'+id).open=true;
-    feedback((providers.find(p=>p.id===id)?.name||id)+' key saved privately. Now press Test connection.');
-   }catch(err){feedback(err.message,true)}
+    const result=await work();
+    providerFeedback(id,message(result));
+    await refreshAlerts();keepOpen();
+   }catch(err){
+    providerFeedback(id,err.message,true);
+    try{await refreshAlerts();keepOpen()}catch{}
+   }finally{
+    pendingProviders.delete(id);
+    const active=document.querySelector('.alert-provider-form[data-provider="'+id+'"]');
+    if(active){active.querySelectorAll('button').forEach(b=>b.disabled=false);const remove=active.querySelector('[data-remove-provider]');if(remove)remove.disabled=!alertsData?.[id]?.key_set;}
+   }
   };
-  form.querySelector('[data-showkey]').onclick=()=>{
-   const input=form.elements.key,button=form.querySelector('[data-showkey]');
-   input.type=input.type==='password'?'text':'password';
-   button.textContent=input.type==='password'?'Show':'Hide';
+  form.onsubmit=e=>{
+   e.preventDefault();const key=form.elements.key?.value.trim();
+   if(!key){providerFeedback(id,'Enter an API key first.',true);return;}
+   act(()=>alertApi('/api/alerts/'+id,{key} ),()=>{form.elements.key.value='';return 'Key saved. Test connection to verify.'});
   };
-  form.querySelector('[data-test-provider]').onclick=async()=>{
-   try{
-    const result=await alertApi('/api/alerts/'+id+'/check',{});
-    await refreshAlerts();
-    ['alertAllConfig','alertApis','alert-'+id].forEach(k=>{document.getElementById(k).open=true;});
-    feedback((providers.find(p=>p.id===id)?.name||id)+' API successful: '+(['avioadsb','adsbiq'].includes(id)?'key verified':at(result.aircraft))+
-     (['avioadsb','adsbiq'].includes(id)?'':' aircraft near your antenna')+(result.plan?' · plan '+result.plan:'')+'. This tests API access, not a push notification.');
-   }catch(err){feedback('API test failed: '+err.message,true);}
-  };
-  form.querySelector('[data-remove-provider]').onclick=async()=>{
-   if(!confirm('Remove this saved API key from the laptop?'))return;
-   try{
-    await alertApi('/api/alerts/'+id,{clear:true});
-    await refreshAlerts();
-    ['alertAllConfig','alertApis','alert-'+id].forEach(k=>{document.getElementById(k).open=true;});
-    feedback('API key removed. Local alerts are unaffected.');
-   }catch(err){feedback(err.message,true);}
-  };
+  const show=form.querySelector('[data-showkey]');
+  if(show)show.onclick=()=>{const input=form.elements.key;input.type=input.type==='password'?'text':'password';show.textContent=input.type==='password'?'Show':'Hide';};
+  form.querySelector('[data-test-provider]').onclick=()=>act(()=>alertApi('/api/alerts/'+id+'/check',{}),result=>'Connection successful'+(result.plan?' · '+result.plan:'')+(result.aircraft!=null?' · '+at(result.aircraft)+' aircraft':''));
+  const remove=form.querySelector('[data-remove-provider]');
+  if(remove)remove.onclick=()=>{if(confirm('Remove this saved API key from the laptop?'))act(()=>alertApi('/api/alerts/'+id,{clear:true}),()=> 'Key removed.');};
  });
  const receiver=document.querySelector('#alertReceiverForm');
  receiver.onsubmit=async e=>{
@@ -241,7 +257,7 @@ export async function renderAlertsPage(){
  const poll=async()=>{
   if(location.hash!=='#alerts')return;
   try{
-   if(!document.querySelector('#alertEditorForm')&&!document.querySelector('.alert-config-stack :focus-within')){
+   if(!pendingProviders.size&&!document.querySelector('#alertEditorForm')&&!document.querySelector('.alert-config-stack :focus-within')&&![...document.querySelectorAll('.alert-provider-form input[name="key"]')].some(el=>el.value)){
     await refreshAlerts();
    }
   }catch{}

@@ -91,3 +91,20 @@
  .alert-editor-compact .alert-field select{padding-right:17px}
  .alert-compact-limits .alert-field{font-size:10px}
 }
+
+/* v1.10.32: consistent, accessible API states and in-card results. */
+.alert-provider>summary.alert-api-summary{display:flex;align-items:center;gap:10px}
+.alert-api-summary>span{display:flex;flex:1;min-width:0;flex-wrap:wrap;align-items:center;gap:4px 9px}
+.alert-api-summary strong{font-size:12px}
+.alert-api-summary small{margin:0!important;color:var(--muted);font-size:10px;font-weight:400}
+.alert-api-icon{width:19px;height:19px;flex:0 0 19px;color:var(--muted)}
+.alert-api-icon.verified,.alert-api-icon.saved{color:var(--green,#22a65c)}
+.alert-api-icon.missing{color:var(--red,#d84a54)}
+.alert-api-icon.keyless{color:var(--muted)}
+.alert-api-legend{display:flex;flex-wrap:wrap;align-items:center;gap:5px 8px;color:var(--muted);font-size:10px;padding:5px 2px}
+.alert-api-legend .alert-api-icon{width:14px;height:14px;flex-basis:14px}
+.alert-provider-result{font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+.alert-provider-result:not(:empty){margin-top:10px;padding:8px;border:1px solid var(--line);border-radius:7px;background:var(--panel2)}
+.alert-provider-result.is-good{color:var(--green,#22a65c)}
+.alert-provider-result.is-error{color:var(--red,#d84a54)}
+.alert-provider .alert-field{margin-top:10px}
