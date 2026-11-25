@@ -1,7 +1,7 @@
 # v1.10.38 — restore receiver sightings and improve flight-route enrichment
 
 - Restore the compact Aerodrome last-seen link below each registration, beside the unchanged aligned live status. Retain expanded details and live-only LGW styling.
-- Use the established local readsb discovery; allow ADSB.im routeset requests with known ICAO identity but no fresh position (usual route, not position-confirmed); reject conflicting itineraries and normalize ICAO airport codes. Preserve new route evidence for the same airframe when a slightly older position is returned. No changes to other tabs, alerts, API credentials or receiver services.
+- Use the established local readsb discovery; allow ADSB.im routeset requests with known ICAO identity but no fresh position (usual route, not position-confirmed); reject conflicting itineraries and normalize ICAO airport codes. Add a bounded FlyItalyADSB observed-callsign history fallback, labelled usual. Preserve new route evidence for the same airframe when a slightly older position is returned. No changes to other tabs, alerts, API credentials or receiver services.
 
 # v1.10.37 — ADSBHub SBS decoding fix
 
