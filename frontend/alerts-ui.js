@@ -8,19 +8,19 @@ const providers=[
  {id:'adsblol',name:'adsb.lol',url:'https://api.adsb.lol/v2',hint:'Ready for your feeder key when eligible. No key needed until then.'},
  {id:'avioadsb',name:'AvioADSB',url:'https://avioadsb.org/v1',hint:'Flights only. Claim your feeding station and create a contributor key on avioadsb.org/dashboard.'},
  {id:'adsbiq',name:'ADSBiq',url:'https://api.adsbiq.com/v2/all',hint:'Flights only. Enable ADSBiq in ADSB.im, claim your station at adsbiq.com/join and copy your dashboard API key.'},
- {id:'adsbfi',name:'adsb.fi',url:'https://opendata.adsb.fi/api',hint:'Free public API; worldwide snapshot access uses your feeder IP.',keyless:true}
+ {id:'adsbfi',name:'adsb.fi',url:'https://opendata.adsb.fi/api',hint:'Free public API; worldwide snapshot access uses your feeder IP.',keyless:true},
+ {id:'airplaneslive',name:'airplanes.live',keyless:true,url:'https://api.airplanes.live/v2/reg/',hint:'Flights only. Test connection from your feeder network to enable conservative registration lookups.'},
+ {id:'opensky',name:'OpenSky Network',oauth:true,url:'https://opensky-network.org/api/states/all',hint:'Flights only. Create an OAuth API client on the OpenSky account page. Written permission for automated live use is required.'}
 ];
 const otherSources=[
- {id:'airplaneslive',name:'airplanes.live',keyless:true,url:'https://airplanes.live/api-docs/',hint:'Public API; not integrated into Airspace Analytics.'},
  {id:'adsbhub',name:'ADSBHub',keyless:true,url:'https://www.adsbhub.org/howtogetdata.php',hint:'IP-authorized data stream, not a REST API. Not integrated.'},
- {id:'opensky',name:'OpenSky Network',url:'https://opensky-network.org/',hint:'OAuth API credentials; not integrated.'},
  {id:'fr24',name:'Flightradar24',url:'https://fr24api.flightradar24.com/',hint:'Separate API subscription; feeder sharing key is not an API key. Not integrated.'},
  {id:'flightaware',name:'FlightAware',url:'https://www.flightaware.com/commercial/aeroapi/',hint:'AeroAPI; separate API access. Not integrated.'},
  {id:'adsbx',name:'ADS-B Exchange',url:'https://www.adsbexchange.com/',hint:'Separate API access. Not integrated.'},
  {id:'airnav',name:'AirNav Radar',url:'https://www.airnavradar.com/',hint:'Separate API access. Not integrated.'},
  {id:'planefinder',name:'Plane Finder',url:'https://planefinder.net/',hint:'No verified free feeder API integration.'},
  {id:'flightdeck',name:'FlightDeck',url:'https://www.tryflightdeck.com/',hint:'No verified free feeder API integration.'},
- {id:'dataero',name:'Dataero',url:'https://radar.dataero.eu/contribute',hint:'No verified free feeder API integration.'}
+ {id:'dataero',name:'Dataero',url:'https://radar.dataero.eu/contribute',hint:'Free feeder API advertised; authenticated read API documentation needed before integration.'}
 ];
 let alertsData=null,alertsTimer=null,editingRule=null,alertsBusy=false;
 const pendingProviders=new Set();
@@ -74,7 +74,8 @@ function providerCard(p,d){
   '<form class="alert-config-content alert-provider-form" data-provider="'+p.id+'" autocomplete="off">'+
   '<div class="alert-provider-endpoint"><span>API endpoint</span><code>'+ae(p.url)+'</code></div>'+
   '<p class="alert-provider-note">'+ae(p.hint)+'</p>'+
-  (p.keyless?'':'<label class="alert-field alert-wide">API key <small>'+(saved?'Key saved on server. Enter a replacement only if needed.':'Paste your API key.')+'</small>'+
+  (p.oauth?'<label class="alert-field">OAuth client ID<input name="client_id" autocomplete="off" placeholder="Client ID"></label><label class="alert-clear"><input name="permission" type="checkbox"> I have written permission for automated OpenSky use</label>':'')+
+  (p.keyless?'':'<label class="alert-field alert-wide">'+(p.oauth?'OAuth client secret':'API key')+' <small>'+(saved?'Key saved on server. Enter a replacement only if needed.':'Paste your API key.')+'</small>'+
   '<span class="alert-secret-row"><input name="key" type="password" autocomplete="new-password" placeholder="'+(saved?'Key saved — enter replacement':'Paste API key')+'"><button type="button" class="btn small" data-showkey="'+p.id+'">Show</button></span></label>')+
   '<div class="alert-editor-buttons">'+(p.keyless?'':'<button class="btn primary" type="submit">Save key</button>')+
   '<button class="btn small" type="button" '+(p.id==='adsbfi'?'id="alertAdsbfiTest" ':'')+'data-test-provider="'+p.id+'">Test connection</button>'+
@@ -210,7 +211,7 @@ function bindAlerts(){
   form.onsubmit=e=>{
    e.preventDefault();const key=form.elements.key?.value.trim();
    if(!key){providerFeedback(id,'Enter an API key first.',true);return;}
-   act(()=>alertApi('/api/alerts/'+id,{key} ),()=>{form.elements.key.value='';return 'Key saved. Test connection to verify.'});
+   act(()=>alertApi('/api/alerts/'+id,{key,...(id==='opensky'?{client_id:form.elements.client_id.value.trim(),permission:form.elements.permission.checked}:{})} ),()=>{form.elements.key.value='';return 'Key saved. Test connection to verify.'});
   };
   const show=form.querySelector('[data-showkey]');
   if(show)show.onclick=()=>{const input=form.elements.key;input.type=input.type==='password'?'text':'password';show.textContent=input.type==='password'?'Show':'Hide';};
