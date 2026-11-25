@@ -8,10 +8,10 @@ import threading
 import time
 from . import alerts, flights_log, flights_live
 
-PERIOD = 35
+PERIOD = 15
 SHEET_PERIOD = 6 * 3600  # SheetDB free quota is only 500 calls/month
-LIVE_TTL = 45
-AIRPORT_TTL = 24 * 3600
+LIVE_TTL = 120
+AIRPORT_TTL = 7 * 24 * 3600
 MAX_TRACKED = 400
 PATH = alerts.STATE_DIR / 'flights-live.json'
 _lock = threading.Lock()
@@ -33,7 +33,34 @@ def _airport(item, now):
 
 
 def _merge(old, item, now):
-    entry = dict(item, _checked_at=now)
+    old=old or {}
+    # Local sightings are independent of the external network and must never
+    # disappear when a database query or remote provider temporarily fails.
+    item=dict(item)
+    if (old.get('local_last_seen_at') or 0) > (item.get('local_last_seen_at') or 0):
+        item.update(local_last_seen_at=old['local_last_seen_at'],local_hex=old.get('local_hex',''))
+    old_stamp=old.get('last_observed_at') or old.get('_checked_at',0)
+    new_stamp=item.get('last_observed_at') or item.get('last_landed_at') or 0
+    # A negative response from a different network is not evidence of a change.
+    # Preserve recent airborne data, without resetting the observation clock.
+    if str(old.get('status','')).startswith('Flying') and 0<=now-old_stamp<=LIVE_TTL:
+        if not new_stamp or new_stamp<old_stamp:
+            result=dict(old)
+            for k in ('local_last_seen_at','local_hex'):
+                if item.get(k):result[k]=item[k]
+            return result
+    # Retain a more recent observed landing instead of replacing it with an
+    # older nightly-history record. This also preserves the original timestamp.
+    old_code,old_airport_stamp=_airport(old,now)
+    new_airport_stamp=item.get('last_landed_at') or 0
+    if old_code and new_airport_stamp and new_airport_stamp<old_airport_stamp and not item.get('hex'):
+        result=dict(old)
+        for k in ('local_last_seen_at','local_hex'):
+            if item.get(k):result[k]=item[k]
+        return result
+    entry = dict(item, _checked_at=item.get('last_observed_at') or now)
+    if not item.get('last_observed_at') and item.get('status')=='N/A' and old.get('status')=='N/A':
+        entry['_checked_at']=old.get('_checked_at',now)
     # Keep the route across rotating position sources and short reception gaps.
     # A changed callsign or observed ground position invalidates this memory.
     memory=(old or {}).get('_route_memory')
@@ -54,7 +81,7 @@ def _merge(old, item, now):
     code, stamp = _airport(entry, now)
     last_airborne = (old or {}).get('_last_airborne', 0)
     if str(entry.get('status', '')).startswith('Flying'):
-        last_airborne = now
+        last_airborne = max(last_airborne,entry.get('last_observed_at') or now)
     entry['_last_airborne'] = last_airborne
     if code and stamp < last_airborne:
         entry.update(status='N/A', at_airport='', last_landed_at=None)
@@ -81,7 +108,7 @@ def _public(item, now):
     evidence = entry.pop('_airport_evidence', None)
     entry.pop('_last_airborne', None)
     entry.pop('_route_memory', None)
-    if now-checked > LIVE_TTL:
+    if now-(entry.get('last_observed_at') or checked) > LIVE_TTL:
         code, stamp = _airport(item, now)
         if code and evidence and 0 <= now-evidence <= AIRPORT_TTL:
             entry.update(status='Last landed '+code, at_airport=code,
@@ -134,13 +161,14 @@ def _refresh(regs):
     snapshot = flights_live.snapshot(','.join(batch))
     now = time.time()
     with _lock:
+        previous=dict(_entries)
         for reg, item in snapshot.get('aircraft', {}).items():
             _entries[reg] = _merge(_entries.get(reg), item, now)
         for reg in list(_entries):
             if reg not in regs:
                 del _entries[reg]
         saved = dict(_entries)
-    _save(saved)
+    if saved!=previous:_save(saved)
 
 
 def _run():
