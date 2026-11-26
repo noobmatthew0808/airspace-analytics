@@ -4,7 +4,7 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const names={avio:'AvioADSB',vdliq:'vdlIQ',airframes:'Airframes.io',drama:'ACARS Drama'};
 const cfg=[
  {id:'avio',name:names.avio,url:'https://avioadsb.org/docs/protocols/acars',hint:'Uses your existing AvioADSB key from ADS-B providers, or limited anonymous access. ACARS / VDL2 / HFDL, latest hour only.',reuse:true},
- {id:'vdliq',name:names.vdliq,url:'https://www.vdliq.com/api/docs',hint:'Uses your existing ADSBiq key by default. A separate datalink feeder key is optional. Historical registration/ICAO searches and recent messages; free-tier polling is limited to once per five minutes.'},
+ {id:'vdliq',name:names.vdliq,url:'https://www.vdliq.com/api/docs',hint:'Uses your existing ADSBiq key by default, or feeder-IP authentication if no key is saved. A separate datalink feeder key is optional. Historical registration/ICAO searches and recent messages; free-tier polling is limited to once per five minutes.'},
  {id:'airframes',name:names.airframes,url:'https://docs.airframes.io/api/authentication/',hint:'Free API key for active Airframes datalink feeders after at least seven days. Email api@airframes.io with your station ID. Historical and recent aircraft messages.'},
  {id:'drama',name:names.drama,url:'https://acarsdrama.com/',hint:'Complimentary Jumpseat access for ACARS Drama feeders. Email feeders@acarsdrama.com once feeding, then obtain your Jumpseat API key. No paid subscription is required for eligible feeders.'}
 ];
@@ -19,9 +19,9 @@ const opts=(xs,sel)=>xs.map(x=>'<option value="'+x+'" '+(x===sel?'selected':'')+
 let timer=null,generation=0,activeId='',last=null,busy=false,signature='',previous={query:'',kind:'auto',hours:12};
 
 function settingsCard(p,d){
- const state=d?.providers?.[p.id]||{},t=state.test||{},keyless=p.id==='avio'&&!state.key_set;
+ const state=d?.providers?.[p.id]||{},t=state.test||{},keyless=['avio','vdliq'].includes(p.id)&&!state.key_set;
  const status=t.ok===true?'verified':t.ok===false?'missing':state.key_set?'saved':keyless?'pending':'missing';
- const desc=t.ok===true?'Verified':t.ok===false?'Test failed':state.reused_key?'Existing key · Not tested':state.key_set?'Key saved · Not tested':keyless?'No key required · Limited tier':'No key saved';
+ const desc=t.ok===true?'Verified':t.ok===false?'Test failed':state.reused_key?'Existing key · Not tested':state.key_set?'Key saved · Not tested':keyless?'Try anonymous / feeder IP access':'No key saved';
  return '<details class="foldout alert-config alert-provider" id="acars-provider-'+p.id+'"><summary class="alert-api-summary">'+providerIcons(keyless,status)+'<span><strong>'+esc(p.name)+'</strong><small>'+esc(desc)+'</small></span></summary>'+
  '<form class="alert-config-content acars-provider-form" data-acars-provider="'+p.id+'" autocomplete="off">'+
  '<p class="alert-provider-note">'+esc(p.hint)+'</p><a class="btn small" href="'+esc(p.url)+'" target="_blank" rel="noopener noreferrer">Setup / documentation</a>'+
@@ -42,7 +42,7 @@ export function mountAcarsSettings(host){
   for(const form of host.querySelectorAll('form[data-acars-provider]')){
    const p=form.dataset.acarsProvider;
    const draft=drafts.find(x=>x[0]===p);
-   if(draft&&form.elements.key&&p!==feedback?.id)form.elements.key.value=draft[1];
+   if(draft&&form.elements.key&&(p!==feedback?.id||feedback.error))form.elements.key.value=draft[1];
    const result=form.querySelector('[role=status]');
    if(feedback?.id===p){result.textContent=feedback.text;result.className='alert-provider-result '+(feedback.error?'is-error':'is-good');}
    const action=async(path,payload,msg)=>{
@@ -91,7 +91,7 @@ function renderMessages(s){
  host.innerHTML=s.messages.map((m,i)=>{
   const id=esc(m.timestamp+'-'+m.id+'-'+m.sources[0]);
   const sources=m.sources.map(p=>names[p]||p).join(' · ');
-  return '<details class="acars-message" data-message-key="'+id+'" '+(open.has(m.timestamp+'-'+m.id+'-'+m.sources[0])?'open':'')+'><summary><div class="acars-message-head"><strong>'+esc([m.reg,m.flight].filter(Boolean).join(' · ')||s.query)+'</strong><time>'+esc(time(m.timestamp))+'</time></div><div class="acars-message-meta">'+esc([m.protocol,m.label,sources,m.match==='linked airframe'?'Linked airframe':''].filter(Boolean).join(' · '))+'</div><div class="acars-message-text">'+esc(m.text)+'</div></summary><div class="acars-message-details"><span>Raw message</span><pre>'+esc(m.text)+'</pre><div>'+esc([m.direction,m.hex&&'ICAO '+m.hex.toUpperCase(),sources].filter(Boolean).join(' · '))+'</div></div></details>';
+  return '<details class="acars-message" data-message-key="'+id+'" '+(open.has(m.timestamp+'-'+m.id+'-'+m.sources[0])?'open':'')+'><summary><div class="acars-message-head"><strong>'+esc([m.reg,m.flight].filter(Boolean).join(' · ')||s.query)+'</strong><time>'+esc(time(m.timestamp))+'</time></div><div class="acars-message-meta">'+esc([m.protocol,m.label,sources,m.match==='linked airframe'?'Linked airframe':''].filter(Boolean).join(' · '))+'</div><div class="acars-message-text">'+esc(m.text)+'</div></summary><div class="acars-message-details"><span>Message text</span><pre>'+esc(m.text)+'</pre><div>'+esc([m.direction,m.hex&&'ICAO '+m.hex.toUpperCase(),sources].filter(Boolean).join(' · '))+'</div></div></details>';
  }).join('');
 }
 async function trackingList(gen){
