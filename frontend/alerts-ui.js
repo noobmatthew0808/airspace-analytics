@@ -239,14 +239,14 @@ async function refreshSettingsProviders(host){
  host.innerHTML=settingsProviderMarkup(d);
  for(const id of open){const el=document.getElementById(id);if(el)el.open=true;}
  bindSettingsProviders(host);
- for(const draft of drafts){if(pendingProviders.has(draft.id))continue;const form=host.querySelector('.alert-provider-form[data-provider="'+draft.id+'"]');if(!form)continue;if(form.elements.key)form.elements.key.value=draft.key;if(form.elements.client_id)form.elements.client_id.value=draft.client;if(form.elements.permission)form.elements.permission.checked=draft.permission;}
+ for(const draft of drafts){const form=host.querySelector('.alert-provider-form[data-provider="'+draft.id+'"]');if(!form)continue;if(form.elements.key)form.elements.key.value=draft.key;if(form.elements.client_id)form.elements.client_id.value=draft.client;if(form.elements.permission)form.elements.permission.checked=draft.permission;}
 }
 function bindSettingsProviders(host){
  host.querySelectorAll('.alert-provider-form').forEach(form=>{
   const id=form.dataset.provider;
   const keepOpen=()=>['alertAllConfig','alertApis','alert-'+id].forEach(k=>{const el=document.getElementById(k);if(el)el.open=true;});
   const act=async(work,message)=>{
-   if(pendingProviders.has(id))return;
+   if(pendingProviders.size)return;
    pendingProviders.add(id);
    form.querySelectorAll('button').forEach(b=>b.disabled=true);
    providerFeedback(id,'Working…');
