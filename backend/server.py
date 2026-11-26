@@ -21,7 +21,7 @@ import sys
 import time
 import traceback
 
-from . import data, alerts, healthchecks, live_terminal, live_details, flights_log, flights_live, flights_cache, shared_settings
+from . import data, alerts, healthchecks, live_terminal, live_details, flights_log, flights_live, flights_cache, shared_settings, acars
 
 BASE = Path(__file__).resolve().parents[1]
 STATIC = BASE / 'frontend'
@@ -133,6 +133,8 @@ class App(BaseHTTPRequestHandler):
         if path=='/api/live/terminal': return live_terminal.stream(self)
         if path=='/api/live/details': return self.send_json(live_details.details(q))
         if path=='/api/alerts': return self.send_json(alerts.snapshot())
+        if path=='/api/acars/settings': return self.send_json(acars.settings())
+        if path=='/api/acars/session': return self.send_json(acars.read(q.get('id','')))
         if path=='/api/preferences': return self.send_json(shared_settings.read())
         if path=='/api/flights/records': return self.send_json(flights_log.read_cached(force=q.get('refresh')=='1'))
         if path=='/api/flights/live': return self.send_json(flights_cache.read(q.get('regs','')))
@@ -189,7 +191,7 @@ class App(BaseHTTPRequestHandler):
 
     def alerts_post(self, path):
         """Same-origin, trusted-LAN-only control plane for personal alert rules."""
-        if path not in ('/api/preferences','/api/alerts/rule','/api/alerts/delete','/api/alerts/ntfy','/api/alerts/test','/api/alerts/receiver','/api/alerts/receiver/check','/api/alerts/flyitaly','/api/alerts/flyitaly/check','/api/alerts/adsblol','/api/alerts/adsblol/check','/api/alerts/adsbfi/check','/api/alerts/avioadsb','/api/alerts/avioadsb/check','/api/alerts/adsbiq','/api/alerts/adsbiq/check','/api/alerts/opensky','/api/alerts/opensky/check','/api/alerts/airplaneslive/check','/api/alerts/adsbhub/check'):
+        if path not in ('/api/preferences','/api/alerts/rule','/api/alerts/delete','/api/alerts/ntfy','/api/alerts/test','/api/alerts/receiver','/api/alerts/receiver/check','/api/alerts/flyitaly','/api/alerts/flyitaly/check','/api/alerts/adsblol','/api/alerts/adsblol/check','/api/alerts/adsbfi/check','/api/alerts/avioadsb','/api/alerts/avioadsb/check','/api/alerts/adsbiq','/api/alerts/adsbiq/check','/api/alerts/opensky','/api/alerts/opensky/check','/api/alerts/airplaneslive/check','/api/alerts/adsbhub/check','/api/acars/search','/api/acars/track','/api/acars/key','/api/acars/check','/api/acars/stop'):
             return self.send_json({'error':'Unknown endpoint'},404)
         origin=self.headers.get('Origin','')
         host=self.headers.get('Host','')
@@ -212,6 +214,11 @@ class App(BaseHTTPRequestHandler):
         if not isinstance(payload,dict):raise ValueError('Expected a JSON object')
         if path=='/api/preferences':
             return self.send_json(shared_settings.update(payload))
+        if path=='/api/acars/search': return self.send_json(acars.search(payload))
+        if path=='/api/acars/track': return self.send_json(acars.track(payload))
+        if path=='/api/acars/key': return self.send_json(acars.save_key(payload.get('provider'),payload))
+        if path=='/api/acars/check': return self.send_json(acars.test(payload.get('provider')))
+        if path=='/api/acars/stop': return self.send_json(acars.stop(payload))
         if path=='/api/alerts/rule':
             return self.send_json({'ok':True,'id':alerts.save_rule(payload)})
         if path=='/api/alerts/delete':
@@ -286,7 +293,7 @@ class App(BaseHTTPRequestHandler):
         path, _=self.get_query()
         if path.startswith('/api/flights/'):
             return self.flights_post(path)
-        if path=='/api/preferences' or path.startswith('/api/alerts/'):
+        if path=='/api/preferences' or path.startswith(('/api/alerts/','/api/acars/')):
             return self.alerts_post(path)
         if path not in ('/api/update/apply','/api/update/rollback'):
             return self.send_json({'error':'Unknown endpoint'},404)
@@ -363,6 +370,7 @@ def run():
     alerts.start()
     flights_log.start_cache()
     flights_cache.start()
+    acars.start()
     print(f'Airspace Analytics v{VERSION} on http://{host}:{port}; Aerodrome DB {data.db_path()}',flush=True)
     try: server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt: pass
