@@ -28,6 +28,8 @@ _busy=set()
 _next={}
 _started=False
 _test_busy=set()
+_resolving=set()
+_resolve_next=0.
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):return None
@@ -74,7 +76,14 @@ def _key(c,name):
     if name=='avio':return alerts._avio_key(c)
     row=c.execute('SELECT value FROM config WHERE key=?',('acars_key_'+name,)).fetchone()
     key=row['value'] if row else ''
+    if name=='vdliq':
+        mode=c.execute("SELECT value FROM config WHERE key='acars_vdliq_auth'").fetchone()
+        if mode and mode['value']=='ip':return ''
     return key or (alerts._adsbiq_key(c) if name=='vdliq' else '')
+
+def _cooldown(p):
+    return max(0,math.ceil(_next.get(p,0)-time.monotonic()),
+               math.ceil(api_budget.remaining(BUDGET_NAMES[p])) if p in BUDGET_NAMES else 0)
 
 def _fingerprint(key):
     return hashlib.sha256(key.encode()).hexdigest()
@@ -89,7 +98,8 @@ def settings():
             except (TypeError,ValueError):t={}
             if t.get('fingerprint')!=_fingerprint(k):t={}
             custom=c.execute('SELECT value FROM config WHERE key=?',('acars_key_'+p,)).fetchone()
-            result[p]={'key_set':bool(k),'custom_key':bool(custom and custom['value']),
+            mode=c.execute("SELECT value FROM config WHERE key='acars_vdliq_auth'").fetchone() if p=='vdliq' else None
+            result[p]={'key_set':bool(k),'ip_only':bool(mode and mode['value']=='ip'),'retry_seconds':_cooldown(p),'custom_key':bool(custom and custom['value']),
                        'reused_key':bool(k and (p=='avio' or p=='vdliq' and not custom)),
                        'test':{x:t[x] for x in ('ok','at','message') if x in t}}
         public,_=alerts.notifier(c)
@@ -97,9 +107,16 @@ def settings():
 
 def save_key(p,data):
     if p not in ('vdliq','airframes','drama'):raise ValueError('Use the existing AvioADSB key in ADS-B settings')
+    if p=='vdliq' and data.get('mode') in ('ip','existing'):
+        with alerts._lock,alerts.connect() as c:
+            c.execute('DELETE FROM config WHERE key=?',('acars_key_vdliq',))
+            c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',('acars_vdliq_auth',data['mode']))
+            c.execute('DELETE FROM config WHERE key=?',('acars_test_vdliq',))
+        return {'ok':True}
     key='' if data.get('clear') else str(data.get('key','')).strip()
     if not data.get('clear') and (not key or len(key)>512 or not re.fullmatch(r'[\x21-\x7e]+',key)):raise ValueError('Enter a valid API key')
     with alerts._lock,alerts.connect() as c:
+        if p=='vdliq':c.execute("DELETE FROM config WHERE key='acars_vdliq_auth'")
         if key:c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',('acars_key_'+p,key))
         else:c.execute('DELETE FROM config WHERE key=?',('acars_key_'+p,))
         c.execute('DELETE FROM config WHERE key=?',('acars_test_'+p,))
@@ -171,7 +188,7 @@ def _normal(p,row):
 def _match(row,raw,kind,aliases=()):
     if kind=='reg':return ident(row['reg'])==ident(raw)
     if kind=='hex':return raw.lower() in [row['hex'],*row['endpoints']]
-    return flight_ident(row['flight'])==flight_ident(raw) or flight_ident(row.get('callsign'))==flight_ident(raw) or (row['flight'] and flight_ident(row['flight']) in aliases)
+    return flight_ident(row['flight'])==flight_ident(raw) or flight_ident(row.get('callsign'))==flight_ident(raw) or (row['flight'] and flight_ident(row['flight']) in aliases) or bool(re.search(r'(?<![A-Z0-9])'+re.escape(raw)+r'(?![A-Z0-9])',row.get('text','').upper()))
 
 def _identity(raw,kind):
     if kind=='reg':return {'reg':raw,'hex':'','aliases':[]}
@@ -196,6 +213,47 @@ def _identity(raw,kind):
         r,h=next(iter(ids));return {'reg':r,'hex':h if re.fullmatch(r'[a-f0-9]{6}',h) else '','aliases':[]}
     return {'reg':'','hex':'','aliases':[]}
 
+def _resolve_callsign(call,opener=None):
+    """Resolve the current commercial flight using the documented adsb.fi endpoint.
+    This is independent of the datalink provider's five-minute allowance."""
+    local=_identity(call,'flight')
+    if local.get('reg') or local.get('hex'):return local
+    req=Request('https://opendata.adsb.fi/api/v2/callsign/'+quote(call,safe=''),
+                headers={'Accept':'application/json','User-Agent':'AirspaceAnalytics-Flights/4'})
+    with (opener or (lambda r,timeout:api_budget.open_request('adsb.fi',_open,r,timeout)))(req,timeout=8) as resp:
+        raw=resp.read(MAX_BYTES+1)
+    if len(raw)>MAX_BYTES:raise ValueError('Identity response too large')
+    payload=json.loads(raw)
+    if not isinstance(payload,dict) or not isinstance(payload.get('ac'),list):raise ValueError('Invalid identity response')
+    now=_stamp(payload.get('now'))
+    if now is None or not -10<=time.time()-now<=60:raise ValueError('Stale aircraft snapshot')
+    pairs=set()
+    for p in payload['ac']:
+        if not isinstance(p,dict) or flight_ident(p.get('flight'))!=flight_ident(call):continue
+        age=p.get('seen')
+        if not isinstance(age,(int,float)) or not 0<=age<=120:continue
+        r=str(p.get('r') or '').strip().upper()
+        h=str(p.get('hex') or '').lower()
+        if not re.fullmatch(r'[A-Z0-9-]{2,16}',r):r=''
+        if not re.fullmatch(r'[a-f0-9]{6}',h):h=''
+        if r or h:pairs.add((r,h))
+    if len(pairs)==1:
+        r,h=next(iter(pairs))
+        return {'reg':r,'hex':h,'aliases':[]}
+    return {'reg':'','hex':'','aliases':[]}
+
+def _resolve_session(s):
+    try:
+        found=_resolve_callsign(s['query'])
+        with _lock:
+            if _sessions.get(s['id']) is s and (found['reg'] or found['hex']):
+                s['identity'].update(found)
+    except (ValueError,OSError,TypeError):pass
+    finally:
+        with _lock:
+            s['identity_checked']=True
+            _resolving.discard(s['id'])
+
 def fetch(p,raw,kind,since,until,key,identity,history=True,opener=None):
     """Return exact matches plus limitations. No broad archived firehose requests."""
     params={'limit':100}
@@ -205,10 +263,13 @@ def fetch(p,raw,kind,since,until,key,identity,history=True,opener=None):
     if p=='avio':
         field={'reg':'tail','flight':'flight','hex':'hex'}[kind]
         value=raw
-        if kind=='flight' and (hx or reg):field,value=('hex',hx) if hx else ('tail',reg)
+        if kind=='flight':
+            # The flight filter expects the datalink identifier, not the ATC callsign.
+            field,value=('hex',hx) if hx else ('tail',reg) if reg else ('q',raw)
         params.update({field:value,'limit':50})
         payload=_request(p,params=params,key=key,opener=opener)
         if since<until-3600:note='Provider retains only the latest hour.'
+        if kind=='flight' and not (hx or reg):note+=' Callsign unresolved; searching message text only.'
     elif p=='vdliq':
         if hx:path='/hex/'+quote(hx,safe='')
         elif reg:path='/tail/'+quote(reg,safe='')
@@ -217,7 +278,8 @@ def fetch(p,raw,kind,since,until,key,identity,history=True,opener=None):
             # can still find exact flight identifiers, never scan global history.
             path='/recent'
             note='No resolved airframe; searching bounded recent messages only. Search by registration for full history.'
-        params.update(since=int(since),until=int(until),limit=500)
+        params.update(since=int(since),limit=500)
+        if path!='/recent':params['until']=int(until)
         if history and path!='/recent':params['history']=1
         payload=_request(p,path,params,key,opener)
     elif p=='airframes':
@@ -306,7 +368,7 @@ def _public(s):
             'since':s['since'],'tracking_until':s['tracking_until'],'notify_count':s['notify_count'],
             'notify_error':s['notify_error'],'identity':dict(s['identity']),
             'messages':[{k:v for k,v in m.items() if k not in ('source_ids','endpoints')} for m in s['messages']],
-            'providers':{p:dict(x) for p,x in s['providers'].items()}}
+            'providers':{p:dict(x,retry_seconds=_cooldown(p)) for p,x in s['providers'].items() if x['state']!='Key required'}}
 
 def _clean_sessions(now):
     for id,s in list(_sessions.items()):
@@ -327,7 +389,7 @@ def search(data):
         id=secrets.token_hex(12)
         s={'id':id,'query':raw,'kind':kind,'hours':hours,'since':now-hours*3600,
            'touched':now,'tracking_until':0,'tracking_start':0,'notify_count':0,'notify_error':'',
-           'identity':identity,'messages':[],'providers':{p:{'state':'Waiting','next':0,'last':0,'note':''} for p in PROVIDERS}}
+           'identity':identity,'identity_checked':kind!='flight' or bool(identity.get('reg') or identity.get('hex')),'messages':[],'providers':{p:{'state':'Waiting' if p in ('avio','vdliq') else 'Key required','next':0,'last':0,'note':''} for p in PROVIDERS}}
         _sessions[id]=s
         return _public(s)
 
@@ -388,13 +450,20 @@ def _notify(s,rows,opener=None):
 def _available(p,key):
     return bool(key) or p in ('avio','vdliq')
 
+def _save_test(p,key,ok,message):
+    with alerts._lock,alerts.connect() as c:
+        if _key(c,p)==key:
+            c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',('acars_test_'+p,json.dumps({'fingerprint':_fingerprint(key),'ok':ok,'message':message,'at':int(time.time())})))
+
 def test(p):
     if p not in PROVIDERS:raise ValueError('Unknown datalink source')
     with alerts._lock,alerts.connect() as c:key=_key(c,p)
     if not _available(p,key):raise ValueError('Save the API key first')
     with _lock:
         now=time.monotonic()
-        if p in _busy or p in _test_busy or now<_next.get(p,0):raise ValueError('Provider is cooling down; try later')
+        wait=_cooldown(p)
+        if p in _busy or p in _test_busy or wait:
+            return {'ok':False,'pending':True,'retry_seconds':max(5,wait),'message':'Request in progress or cooldown. Next test in about '+str(max(5,wait))+' seconds. A successful search also verifies access.'}
         _test_busy.add(p);_next[p]=now+(900 if p=='avio' and not key else INTERVAL[p])
     try:
         if p=='avio':payload=_request(p,params={'limit':1},key=key)
@@ -408,9 +477,7 @@ def test(p):
     finally:
         with _lock:_test_busy.discard(p)
     if 'cooldown' not in message and 'rate limited' not in message and 'HTTP 429' not in message:
-        with alerts._lock,alerts.connect() as c:
-            if _key(c,p)==key:
-                c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',('acars_test_'+p,json.dumps({'fingerprint':_fingerprint(key),'ok':ok,'message':message,'at':int(time.time())})))
+        _save_test(p,key,ok,message)
     if not ok:raise ValueError(message)
     return {'ok':True,'message':message,'count':len(rows)}
 
@@ -454,6 +521,8 @@ def _work(p,s,key):
             if s['providers'][p].get('identity')!=(identity.get('reg'),identity.get('hex')):
                 first=True;since=s['since']
         rows,note=fetch(p,s['query'],s['kind'],since,now,key,identity,first)
+        if not note.startswith(('Airframe ICAO unknown','Registration needed')):
+            _save_test(p,key,True,'Message endpoint verified by background search')
         with _lock:
             if _sessions.get(s['id']) is not s:return
             for k in ('reg','hex'):
@@ -468,8 +537,8 @@ def _work(p,s,key):
                     if len(h)==1:s['identity']['hex']=next(iter(h))
             fresh=_merge(s,rows,now)
             # A missing identity is not a successful archive search.
-            state='Limited' if note.startswith(('Airframe ICAO unknown','Registration needed','No resolved airframe')) else 'Connected'
-            s['providers'][p].update(state=state,last=now,note=note,identity=(identity.get('reg'),identity.get('hex')))
+            state='Limited' if ('Callsign unresolved' in note or note.startswith(('Airframe ICAO unknown','Registration needed','No resolved airframe'))) else 'Connected'
+            s['providers'][p].update(state=state,last=now,note=note,matched=len(rows),identity=(identity.get('reg'),identity.get('hex')))
         # Delivery is separate from fetching, so slow notifications cannot block data sources.
         with _lock:
             if s['tracking_start'] and time.time()<s['tracking_until']:
@@ -479,22 +548,30 @@ def _work(p,s,key):
     except (ValueError,OSError,TypeError,KeyError) as e:
         message=str(e)
         safe=re.search(r'HTTP \d{3}|rate limited|Network or invalid JSON response|Unexpected message response format|Response too large|API key required',message)
-        with _lock:s['providers'][p].update(state='Unavailable',note=safe.group(0) if safe else 'Provider lookup failed')
+        with _lock:s['providers'][p].update(state='Cooling down' if '429' in message or 'rate limited' in message else 'Unavailable',note=safe.group(0) if safe else 'Provider lookup failed')
     finally:
         with _lock:_busy.discard(p)
 
 def tick():
+    global _resolve_next
     now=time.time();mono=time.monotonic()
     with alerts._lock,alerts.connect() as c:keys={p:_key(c,p) for p in PROVIDERS}
     with _lock:
         _clean_sessions(now)
+        pending=[s for s in _sessions.values() if s['kind']=='flight' and not s.get('identity_checked')]
+        if pending and not _resolving and mono>=_resolve_next and api_budget.remaining('adsb.fi')<=0:
+            s=pending[0];_resolve_next=mono+60;_resolving.add(s['id'])
+            threading.Thread(target=_resolve_session,args=(s,),daemon=True,name='airspace-acars-identity').start()
         for p in PROVIDERS:
             if not _available(p,keys[p]):
                 for s in _sessions.values():s['providers'][p].update(state='Key required',note='Configure in Settings → APIs')
                 continue
-            if p in _busy or p in _test_busy or mono<_next.get(p,0):continue
-            if p in BUDGET_NAMES and api_budget.remaining(BUDGET_NAMES[p])>0:continue
-            due=[s for s in _sessions.values() if s['providers'][p]['next']<=mono]
+            if p in _busy or p in _test_busy:continue
+            if _cooldown(p):
+                for s in _sessions.values():
+                    if s['providers'][p]['state'] in ('Waiting','Key required','Cooling down'):s['providers'][p].update(state='Cooling down',note='Waiting for provider allowance')
+                continue
+            due=[s for s in _sessions.values() if s['providers'][p]['next']<=mono and (s.get('identity_checked',True) or now-s['touched']>15 or now-s['since']-s['hours']*3600>15)]
             if not due:continue
             s=min(due,key=lambda x:x['providers'][p]['next'])
             delay=900 if p=='avio' and not keys[p] else INTERVAL[p]
