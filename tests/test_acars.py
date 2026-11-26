@@ -110,3 +110,40 @@ class AcarsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'HTTP 429'):
             acars._request('drama',opener=limited)
         self.assertGreater(acars._next['drama'],time.monotonic())
+
+    def test_resolve_baw14k_before_history(self):
+        empty={'reg':'','hex':'','aliases':[]}
+        payload={'now':self.now*1000,'ac':[{'r':'G-ZBLD','hex':'abcdef','flight':'BAW14K ','seen':1}]}
+        with patch.object(acars,'_identity',return_value=empty):
+            identity=acars._resolve_callsign('BAW14K',self.opener(payload))
+        self.assertEqual(identity['reg'],'G-ZBLD')
+        row={'timestamp':self.now-4*3600,'icaoHex':'abcdef','tail':'G-ZBLD','flightNumber':'BA0114','uuid':'fixture','sourceType':'VDL2','text':'Synthetic test message'}
+        result,_=acars.fetch('vdliq','BAW14K','flight',self.now-6*3600,self.now,'key',identity,opener=self.opener({'messages':[row]}))
+        self.assertEqual(len(result),1)
+        self.assertEqual(result[0]['match'],'linked airframe')
+        self.assertTrue(urlsplit(self.calls[-1].full_url).path.endswith('/tail/G-ZBLD'))
+        self.assertEqual(parse_qs(urlsplit(self.calls[-1].full_url).query)['history'],['1'])
+
+    def test_cooldown_not_failure_and_ip_auth_is_separate(self):
+        alerts.save_adsbiq({'key':'iq_testkey123'})
+        acars._next['vdliq']=time.monotonic()+120
+        with patch.object(acars,'_request') as request:
+            result=acars.test('vdliq')
+            request.assert_not_called()
+        self.assertTrue(result['pending'])
+        self.assertGreater(result['retry_seconds'],0)
+        self.assertFalse(acars.settings()['providers']['vdliq']['test'])
+        acars.save_key('vdliq',{'mode':'ip'})
+        self.assertTrue(acars.settings()['providers']['vdliq']['ip_only'])
+        with alerts.connect() as c:
+            self.assertEqual(acars._key(c,'vdliq'),'')
+            self.assertEqual(alerts._adsbiq_key(c),'iq_testkey123')
+        acars.save_key('vdliq',{'mode':'existing'})
+        with alerts.connect() as c:self.assertEqual(acars._key(c,'vdliq'),'iq_testkey123')
+
+    def test_unresolved_callsign_text_match_is_labelled(self):
+        row=dict(self.msg(),tail='G-TEST',text='TEST BAW14K')
+        rows,note=acars.fetch('avio','BAW14K','flight',self.now-3600,self.now,'key',{'reg':'','hex':''},opener=self.opener({'messages':[row]}))
+        self.assertEqual(rows[0]['match'],'text match')
+        self.assertEqual(parse_qs(urlsplit(self.calls[0].full_url).query)['q'],['BAW14K'])
+        self.assertIn('Callsign unresolved',note)
