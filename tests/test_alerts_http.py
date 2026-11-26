@@ -93,3 +93,18 @@ class AlertsAPITest(unittest.TestCase):
   updated=self.call('/api/preferences',{'action':'remove_day','day':'2026-11-24'})
   self.assertEqual(updated['excluded_days'],['2026-11-09'])
   self.assertEqual(self.call('/api/preferences'),updated)
+
+ def test_acars_http_search_and_key_redaction(self):
+  from backend import acars
+  secret='secret-test-acars-credential'
+  self.call('/api/acars/key',{'provider':'drama','key':secret})
+  self.assertNotIn(secret,json.dumps(self.call('/api/acars/settings')))
+  session=self.call('/api/acars/search',{'query':'G-TEST','kind':'reg','hours':12})
+  try:
+   self.assertEqual(self.call('/api/acars/session?id='+session['id'])['query'],'G-TEST')
+   with self.assertRaises(HTTPError) as error:
+    self.call('/api/acars/stop',{'id':session['id']},origin='https://evil.example')
+   self.assertEqual(error.exception.code,403)
+  finally:
+   self.call('/api/acars/stop',{'id':session['id']})
+   self.call('/api/acars/key',{'provider':'drama','clear':True})
