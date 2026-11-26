@@ -123,7 +123,7 @@ def _request(p,path='',params=None,key='',opener=None):
             if p=='avio' and opener is None:
                 try:
                     remaining=int(headers.get('X-RateLimit-Remaining','99999'))
-                    if remaining<500:
+                    if remaining<(min(500,max(5,int(headers.get('X-RateLimit-Limit','10000' if key else '100'))//10))):
                         reset=float(headers.get('X-RateLimit-Reset','86400'))
                         with _lock:_next[p]=max(_next.get(p,0),time.monotonic()+max(60,min(reset,2678400)))
                 except (ValueError,TypeError):pass
@@ -153,6 +153,7 @@ def _normal(p,row):
     text=''.join(ch for ch in text if ch in '\n\t' or ord(ch)>=32).strip()[:4000]
     if not text:return None
     reg=str(row.get('tail') or row.get('registration') or aircraft.get('tail') or '').strip().upper()[:20]
+    adsb=row.get('adsb') if isinstance(row.get('adsb'),dict) else {}
     flight=str(row.get('flightNumber') or (row.get('flight') if isinstance(row.get('flight'),str) else '') or '').strip().upper()[:20]
     hexcode=str(row.get('hex') or row.get('icaoHex') or aircraft.get('icao') or '').lower()
     if not re.fullmatch(r'[0-9a-f]{6}',hexcode):hexcode=''
@@ -160,6 +161,7 @@ def _normal(p,row):
     protocol=str(row.get('type') or row.get('sourceType') or row.get('protocol') or '').upper()
     if protocol in ('VDL','VDLM2','VDL MODE 2'):protocol='VDL2'
     return {'timestamp':stamp,'reg':reg,'flight':flight,'hex':hexcode,'endpoints':endpoints,
+            'callsign':str(adsb.get('flight') or '').strip().upper()[:20],
             'protocol':protocol[:20],'label':str(row.get('label') or '')[:12],
             'text':text,'direction':str(row.get('direction') or row.get('linkDirection') or '')[:20],
             'sources':[p],'id':str(row.get('uuid') or row.get('id') or '')[:100],
@@ -169,7 +171,7 @@ def _normal(p,row):
 def _match(row,raw,kind,aliases=()):
     if kind=='reg':return ident(row['reg'])==ident(raw)
     if kind=='hex':return raw.lower() in [row['hex'],*row['endpoints']]
-    return flight_ident(row['flight'])==flight_ident(raw) or (row['flight'] and flight_ident(row['flight']) in aliases)
+    return flight_ident(row['flight'])==flight_ident(raw) or flight_ident(row.get('callsign'))==flight_ident(raw) or (row['flight'] and flight_ident(row['flight']) in aliases)
 
 def _identity(raw,kind):
     if kind=='reg':return {'reg':raw,'hex':'','aliases':[]}
@@ -240,7 +242,19 @@ def fetch(p,raw,kind,since,until,key,identity,history=True,opener=None):
         payload=_request(p,params=params,key=key,opener=opener)
     rows=_rows(p,payload)
     cap=params['limit']
-    if len(rows)>=cap or isinstance(payload,dict) and payload.get('truncated'):
+    if p=='airframes' and history:
+        # Bounded archive pagination using the documented descending ID cursor.
+        page=rows
+        for _ in range(4):
+            if len(page)<100:break
+            cursor=page[-1].get('id') if isinstance(page[-1],dict) else None
+            if not cursor or cursor==params.get('before_id'):break
+            params['before_id']=cursor
+            try:page=_rows(p,_request(p,'/messages',params,key,opener))
+            except ValueError:break
+            rows=rows+page
+        cap=MAX_ROWS
+    if len(rows)>=cap or (p=='airframes' and len(rows)>=100 and len(page if history else rows)>=100) or isinstance(payload,dict) and payload.get('truncated'):
         note=(note+' ' if note else '')+'Result limit reached; history may be incomplete.'
     result=[]
     for row in rows[:cap]:
@@ -326,7 +340,7 @@ def read(id=''):
             s['touched']=time.time()
             _prune(s,time.time())
             return _public(s)
-        return {'tracking':[_public(s) for s in _sessions.values() if s['tracking_until']>time.time()]}
+        return {'tracking':[{k:s[k] for k in ('id','query','kind','hours','tracking_until','notify_count','notify_error')} for s in _sessions.values() if s['tracking_until']>time.time()]}
 
 def stop(data):
     with _lock:
@@ -348,8 +362,9 @@ def track(data):
         if not s:raise ValueError('Search expired; press Send again')
         now=time.time()
         s['tracking_until']=now+duration*3600 if duration else 0
-        s['tracking_start']=now if duration else 0
+        s['tracking_start']=(s['tracking_start'] or now) if duration else 0
         s['touched']=now
+        if not duration:s['pending_notifications']=[]
         return _public(s)
 
 def _notify(s,rows,opener=None):
@@ -371,7 +386,7 @@ def _notify(s,rows,opener=None):
             with _lock:s['notify_error']='ntfy delivery failed; message remains visible in ACARS'
 
 def _available(p,key):
-    return bool(key) or p=='avio'
+    return bool(key) or p in ('avio','vdliq')
 
 def test(p):
     if p not in PROVIDERS:raise ValueError('Unknown datalink source')
@@ -412,7 +427,7 @@ def _work(p,s,key):
         # The datalink flight identifier often differs from the ATC callsign.
         # One bounded documented Avio aircraft lookup can resolve the airframe;
         # the next scheduled datalink query uses that registration/hex.
-        if p=='avio' and s['kind']=='flight' and not (identity.get('hex') or identity.get('reg')) and s['providers'][p].get('resolved_attempt',0)<now-900:
+        if not first and p=='avio' and s['kind']=='flight' and not (identity.get('hex') or identity.get('reg')) and s['providers'][p].get('resolved_attempt',0)<now-900:
             with _lock:s['providers'][p]['resolved_attempt']=now
             try:
                 from . import flights_live
@@ -435,6 +450,9 @@ def _work(p,s,key):
             except (OSError,ValueError,TypeError,AttributeError):pass
             # Never bypass the shared provider cooldown with a second request.
             if api_budget.remaining('AvioADSB')>0:return
+        with _lock:
+            if s['providers'][p].get('identity')!=(identity.get('reg'),identity.get('hex')):
+                first=True;since=s['since']
         rows,note=fetch(p,s['query'],s['kind'],since,now,key,identity,first)
         with _lock:
             if _sessions.get(s['id']) is not s:return
@@ -450,9 +468,14 @@ def _work(p,s,key):
                     if len(h)==1:s['identity']['hex']=next(iter(h))
             fresh=_merge(s,rows,now)
             # A missing identity is not a successful archive search.
-            state='Limited' if note.startswith(('Airframe ICAO unknown','Registration needed')) else 'Connected'
-            s['providers'][p].update(state=state,last=now if state=='Connected' else 0,note=note)
-        _notify(s,fresh)
+            state='Limited' if note.startswith(('Airframe ICAO unknown','Registration needed','No resolved airframe')) else 'Connected'
+            s['providers'][p].update(state=state,last=now,note=note,identity=(identity.get('reg'),identity.get('hex')))
+        # Delivery is separate from fetching, so slow notifications cannot block data sources.
+        with _lock:
+            if s['tracking_start'] and time.time()<s['tracking_until']:
+                q=s.setdefault('pending_notifications',[])
+                q.extend(m for m in fresh if s['tracking_start']<=m['timestamp']<=s['tracking_until'])
+                if len(q)>MAX_ROWS:s['notify_error']='Notification queue full; older messages remain visible in ACARS';del q[MAX_ROWS:]
     except (ValueError,OSError,TypeError,KeyError) as e:
         message=str(e)
         safe=re.search(r'HTTP \d{3}|rate limited|Network or invalid JSON response|Unexpected message response format|Response too large|API key required',message)
@@ -491,3 +514,13 @@ def start():
             except Exception:pass
             time.sleep(5)
     threading.Thread(target=loop,daemon=True,name='airspace-acars').start()
+    def deliver():
+        while True:
+            try:
+                with _lock:
+                    active=next((s for s in _sessions.values() if s['tracking_until']>time.time() and s.get('pending_notifications')),None)
+                    item=active['pending_notifications'].pop(0) if active else None
+                if active:_notify(active,[item])
+            except Exception:pass
+            time.sleep(1)
+    threading.Thread(target=deliver,daemon=True,name='airspace-acars-notify').start()
