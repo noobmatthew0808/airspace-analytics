@@ -1,3 +1,8 @@
+## v1.10.39 — ACARS and datalink tracking
+
+- Added the ACARS search and tracking tab, four source adapters, and centralized API Settings.
+- Added tests, bounded background polling and opt-in ntfy tracking.
+
 # v1.10.38 — restore receiver sightings and improve flight-route enrichment
 
 - Restore the compact Aerodrome last-seen link below each registration, beside the unchanged aligned live status. Retain expanded details and live-only LGW styling.
