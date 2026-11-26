@@ -18,7 +18,7 @@ NAMES={'avio':'AvioADSB','vdliq':'vdlIQ','airframes':'Airframes.io','drama':'ACA
 URLS={'avio':'https://avioadsb.org/v1/acars','vdliq':'https://api.adsbiq.com/v2/messages',
       'airframes':'https://api.airframes.io/v1','drama':'https://api.jumpseat.acarsdrama.com/v1/messages/search'}
 BUDGET_NAMES={'avio':'AvioADSB','vdliq':'ADSBiq'}
-INTERVAL={'avio':180,'vdliq':300,'airframes':60,'drama':120}
+INTERVAL={'avio':300,'vdliq':300,'airframes':60,'drama':120}
 MAX_BYTES=4_000_000
 MAX_ROWS=500
 MAX_SESSIONS=5
@@ -206,7 +206,7 @@ def fetch(p,raw,kind,since,until,key,identity,history=True,opener=None):
         field={'reg':'tail','flight':'flight','hex':'hex'}[kind]
         value=raw
         if kind=='flight' and (hx or reg):field,value=('hex',hx) if hx else ('tail',reg)
-        params.update({field:value,'limit':50 if not key else 500})
+        params.update({field:value,'limit':50})
         payload=_request(p,params=params,key=key,opener=opener)
         if since<until-3600:note='Provider retains only the latest hour.'
     elif p=='vdliq':
