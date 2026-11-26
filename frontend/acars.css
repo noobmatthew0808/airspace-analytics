@@ -61,3 +61,6 @@
  .streamlined-topbar .top-icon-link{width:28px;height:28px;flex-basis:28px}
  .acars-message-head time{font-size:9px}
 }
+
+/* Respect hidden controls even when global button styles set display. */
+.acars-page [hidden]{display:none!important}
