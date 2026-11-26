@@ -133,6 +133,14 @@ class App(BaseHTTPRequestHandler):
         if path=='/api/live/terminal': return live_terminal.stream(self)
         if path=='/api/live/details': return self.send_json(live_details.details(q))
         if path=='/api/alerts': return self.send_json(alerts.snapshot())
+        if path.startswith('/api/acars/'):
+            try:
+                remote=ipaddress.ip_address(self.client_address[0])
+                ranges=('127.0.0.0/8','10.0.0.0/8','172.16.0.0/12','192.168.0.0/16','100.64.0.0/10','::1/128','fc00::/7')
+                if not any(remote in ipaddress.ip_network(prefix) for prefix in ranges):
+                    return self.send_json({'error':'ACARS is only available on your trusted network'},403)
+            except ValueError:
+                return self.send_json({'error':'Invalid client address'},403)
         if path=='/api/acars/settings': return self.send_json(acars.settings())
         if path=='/api/acars/session': return self.send_json(acars.read(q.get('id','')))
         if path=='/api/preferences': return self.send_json(shared_settings.read())
