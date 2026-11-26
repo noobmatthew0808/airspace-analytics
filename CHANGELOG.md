@@ -1,3 +1,8 @@
+# v1.10.40 — ACARS access and search diagnostics
+
+- Resolve current callsigns via adsb.fi before historical datalink searches, use registration and ICAO fallback, distinguish text matches from identity matches, and display provider-specific cooldowns and results. Successful background searches verify message access. Add a separate optional feeder-IP authentication mode for vdlIQ without modifying ADSBiq aircraft credentials.
+- Hide unconfigured feeder-only ACARS providers, retain saved integrations, show data sources by default and hide inactive stop-notification controls. No changes outside ACARS.
+
 ## v1.10.39 — ACARS and datalink tracking
 
 - Added the ACARS search and tracking tab, four source adapters, and centralized API Settings.
