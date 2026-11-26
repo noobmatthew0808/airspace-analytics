@@ -163,6 +163,7 @@ def _normal(p,row):
             'protocol':protocol[:20],'label':str(row.get('label') or '')[:12],
             'text':text,'direction':str(row.get('direction') or row.get('linkDirection') or '')[:20],
             'sources':[p],'id':str(row.get('uuid') or row.get('id') or '')[:100],
+            'source_ids':{p:str(row.get('uuid') or row.get('id') or '')[:100]},
             'sequence':str(row.get('msgNum') or row.get('msgno') or row.get('messageNumber') or '')[:20]}
 
 def _match(row,raw,kind,aliases=()):
@@ -181,9 +182,9 @@ def _identity(raw,kind):
     try:
         # The background cache's public data is keyed by registration.
         with flights_cache._lock:
-            saved=flights_cache._state.copy()
+            saved=flights_cache._entries.copy()
         for reg,item in saved.items():
-            if isinstance(item,dict) and item.get('last_observed_at',0)>=time.time()-120:
+            if isinstance(item,dict) and (item.get('last_observed_at') or 0)>=time.time()-120:
                 candidates.append({'r':reg,'flight':item.get('callsign'),'hex':item.get('hex'),'seen':0})
     except (AttributeError,TypeError,ValueError):pass
     matches=[p for p in candidates if isinstance(p,dict) and flight_ident(p.get('flight'))==flight_ident(raw) and isinstance(p.get('seen'),(float,int)) and 0<=p['seen']<=120]
@@ -201,7 +202,9 @@ def fetch(p,raw,kind,since,until,key,identity,history=True,opener=None):
     note=''
     if p=='avio':
         field={'reg':'tail','flight':'flight','hex':'hex'}[kind]
-        params.update({field:raw,'limit':50 if not key else 500})
+        value=raw
+        if kind=='flight' and (hx or reg):field,value=('hex',hx) if hx else ('tail',reg)
+        params.update({field:value,'limit':50 if not key else 500})
         payload=_request(p,params=params,key=key,opener=opener)
         if since<until-3600:note='Provider retains only the latest hour.'
     elif p=='vdliq':
@@ -231,6 +234,7 @@ def fetch(p,raw,kind,since,until,key,identity,history=True,opener=None):
         if kind=='hex':
             if not reg:return [],'Registration needed for ACARS Drama.'
             field='registration';value=reg
+        elif kind=='flight' and reg:field,value='registration',reg
         else:field='registration' if kind=='reg' else 'flightNumber';value=raw
         params.update({field:value,'source':'all','from':_iso(since),'to':_iso(until),'limit':500})
         payload=_request(p,params=params,key=key,opener=opener)
@@ -243,21 +247,23 @@ def fetch(p,raw,kind,since,until,key,identity,history=True,opener=None):
         item=_normal(p,row)
         if not item or not since<=item['timestamp']<=until+10:continue
         if _match(item,raw,kind,identity.get('aliases',[])):
-            result.append(item)
-        elif kind=='reg' and hx and hx in [item['hex'],*item['endpoints']]:
-            # Verified airframe mapping can include messages without a tail.
-            if not item['reg']:item['reg']=reg;result.append(item)
+            item['match']='exact';result.append(item)
+        elif kind in ('flight','reg') and ((hx and hx in [item['hex'],*item['endpoints']]) or (reg and item['reg'] and ident(reg)==ident(item['reg']))):
+            if kind=='reg' and item['reg'] and ident(item['reg'])!=ident(reg):continue
+            if not item['reg'] and reg:item['reg']=reg
+            item['match']='linked airframe' if kind=='flight' else 'exact';result.append(item)
     return result,note
 
 def _duplicate(a,b):
     # Keep separate transmissions; merge same message heard by multiple feeds.
-    if a['sources']==b['sources'] and a['id'] and b['id'] and a['id']==b['id']:return True
+    shared=set(a['sources'])&set(b['sources'])
+    if any(a.get('source_ids',{}).get(p) and a['source_ids'][p]==b.get('source_ids',{}).get(p) for p in shared):return True
     if abs(a['timestamp']-b['timestamp'])>12:return False
     if not a['text'] or ' '.join(a['text'].split())!=' '.join(b['text'].split()):return False
     same=(a['hex'] and a['hex']==b['hex']) or (a['reg'] and ident(a['reg'])==ident(b['reg'])) or (a['flight'] and flight_ident(a['flight'])==flight_ident(b['flight']))
     if not same or a['label'] and b['label'] and a['label']!=b['label']:return False
     if a['sequence'] and b['sequence'] and a['sequence']!=b['sequence']:return False
-    return not set(a['sources'])&set(b['sources'])
+    return not shared or (abs(a['timestamp']-b['timestamp'])<1 and not any(a.get('source_ids',{}).get(p) and b.get('source_ids',{}).get(p) for p in shared))
 
 def _prune(s,now):
     # Provider's one-hour retention is respected for Avio-only observations.
@@ -270,6 +276,8 @@ def _merge(s,rows,now):
         old=next((x for x in s['messages'] if _duplicate(x,m)),None)
         if old:
             old['sources']=sorted(set(old['sources']+m['sources']))
+            old.setdefault('source_ids',{}).update(m.get('source_ids',{}))
+            if m.get('match')=='exact':old['match']='exact'
             for field in ('reg','flight','hex','label','protocol','direction'):
                 if not old[field]:old[field]=m[field]
         else:
@@ -283,7 +291,7 @@ def _public(s):
     return {'id':s['id'],'query':s['query'],'kind':s['kind'],'hours':s['hours'],
             'since':s['since'],'tracking_until':s['tracking_until'],'notify_count':s['notify_count'],
             'notify_error':s['notify_error'],'identity':dict(s['identity']),
-            'messages':[dict(m,sources=list(m['sources'])) for m in s['messages']],
+            'messages':[{k:v for k,v in m.items() if k not in ('source_ids','endpoints')} for m in s['messages']],
             'providers':{p:dict(x) for p,x in s['providers'].items()}}
 
 def _clean_sessions(now):
@@ -319,6 +327,12 @@ def read(id=''):
             _prune(s,time.time())
             return _public(s)
         return {'tracking':[_public(s) for s in _sessions.values() if s['tracking_until']>time.time()]}
+
+def stop(data):
+    with _lock:
+        _sessions.pop(str(data.get('id','')),None)
+    return {'ok':True}
+
 
 def track(data):
     id=str(data.get('id',''))
@@ -395,10 +409,37 @@ def _work(p,s,key):
         # Try current identity again when a flight is first acquired.
         if s['kind']=='flight' and not (identity.get('hex') or identity.get('reg')):
             identity=_identity(s['query'],s['kind'])
+        # The datalink flight identifier often differs from the ATC callsign.
+        # One bounded documented Avio aircraft lookup can resolve the airframe;
+        # the next scheduled datalink query uses that registration/hex.
+        if p=='avio' and s['kind']=='flight' and not (identity.get('hex') or identity.get('reg')) and s['providers'][p].get('resolved_attempt',0)<now-900:
+            with _lock:s['providers'][p]['resolved_attempt']=now
+            try:
+                from . import flights_live
+                headers={'Accept':'application/json','User-Agent':'AirspaceAnalytics-Flights/4'}
+                if key:headers['X-API-Key']=key
+                req=Request('https://avioadsb.org/v1/callsign/'+quote(s['query'],safe=''),headers=headers)
+                with api_budget.open_request('AvioADSB',_open,req,timeout=8) as resp:
+                    raw=resp.read(600001)
+                if len(raw)>600000:raise ValueError('Identity response too large')
+                payload=json.loads(raw)
+                candidates=[x for x in payload.get('ac',[]) if isinstance(x,dict) and flight_ident(x.get('flight'))==flight_ident(s['query']) and flights_live._active(x)]
+                pairs={(str(x.get('r') or '').upper(),str(x.get('hex') or '').lower()) for x in candidates}
+                if len(pairs)==1:
+                    r,h=next(iter(pairs))
+                    with _lock:
+                        if r:s['identity']['reg']=r
+                        if re.fullmatch(r'[a-f0-9]{6}',h):s['identity']['hex']=h
+                        s['providers'][p].update(state='Checking',note='Airframe resolved; datalink lookup follows at next interval.')
+                    return
+            except (OSError,ValueError,TypeError,AttributeError):pass
+            # Never bypass the shared provider cooldown with a second request.
+            if api_budget.remaining('AvioADSB')>0:return
         rows,note=fetch(p,s['query'],s['kind'],since,now,key,identity,first)
         with _lock:
             if _sessions.get(s['id']) is not s:return
-            if identity.get('reg') or identity.get('hex'):s['identity'].update(identity)
+            for k in ('reg','hex'):
+                if identity.get(k) and not s['identity'].get(k):s['identity'][k]=identity[k]
             # Exact flight-number matches can establish a unique current airframe.
             if s['kind']=='flight':
                 recent=[m for m in rows if now-m['timestamp']<3600 and m['reg']]
@@ -408,10 +449,14 @@ def _work(p,s,key):
                     h={m['hex'] for m in recent if m['hex']}
                     if len(h)==1:s['identity']['hex']=next(iter(h))
             fresh=_merge(s,rows,now)
-            s['providers'][p].update(state='Connected',last=now,note=note)
+            # A missing identity is not a successful archive search.
+            state='Limited' if note.startswith(('Airframe ICAO unknown','Registration needed')) else 'Connected'
+            s['providers'][p].update(state=state,last=now if state=='Connected' else 0,note=note)
         _notify(s,fresh)
     except (ValueError,OSError,TypeError,KeyError) as e:
-        with _lock:s['providers'][p].update(state='Unavailable',note=str(e)[:120])
+        message=str(e)
+        safe=re.search(r'HTTP \d{3}|rate limited|Network or invalid JSON response|Unexpected message response format|Response too large|API key required',message)
+        with _lock:s['providers'][p].update(state='Unavailable',note=safe.group(0) if safe else 'Provider lookup failed')
     finally:
         with _lock:_busy.discard(p)
 
