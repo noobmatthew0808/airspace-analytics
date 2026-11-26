@@ -188,7 +188,7 @@ def _normal(p,row):
 def _match(row,raw,kind,aliases=()):
     if kind=='reg':return ident(row['reg'])==ident(raw)
     if kind=='hex':return raw.lower() in [row['hex'],*row['endpoints']]
-    return flight_ident(row['flight'])==flight_ident(raw) or flight_ident(row.get('callsign'))==flight_ident(raw) or (row['flight'] and flight_ident(row['flight']) in aliases) or bool(re.search(r'(?<![A-Z0-9])'+re.escape(raw)+r'(?![A-Z0-9])',row.get('text','').upper()))
+    return flight_ident(row['flight'])==flight_ident(raw) or flight_ident(row.get('callsign'))==flight_ident(raw) or (row['flight'] and flight_ident(row['flight']) in aliases)
 
 def _identity(raw,kind):
     if kind=='reg':return {'reg':raw,'hex':'','aliases':[]}
@@ -271,8 +271,8 @@ def fetch(p,raw,kind,since,until,key,identity,history=True,opener=None):
         if since<until-3600:note='Provider retains only the latest hour.'
         if kind=='flight' and not (hx or reg):note+=' Callsign unresolved; searching message text only.'
     elif p=='vdliq':
-        if hx:path='/hex/'+quote(hx,safe='')
-        elif reg:path='/tail/'+quote(reg,safe='')
+        if reg and (not hx or identity.get('lookup_by')!='hex'):path='/tail/'+quote(reg,safe='')
+        elif hx:path='/hex/'+quote(hx,safe='')
         else:
             # No documented callsign archive filter. A bounded recent window
             # can still find exact flight identifiers, never scan global history.
@@ -328,6 +328,8 @@ def fetch(p,raw,kind,since,until,key,identity,history=True,opener=None):
             if kind=='reg' and item['reg'] and ident(item['reg'])!=ident(reg):continue
             if not item['reg'] and reg:item['reg']=reg
             item['match']='linked airframe' if kind=='flight' else 'exact';result.append(item)
+        elif p=='avio' and kind=='flight' and not (hx or reg) and re.search(r'(?<![A-Z0-9])'+re.escape(raw)+r'(?![A-Z0-9])',item['text'].upper()):
+            item['match']='text match';result.append(item)
     return result,note
 
 def _duplicate(a,b):
@@ -520,6 +522,8 @@ def _work(p,s,key):
         with _lock:
             if s['providers'][p].get('identity')!=(identity.get('reg'),identity.get('hex')):
                 first=True;since=s['since']
+        if p=='vdliq' and identity.get('reg') and identity.get('hex') and s['providers'][p].get('alternate_history'):
+            identity['lookup_by']='hex';first=True;since=s['since']
         rows,note=fetch(p,s['query'],s['kind'],since,now,key,identity,first)
         if not note.startswith(('Airframe ICAO unknown','Registration needed')):
             _save_test(p,key,True,'Message endpoint verified by background search')
@@ -529,7 +533,7 @@ def _work(p,s,key):
                 if identity.get(k) and not s['identity'].get(k):s['identity'][k]=identity[k]
             # Exact flight-number matches can establish a unique current airframe.
             if s['kind']=='flight':
-                recent=[m for m in rows if now-m['timestamp']<3600 and m['reg']]
+                recent=[m for m in rows if now-m['timestamp']<3600 and m['reg'] and m.get('match')=='exact']
                 regs={m['reg'] for m in recent}
                 if len(regs)==1 and not s['identity'].get('reg'):
                     s['identity']['reg']=next(iter(regs))
@@ -539,11 +543,16 @@ def _work(p,s,key):
             # A missing identity is not a successful archive search.
             state='Limited' if ('Callsign unresolved' in note or note.startswith(('Airframe ICAO unknown','Registration needed','No resolved airframe'))) else 'Connected'
             s['providers'][p].update(state=state,last=now,note=note,matched=len(rows),identity=(identity.get('reg'),identity.get('hex')))
+            if p=='vdliq':
+                if identity.get('lookup_by')=='hex':s['providers'][p].update(alternate_history=False,alternate_done=True)
+                elif first and not rows and identity.get('reg') and identity.get('hex') and not s['providers'][p].get('alternate_done'):
+                    s['providers'][p]['alternate_history']=True
+                    s['providers'][p]['note']+=' No tail matches; ICAO archive lookup at next interval.'
         # Delivery is separate from fetching, so slow notifications cannot block data sources.
         with _lock:
             if s['tracking_start'] and time.time()<s['tracking_until']:
                 q=s.setdefault('pending_notifications',[])
-                q.extend(m for m in fresh if s['tracking_start']<=m['timestamp']<=s['tracking_until'])
+                q.extend(m for m in fresh if m.get('match')!='text match' and s['tracking_start']<=m['timestamp']<=s['tracking_until'])
                 if len(q)>MAX_ROWS:s['notify_error']='Notification queue full; older messages remain visible in ACARS';del q[MAX_ROWS:]
     except (ValueError,OSError,TypeError,KeyError) as e:
         message=str(e)
@@ -571,7 +580,7 @@ def tick():
                 for s in _sessions.values():
                     if s['providers'][p]['state'] in ('Waiting','Key required','Cooling down'):s['providers'][p].update(state='Cooling down',note='Waiting for provider allowance')
                 continue
-            due=[s for s in _sessions.values() if s['providers'][p]['next']<=mono and (s.get('identity_checked',True) or now-s['touched']>15 or now-s['since']-s['hours']*3600>15)]
+            due=[s for s in _sessions.values() if s['providers'][p]['next']<=mono and (s.get('identity_checked',True) or now-s['since']-s['hours']*3600>15)]
             if not due:continue
             s=min(due,key=lambda x:x['providers'][p]['next'])
             delay=900 if p=='avio' and not keys[p] else INTERVAL[p]
