@@ -14,3 +14,8 @@ assert.match(acars,/esc\(m.text\)/);
 assert.match(acars,/setTimeout\(poll,5000\)/);
 assert.match(alerts,/export function mountSettingsProviders/);
 console.log('ACARS UI and Settings integration checks passed');
+
+assert.match(acars,/cfg\.filter/);
+assert.match(acars,/Use feeder IP only/);
+assert.match(acars,/retry_seconds/);
+assert.match(acars,/Waiting for the first provider searches/);
