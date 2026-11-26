@@ -93,13 +93,9 @@ function renderAlertPageContents(){
    (receiver.source?.startsWith('Aerodrome')?' · Aerodrome backup':''):'Receiver unavailable'+(receiver.error?' · '+ae(receiver.error):''))+'</div>'+
   '<div id="alertEditor"></div><div id="alertFeedback" role="status" class="alert-feedback"></div>'+
   '<section class="alert-rules">'+(d.rules.length?d.rules.map(ruleCard).join(''):'<div class="alert-empty">No rules configured yet.</div>')+'</section>'+
-  '<details class="foldout alert-root-config" id="alertAllConfig"><summary><span>Configuration &amp; Logs <small>APIs · Notifications · Receiver · History</small></span></summary>'+
-  '<div class="alert-config-stack"><details class="foldout alert-config" id="alertApis"><summary><span>APIs <small>Free flight data sources</small></span></summary>'+
-  '<div class="alert-config-stack alert-nested">'+
-  '<p class="alert-explainer">Configured sources share live aircraft data for Flights and opted-in backup alerts. Each has its own limits and connection test. Receiver-only data and rules are unchanged.</p>'+
-  '<div class="alert-api-legend"><span>'+providerIcon('key')+' Key required</span><span>'+providerIcon('keyless')+' Keyless</span><span>'+providerIcon('verified')+' Verified</span><span>'+providerIcon('saved')+' Key saved</span><span>'+providerIcon('missing')+' Missing / failed</span><span>'+providerIcon('pending')+' Not verified</span></div>'+
-  providers.map(p=>providerCard(p,d)).join('')+
-  '</div></details>'+
+  '<details class="foldout alert-root-config" id="alertAllConfig"><summary><span>Configuration &amp; Logs <small>Notifications · Receiver · History</small></span></summary>'+
+  '<div class="alert-config-stack">'+
+  '<a class="btn small alert-api-settings-link" href="/analytics#settings">API settings</a>'+
   '<details class="foldout alert-config" id="alertNtfy"><summary><span>Notifications <small>'+(d.ntfy.topic?'Configured':'Not configured')+'</small></span></summary>'+
   '<form id="alertNtfyForm" class="alert-config-content"><div class="alert-form-grid">'+
   '<label class="alert-field">ntfy server<input name="server" type="url" required value="'+ae(d.ntfy.server)+'"></label>'+
@@ -175,38 +171,6 @@ function bindAlerts(){
   try{await alertApi('/api/alerts/rule',{...r,enabled:b.checked});await refreshAlerts();}
   catch(err){b.checked=!b.checked;feedback(err.message,true);}
  });
- document.querySelectorAll('.alert-provider-form').forEach(form=>{
-  const id=form.dataset.provider;
-  const keepOpen=()=>['alertAllConfig','alertApis','alert-'+id].forEach(k=>{const el=document.getElementById(k);if(el)el.open=true;});
-  const act=async(work,message)=>{
-   if(pendingProviders.has(id))return;
-   pendingProviders.add(id);
-   form.querySelectorAll('button').forEach(b=>b.disabled=true);
-   providerFeedback(id,'Working…');
-   try{
-    const result=await work();
-    providerFeedback(id,message(result));
-    await refreshAlerts();keepOpen();
-   }catch(err){
-    providerFeedback(id,err.message,true);
-    try{await refreshAlerts();keepOpen()}catch{}
-   }finally{
-    pendingProviders.delete(id);
-    const active=document.querySelector('.alert-provider-form[data-provider="'+id+'"]');
-    if(active){active.querySelectorAll('button').forEach(b=>b.disabled=false);const remove=active.querySelector('[data-remove-provider]');if(remove)remove.disabled=!alertsData?.[id]?.key_set;}
-   }
-  };
-  form.onsubmit=e=>{
-   e.preventDefault();const key=form.elements.key?.value.trim();
-   if(!key){providerFeedback(id,'Enter an API key first.',true);return;}
-   act(()=>alertApi('/api/alerts/'+id,{key,...(id==='opensky'?{client_id:form.elements.client_id.value.trim(),permission:form.elements.permission.checked}:{})} ),()=>{form.elements.key.value='';return 'Key saved. Test connection to verify.'});
-  };
-  const show=form.querySelector('[data-showkey]');
-  if(show)show.onclick=()=>{const input=form.elements.key;input.type=input.type==='password'?'text':'password';show.textContent=input.type==='password'?'Show':'Hide';};
-  form.querySelector('[data-test-provider]').onclick=()=>act(()=>alertApi('/api/alerts/'+id+'/check',{}),result=>'Connection successful'+(result.plan?' · '+result.plan:'')+(result.aircraft!=null?' · '+at(result.aircraft)+' aircraft':''));
-  const remove=form.querySelector('[data-remove-provider]');
-  if(remove)remove.onclick=()=>{if(confirm('Remove this saved API key from the laptop?'))act(()=>alertApi('/api/alerts/'+id,{clear:true}),()=> 'Key removed.');};
- });
  const receiver=document.querySelector('#alertReceiverForm');
  receiver.onsubmit=async e=>{
   e.preventDefault();
@@ -254,3 +218,67 @@ export async function renderAlertsPage(){
  };
  alertsTimer=setTimeout(poll,10000);
 }
+
+// The existing provider cards and controls now live in Settings, using the
+// original endpoints and persisted verification state unchanged.
+let settingsProviderData=null;
+function settingsProviderMarkup(d){return   '<details class="foldout alert-config" id="alertApis"><summary><span>ADS-B providers <small>Flights · Backup alerts</small></span></summary>'+
+  '<div class="alert-config-stack alert-nested">'+
+  '<p class="alert-explainer">Configured sources share live aircraft data for Flights and opted-in backup alerts. Each has its own limits and connection test. Receiver-only data and rules are unchanged.</p>'+
+  '<div class="alert-api-legend"><span>'+providerIcon('key')+' Key required</span><span>'+providerIcon('keyless')+' Keyless</span><span>'+providerIcon('verified')+' Verified</span><span>'+providerIcon('saved')+' Key saved</span><span>'+providerIcon('missing')+' Missing / failed</span><span>'+providerIcon('pending')+' Not verified</span></div>'+
+  providers.map(p=>providerCard(p,d)).join('')+
+  '</div></details>';
+}
+async function refreshSettingsProviders(host){
+ const d=await alertApi('/api/alerts');
+ if(!host.isConnected||location.hash!=='#settings')return;
+ settingsProviderData=d;
+ const open=[...host.querySelectorAll('details[open]')].map(x=>x.id);
+ // Keep unsaved text in other provider forms when a card is tested.
+ const drafts=[...host.querySelectorAll('.alert-provider-form')].map(form=>({id:form.dataset.provider,key:form.elements.key?.value||'',client:form.elements.client_id?.value||'',permission:!!form.elements.permission?.checked}));
+ host.innerHTML=settingsProviderMarkup(d);
+ for(const id of open){const el=document.getElementById(id);if(el)el.open=true;}
+ bindSettingsProviders(host);
+ for(const draft of drafts){const form=host.querySelector('.alert-provider-form[data-provider="'+draft.id+'"]');if(!form)continue;if(form.elements.key)form.elements.key.value=draft.key;if(form.elements.client_id)form.elements.client_id.value=draft.client;if(form.elements.permission)form.elements.permission.checked=draft.permission;}
+}
+function bindSettingsProviders(host){
+ host.querySelectorAll('.alert-provider-form').forEach(form=>{
+  const id=form.dataset.provider;
+  const keepOpen=()=>['alertAllConfig','alertApis','alert-'+id].forEach(k=>{const el=document.getElementById(k);if(el)el.open=true;});
+  const act=async(work,message)=>{
+   if(pendingProviders.size)return;
+   pendingProviders.add(id);
+   form.querySelectorAll('button').forEach(b=>b.disabled=true);
+   providerFeedback(id,'Working…');
+   try{
+    const result=await work();
+    providerFeedback(id,message(result));
+    await refreshSettingsProviders(host);keepOpen();
+   }catch(err){
+    providerFeedback(id,err.message,true);
+    try{await refreshSettingsProviders(host);keepOpen()}catch{}
+   }finally{
+    pendingProviders.delete(id);
+    const active=host.querySelector('.alert-provider-form[data-provider="'+id+'"]');
+    if(active){active.querySelectorAll('button').forEach(b=>b.disabled=false);const remove=active.querySelector('[data-remove-provider]');if(remove)remove.disabled=!settingsProviderData?.[id]?.key_set;}
+   }
+  };
+  form.onsubmit=e=>{
+   e.preventDefault();const key=form.elements.key?.value.trim();
+   if(!key){providerFeedback(id,'Enter an API key first.',true);return;}
+   act(()=>alertApi('/api/alerts/'+id,{key,...(id==='opensky'?{client_id:form.elements.client_id.value.trim(),permission:form.elements.permission.checked}:{})} ),()=>{form.elements.key.value='';return 'Key saved. Test connection to verify.'});
+  };
+  const show=form.querySelector('[data-showkey]');
+  if(show)show.onclick=()=>{const input=form.elements.key;input.type=input.type==='password'?'text':'password';show.textContent=input.type==='password'?'Show':'Hide';};
+  form.querySelector('[data-test-provider]').onclick=()=>act(()=>alertApi('/api/alerts/'+id+'/check',{}),result=>'Connection successful'+(result.plan?' · '+result.plan:'')+(result.aircraft!=null?' · '+at(result.aircraft)+' aircraft':''));
+  const remove=form.querySelector('[data-remove-provider]');
+  if(remove)remove.onclick=()=>{if(confirm('Remove this saved API key from the laptop?'))act(()=>alertApi('/api/alerts/'+id,{clear:true}),()=> 'Key removed.');};
+ });
+
+}
+export function mountSettingsProviders(host){
+ if(!host)return;
+ host.innerHTML='<details class="foldout" id="alertApis"><summary>ADS-B providers</summary><div class="alert-config-content muted tiny">Open to load API settings.</div></details>';
+ host.querySelector('details').addEventListener('toggle',async e=>{if(!e.target.open)return;try{await refreshSettingsProviders(host)}catch(err){if(host.isConnected)host.querySelector('.alert-config-content').textContent=err.message;}});
+}
+export {providerIcons,providerIcon};

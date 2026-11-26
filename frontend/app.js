@@ -1,4 +1,5 @@
-import {renderAlertsPage} from './alerts-ui.js';
+import {renderAlertsPage,mountSettingsProviders} from './alerts-ui.js';
+import {renderAcarsPage,stopAcarsPage,mountAcarsSettings} from './acars-ui.js';
 import {renderFlightsPage,stopFlightsPage} from './flights-ui.js';
 import {renderLiveTerminal,stopLiveTerminal} from './live-terminal.js';
 /* Airspace Analytics: dependency-free, responsive client for Aerodrome's read-only API. */
@@ -332,7 +333,7 @@ function icon(name,size=18){
  };
  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]||paths.grid}</svg>`;
 }
-const pages=[['explore','Traffic','chart'],['live','Live ADS-B','terminal'],['alerts','Alerts','bell'],['flights','Flights','plane'],['database','Database','database'],['settings','Settings','settings']];
+const pages=[['explore','Traffic','chart'],['live','Live ADS-B','terminal'],['alerts','Alerts','bell'],['flights','Flights','plane'],['acars','ACARS','plane'],['database','Database','database'],['settings','Settings','settings']];
 const names={home:'Launcher',...Object.fromEntries(pages.map(x=>[x[0],x[1]]))};
 let currentPage='home',currentChart='line',currentAnalytics=null,latestOverview=null,healthInfo=null,activeTimer=null,renderId=0;
 const zoomHistory=[];
@@ -358,6 +359,7 @@ function shell(){
         <a class="top-nav-link" href="/analytics#live" data-page="live">Live ADS-B</a>
        <a class="top-nav-link" href="/analytics#alerts" data-page="alerts">Alerts</a>
         <a class="top-nav-link" href="/analytics#flights" data-page="flights">Flights</a>
+        <a class="top-nav-link" href="/analytics#acars" data-page="acars">ACARS</a>
        <strong id="topTitle" class="sr-only">Traffic</strong>
      </div>
      <div class="top-actions">
@@ -1151,12 +1153,14 @@ async function refreshHealthchecks(force=false){
 async function renderSettings(){const rid=++renderId;
  $('#page').innerHTML=title('','Settings')+
  `<div class="panel"><div id="sharedSettingsFeedback" role="status" class="muted tiny">${sharedSyncError?esc('Shared settings unavailable; showing local copy. '+sharedSyncError):''}</div>
+ <div class="settings-group api-settings-group"><div><h3>APIs</h3><p>Aircraft positions and datalink messages</p></div><div class="api-settings-stack"><div id="settingsAdsbProviders"></div><div id="settingsAcarsProviders"></div></div></div>
  ${settingsRow('Launcher links','',`<details class="foldout" id="launcherEditor" ${launcherEditorExpanded?'open':''}><summary>Manage launcher links</summary>${settingsLinks()}</details>`)}
  ${settingsRow('Excluded days from averages','',averageExclusionSettings())}
  ${settingsRow('GitHub updates','',updateBox())}
  ${settingsRow('Server monitoring','',monitoringBox())}
   ${settingsRow('Aerodrome database','',`<a id="databaseInfo" class="database-hitbox" href="/analytics#database" title="Open database" aria-label="Browse database">${loading()}</a>`)}
  </div>`;
+ mountSettingsProviders($('#settingsAdsbProviders'));mountAcarsSettings($('#settingsAcarsProviders'));
  $('#launcherEditor').ontoggle=()=>{launcherEditorExpanded=$('#launcherEditor').open};
  const excludedFold=$('#excludedDaysEditor');
  excludedFold.addEventListener('toggle',()=>{excludedEditorExpanded=excludedFold.open;if(excludedFold.open)loadSuggestedAverageExclusions()});
@@ -1208,12 +1212,12 @@ function setUpdateInfo(d){if(!$('#updateDetails'))return;
  $('#updateDetails').innerHTML=`<div class="detail-grid">${[['Version',d.version],['Installed',d.local_sha||'—'],['GitHub',d.remote_sha||'—']].map(([k,v])=>`<div class="detail-item"><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('')}</div>
  ${d.error?`<p style="color:var(--orange)">${esc(d.error)}</p>`:''}`;
 }
-async function loadPage(){stopLiveTerminal();stopFlightsPage();const fallback=location.pathname==='/analytics'?'explore':'home';const hash=(location.hash||'#'+fallback).slice(1).split('?')[0];currentPage=hash==='patterns'?'explore':names[hash]?hash:fallback;renderId++;document.body.classList.toggle('launcher-mode',currentPage==='home');document.title=(currentPage==='home'?'Airspace · Launcher':names[currentPage]+' · Airspace Analytics');
+async function loadPage(){stopLiveTerminal();stopFlightsPage();stopAcarsPage();const fallback=location.pathname==='/analytics'?'explore':'home';const hash=(location.hash||'#'+fallback).slice(1).split('?')[0];currentPage=hash==='patterns'?'explore':names[hash]?hash:fallback;renderId++;document.body.classList.toggle('launcher-mode',currentPage==='home');document.title=(currentPage==='home'?'Airspace · Launcher':names[currentPage]+' · Airspace Analytics');
  $$('.top-nav-link,.top-settings').forEach(el=>el.classList.toggle('active',el.dataset.page===currentPage||(currentPage==='database'&&el.dataset.page==='settings')));
  $('#topTitle').textContent=names[currentPage];setMenu(false);
  window.scrollTo({top:0,behavior:'instant'});
  if(currentPage==='explore'&&followingToday&&state.start.slice(0,10)!==ukToday())setTodayWindow();
- const routes={home:renderHome,explore:renderExplore,live:renderLiveTerminal,alerts:renderAlertsPage,flights:renderFlightsPage,database:renderDatabase,settings:renderSettings};
+ const routes={home:renderHome,explore:renderExplore,live:renderLiveTerminal,alerts:renderAlertsPage,flights:renderFlightsPage,acars:renderAcarsPage,database:renderDatabase,settings:renderSettings};
  const page=currentPage,request=renderId;
  try{
   if(['home','settings','explore'].includes(page)){try{await syncShared()}catch(e){console.warn('Shared settings unavailable',e.message)}}

@@ -25,6 +25,8 @@ jobs:
         run: |
           node --check frontend/app.js
           node --check frontend/alerts-ui.js
+          node --check frontend/acars-ui.js
+          node tests/test_acars_ui.cjs
           node --check frontend/live-terminal.js
           node tests/test_live_terminal_ui.cjs
           node --check frontend/calendar.js
