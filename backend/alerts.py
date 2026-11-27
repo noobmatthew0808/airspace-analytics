@@ -566,7 +566,7 @@ def run_provider_test(provider):
     message='Connection successful'
     if result.get('plan'):message+=' · '+str(result['plan'])[:50]
     if result.get('aircraft') is not None:message+=' · '+str(result['aircraft'])+' aircraft'
-    save(True,message)
+    save(True,message,result.get('diagnostic') if provider=='flyoverhead' else None)
     return result
 
 
