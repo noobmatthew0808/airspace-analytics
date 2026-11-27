@@ -45,7 +45,7 @@ def _shape(value,depth=0):
         for k,v in list(value.items())[:40]:
             # Dynamic IDs, arbitrary strings, secrets and credential fields
             # are omitted. Never include response values.
-            if not isinstance(k,str) or not re.fullmatch(r'[A-Za-z][A-Za-z_]{0,39}',k):continue
+            if not isinstance(k,str) or (k not in ('icao24','icaoHex','hex','modeS') and not re.fullmatch(r'[A-Za-z][A-Za-z_]{0,39}',k)):continue
             if re.search(r'key|token|auth|secret|password|email|cookie|session|credential|account|user',k,re.I):continue
             result[k]=_shape(v,depth+1)
         return result
@@ -162,12 +162,48 @@ def parse_map(payload,now=None):
         out.append(p)
     return out
 
+def _parse_fly_nested(payload,now):
+    """Authenticated bounds response observed on the user's feeder.
+    lastContact is contact time, not a separately proven position timestamp.
+    Generic altitude/velocity units are undocumented: never guess feet/knots.
+    """
+    data=payload.get('data')
+    if payload.get('success') is not True or not isinstance(data,dict):
+        raise FlySchemaError(payload)
+    rows=data.get('aircraft')
+    delta=_age(data.get('timestamp'),now)
+    if not isinstance(rows,list):raise FlySchemaError(payload)
+    if delta is None or delta>30:raise ValueError('Fly Overhead snapshot is stale')
+    result=[]
+    identifiable=0
+    for row in rows[:5000]:
+        if not isinstance(row,dict):continue
+        h=_ident(row.get('icao24') or row.get('icaoHex') or row.get('hex') or row.get('modeS') or row.get('icao'))
+        if not re.fullmatch(r'[0-9a-f]{6}',h):continue
+        identifiable+=1
+        age=_age(row.get('lastContact'),now)
+        if age is None or age>120 or row.get('estimated') or row.get('est'):continue
+        if str(row.get('source') or '').lower() in ('estimated','predicted','extrapolated'):continue
+        lat,lon=row.get('latitude'),row.get('longitude')
+        if not (_num(lat) and _num(lon) and -90<=lat<=90 and -180<=lon<=180):continue
+        p={'hex':h,'lat':lat,'lon':lon,'seen':max(age,delta),
+           '_source':FLY,'_network_source':FLY,'_fly_status_only':True}
+        for src,dst,pattern in [('callsign','flight',r'[A-Z0-9]{1,8}'),('registration','r',r'[A-Z0-9-]{2,16}'),('typecode','t',r'[A-Z0-9]{2,4}'),('squawk','squawk',r'[0-7]{4}')]:
+            value=row.get(src)
+            if isinstance(value,str) and re.fullmatch(pattern,value.strip().upper()):
+                p[dst]=value.strip().upper()
+        if isinstance(row.get('onGround'),bool):p['_fly_on_ground']=row['onGround']
+        result.append(p)
+    if rows and not identifiable:raise FlySchemaError(payload)
+    return result
+
 def parse_fly(payload,now=None):
     """Only accept explicit readsb-compatible timestamps, units and fields.
     Unknown formats fail the test rather than silently fabricating freshness.
     """
     now=time.time() if now is None else now
     if not isinstance(payload,dict):raise FlySchemaError(payload)
+    if 'data' in payload or 'success' in payload:return _parse_fly_nested(payload,now)
     rows=payload.get('ac')
     delta=_age(payload.get('now'),now)
     if not isinstance(rows,list) or delta is None or delta>30:
@@ -205,7 +241,7 @@ def near(name,key,area,opener=None):
 
 def test(name,key,area):
     result=near(name,key,(area[0],area[1],15))
-    return {'ok':True,'plan':'Fresh regional aircraft endpoint verified','aircraft':len(result)}
+    return {'ok':True,'plan':'Fresh regional status endpoint verified' if name==FLY else 'Fresh regional aircraft endpoint verified','aircraft':len(result)}
 
 def reset(name):
     with _lock:

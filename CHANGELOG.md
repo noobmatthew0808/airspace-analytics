@@ -1,3 +1,8 @@
+# v1.10.46 — Fly Overhead live response compatibility
+
+- Decode the actual authenticated nested aircraft response and validate contact and snapshot times. Match ICAO-only records to recent known registrations; use explicit airborne/ground state for Flights. Keep generic numeric altitude/speed and geographic alert use disabled until units and position freshness are documented. Preserve legacy readsb-format decoder and other providers.
+- Include the known ICAO24 field in sanitized diagnostics. No keys or raw response data leave the laptop.
+
 # v1.10.45 — Website-only Fly Overhead diagnostic
 
 - When the Fly Overhead live response cannot be decoded, show its bounded, value-free schema in the existing API connection test. No terminal access, raw aircraft records or credentials required. Other providers and polling behaviour unchanged.
