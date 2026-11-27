@@ -343,6 +343,17 @@ function migrateLauncherFeederLinks(list){
  }
  return list;
 }
+const tatThreeLinks={"group":"feeders","sub":"Live aircraft map","url":"https://globe.theairtraffic.com/","extraLabel":"Feeder status","extraUrl":"https://theairtraffic.com/myip","thirdLabel":"MLAT feeder status","thirdUrl":"https://theairtraffic.com/sync/uk-ireland/feeder?id=Polegate_ADS-B"};
+function mergeTatLinks(list){
+ const norm=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+ const isMain=r=>norm(r.id)==='theairtraffic'||norm(r.name)==='theairtraffic';
+ const isMlat=r=>norm(r.id)==='theairtrafficmlat'||norm(r.name)==='theairtrafficmlat';
+ let main=list.find(isMain);
+ if(!main){main=list.find(isMlat);if(main)Object.assign(main,{id:'theairtraffic',name:'TheAirTraffic'});}
+ if(main){Object.assign(main,tatThreeLinks);for(let i=list.length-1;i>=0;i--)if(list[i]!==main&&(isMain(list[i])||isMlat(list[i])))list.splice(i,1);}
+ return list;
+}
+mergeTatLinks(defaultLinks);
 const fr24Stats={extraLabel:'Feeder stats',extraUrl:'https://www.flightradar24.com/account/feed-stats/'};
 Object.assign(defaultLinks.find(x=>x.id==='fr24'),fr24Stats);
 const linksKey='airspace-analytics-links';
@@ -391,6 +402,9 @@ function legacyLinks(){
    migrateLauncherFeederLinks(list);
    localStorage.setItem(linksKey,JSON.stringify(list));
    localStorage.setItem('airspace-feeder-links-v11042','1');
+  }
+  if(!localStorage.getItem('airspace-tat-three-v11043')){
+   mergeTatLinks(list);localStorage.setItem(linksKey,JSON.stringify(list));localStorage.setItem('airspace-tat-three-v11043','1');
   }
   return list;
  }catch{return defaultLinks.slice()}
@@ -528,10 +542,11 @@ function branding(it){
 function launcherEntry(it,primary=false){
  const destination=primary?'/analytics#explore':hrefFor(it);
  const secondary=!primary&&it.extraLabel?hrefFor({url:it.extraUrl||'',port:it.extraPort||it.port,path:it.extraPath||'/' }):null;
+ const third=!primary&&it.thirdLabel&&it.thirdUrl?hrefFor({url:it.thirdUrl}):null;
  return `<div class="launcher-card ${primary?'launcher-primary':''} ${!destination?'disabled':''}">
    <a class="launcher-card-main" ${destination?`href="${esc(destination)}" ${primary?'':'target="_blank" rel="noopener noreferrer"'}`:'aria-disabled="true"'}>
      ${branding(it)}<span class="launcher-link-text"><strong>${esc(it.name)}</strong><small>${esc(it.sub||'Open website')}</small></span><span class="launcher-link-arrow">${icon(primary?'chevron':'external',16)}</span>
-   </a>${secondary?`<a class="launcher-sub-link" href="${esc(secondary)}" target="_blank" rel="noopener noreferrer">${icon('map',14)} ${esc(it.extraLabel)} ${icon('external',12)}</a>`:''}
+   </a>${secondary?`<a class="launcher-sub-link" href="${esc(secondary)}" target="_blank" rel="noopener noreferrer">${icon('map',14)} ${esc(it.extraLabel)} ${icon('external',12)}</a>`:''}${third?`<a class="launcher-sub-link" href="${esc(third)}" target="_blank" rel="noopener noreferrer">${icon('radar',14)} ${esc(it.thirdLabel)} ${icon('external',12)}</a>`:''}
  </div>`;
 }
 function launcherGroup(heading,items,primary=false){return `<section class="launcher-section"><h2>${esc(heading)}</h2><div class="launcher-list">${primary?launcherEntry(primaryAnalytics,true):''}${items.map(it=>launcherEntry(it)).join('')}</div></section>`}
@@ -1085,15 +1100,17 @@ function settingsRow(title,desc,body){return `<div class="settings-group"><div><
 function settingsLinks(){return `<p class="tiny muted">Tap a shortcut, paste the website address, then select Save changes. For a local app, use Local connection settings instead of a website address.</p><div class="shortcut-list" id="shortcutList">${getLinks().map((it,i)=>`<details class="shortcut-edit-row" data-linkindex="${i}"><summary class="shortcut-edit-summary"><span class="shortcut-edit-name">${esc(it.name)}</span><small class="muted">${it.group==='feeders'?'Feeder status':'View Stats'}</small>${icon('chevron',15)}</summary><div class="shortcut-edit-main">${field('Name',`<input class="link-name" value="${esc(it.name)}" maxlength="50">`)}${field('Group',`<select class="link-group">${opts([['stats','View Stats'],['feeders','Feeder Status']],it.group||'stats')}</select>`)}<div class="shortcut-url-field">${field('Main website address',`<input class="link-url" value="${esc(it.url||'')}" placeholder="https://…">`)}</div></div>
  <details class="shortcut-extras" ${!it.url&&it.port!==undefined?'open':''}><summary>Local connection and logo settings</summary><div class="shortcut-edit-main">${field('Local port',`<input class="link-port" value="${esc(it.port??'')}" placeholder="5173" inputmode="numeric">`)}${field('Local path',`<input class="link-path" value="${esc(it.path||'/')}" placeholder="/">`)}${field('Logo website',`<input class="link-logo-domain" value="${esc(it.logoDomain||'')}" placeholder="flightaware.com">`)}</div></details>
  <details class="shortcut-extras" ${it.extraLabel?'open':''}><summary>Optional second button (e.g. Map)</summary><div class="shortcut-edit-main">${field('Button label',`<input class="link-extra-label" value="${esc(it.extraLabel||'')}" placeholder="Feeder map">`)}<div class="shortcut-url-field">${field('Second website address',`<input class="link-extra-url" value="${esc(it.extraUrl||'')}" placeholder="https://…">`)}</div></div><details class="shortcut-extras" ${!it.extraUrl&&(it.extraPort||it.extraPath)?'open':''}><summary>Local second button settings</summary><div class="shortcut-edit-main">${field('Local port',`<input class="link-extra-port" value="${esc(it.extraPort||'')}" inputmode="numeric" placeholder="30053">`)}${field('Local path',`<input class="link-extra-path" value="${esc(it.extraPath||'/')}" placeholder="/map.html">`)}</div></details></details>
+ <details class="shortcut-extras" ${it.thirdLabel?'open':''}><summary>Optional third button</summary><div class="shortcut-edit-main">${field('Button label',`<input class="link-third-label" value="${esc(it.thirdLabel||'')}" placeholder="MLAT feeder status">`)}<div class="shortcut-url-field">${field('Third website address',`<input class="link-third-url" value="${esc(it.thirdUrl||'')}" placeholder="https://…">`)}</div></div></details>
  <div class="shortcut-edit-actions"><span class="shortcut-save-status tiny muted" role="status"></span><button class="btn small primary" type="button" data-save-shortcuts>Save changes</button><button class="btn small" data-reorder="up" data-pos="${i}" title="Move up" ${i===0?'disabled':''}>↑</button><button class="btn small" data-reorder="down" data-pos="${i}" title="Move down" ${i===getLinks().length-1?'disabled':''}>↓</button><button class="btn small danger" data-remove="${i}" title="Remove shortcut">Remove</button></div></details>`).join('')}</div>
  <div class="setting-actions shortcut-actions"><button class="btn" id="addLink" type="button">${icon('plus',15)} Add link</button><button class="btn primary" id="saveLinks" type="button">Save links</button><button class="btn" id="restoreLinks" type="button">Restore defaults</button></div>`}
 function collectSettingsLinks(){const original=getLinks();return $$('[data-linkindex]').map(el=>{
  const idx=Number(el.dataset.linkindex),port=$('.link-port',el).value.trim(),path=$('.link-path',el).value.trim()||'/',url=$('.link-url',el).value.trim();
  const extraPort=$('.link-extra-port',el).value.trim(),extraUrl=$('.link-extra-url',el).value.trim(),logoDomain=$('.link-logo-domain',el).value.trim();
  for(const value of [port,extraPort])if(value&&(!/^\d{1,5}$/.test(value)||Number(value)<1||Number(value)>65535))throw Error('Port must be 1–65535');
- for(const value of [url,extraUrl])if(value&&!/^https?:\/\//i.test(value))throw Error('URLs must begin with http:// or https://');
+ const thirdUrl=$('.link-third-url',el).value.trim(),thirdLabel=$('.link-third-label',el).value.trim().slice(0,32);
+ for(const value of [url,extraUrl,thirdUrl])if(value&&!/^https?:\/\//i.test(value))throw Error('URLs must begin with http:// or https://');
  if(logoDomain&&!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(logoDomain))throw Error('Logo domain should look like flightaware.com');
- return {...original[idx],name:$('.link-name',el).value.trim().slice(0,50)||'New link',group:$('.link-group',el).value,sub:original[idx]?.sub||'Application shortcut',port,path,url,logoDomain,extraLabel:$('.link-extra-label',el).value.trim().slice(0,32),extraPort,extraUrl,extraPath:$('.link-extra-path',el).value.trim()||'/',icon:original[idx]?.icon||'external'};
+ return {...original[idx],name:$('.link-name',el).value.trim().slice(0,50)||'New link',group:$('.link-group',el).value,sub:original[idx]?.sub||'Application shortcut',port,path,url,logoDomain,extraLabel:$('.link-extra-label',el).value.trim().slice(0,32),extraPort,extraUrl,thirdLabel,thirdUrl,extraPath:$('.link-extra-path',el).value.trim()||'/',icon:original[idx]?.icon||'external'};
 })}
 // Suggestions use existing read-only daily analytics; never save anything without a click.
 function suggestedAverageExclusions(visitsSeries, observationSeries, firstRecordedDate, today, excluded=[]) {
