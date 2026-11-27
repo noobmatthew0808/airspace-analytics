@@ -1,3 +1,9 @@
+# v1.10.44 — Faster background network fallback
+
+- Add map.flights regional observed positions, current callsign route and observed landing history; Fly Overhead documented regional bounds endpoint with strict compatible-schema connection test. Save and test both keys locally. No paid endpoints enabled.
+- Run existing eligible global sources independently in the background rather than waiting for one rotating lookup. Refresh flight cache every five seconds; preserve data freshness and per-provider cooldowns. New network snapshots are shared with opt-in backup alerts.
+- Show map.flights source attribution and preserve local-only receiver data. Fly Overhead's public OpenAPI was unavailable; its route endpoint is not assumed or enabled.
+
 # v1.10.43 — PlaneTrack and TheAirTraffic links
 
 - Add a single TheAirTraffic card with normal live map, feeder status and Polegate MLAT status. Migrate existing cards once; support editable third HTTPS link in Settings.

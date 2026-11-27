@@ -15,7 +15,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import flyitaly, adsblol, adsbfi, regional_sources, api_budget, planetrack
+from . import flyitaly, adsblol, adsbfi, regional_sources, api_budget, planetrack, new_networks
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler, ProxyHandler
 from urllib.parse import urlsplit
@@ -480,9 +480,37 @@ def test_planetrack():
     with _lock,connect() as c:key=_planetrack_key(c)
     return planetrack.test(key)
 
+def _new_key(c,id):
+    row=c.execute('SELECT value FROM config WHERE key=?',(id+'_key',)).fetchone()
+    return row['value'] if row else ''
+
+def _mapflights_key(c):return _new_key(c,'mapflights')
+def _flyoverhead_key(c):return _new_key(c,'flyoverhead')
+
+def _save_new_key(id,name,prefix,payload):
+    with _lock,connect() as c:
+        if payload.get('clear'):
+            c.execute('DELETE FROM config WHERE key=?',(id+'_key',))
+        else:
+            key=str(payload.get('key','')).strip()
+            if not re.fullmatch(prefix+r'[A-Za-z0-9_-]{8,500}',key):raise ValueError('Invalid '+name+' key format')
+            c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',(id+'_key',key))
+    new_networks.reset(name)
+
+def save_mapflights(payload):_save_new_key('mapflights',new_networks.MAP,'mf_live_',payload)
+def save_flyoverhead(payload):_save_new_key('flyoverhead',new_networks.FLY,'sk_live_',payload)
+def _test_new(id,name):
+    with _lock,connect() as c:
+        key=_new_key(c,id);coords=receiver_settings(c)
+    if not key:raise ValueError('Save your API key first')
+    if coords['lat'] is None or coords['lon'] is None:raise ValueError('Save antenna coordinates under Receiver first')
+    return new_networks.test(name,key,(coords['lat'],coords['lon'],15))
+def test_mapflights():return _test_new('mapflights',new_networks.MAP)
+def test_flyoverhead():return _test_new('flyoverhead',new_networks.FLY)
+
 def _provider_key(c,provider):
     getters={'flyitaly':_flyitaly_key,'adsblol':_adsblol_key,
-             'avioadsb':_avio_key,'adsbiq':_adsbiq_key,'opensky':_opensky_key,'planetrack':_planetrack_key}
+             'avioadsb':_avio_key,'adsbiq':_adsbiq_key,'opensky':_opensky_key,'planetrack':_planetrack_key,'mapflights':_mapflights_key,'flyoverhead':_flyoverhead_key}
     return getters[provider](c) if provider in getters else ''
 
 def _provider_fingerprint(key):
@@ -490,7 +518,7 @@ def _provider_fingerprint(key):
 
 def _provider_tests(c):
     result={}
-    for provider in ('flyitaly','adsblol','avioadsb','adsbiq','adsbfi','opensky','airplaneslive','adsbhub','planetrack'):
+    for provider in ('flyitaly','adsblol','avioadsb','adsbiq','adsbfi','opensky','airplaneslive','adsbhub','planetrack','mapflights','flyoverhead'):
         row=c.execute('SELECT value FROM config WHERE key=?',('provider_test_'+provider,)).fetchone()
         if not row:continue
         try:entry=json.loads(row['value'])
@@ -501,7 +529,7 @@ def _provider_tests(c):
 
 def save_provider_key(provider,payload):
     functions={'flyitaly':save_flyitaly,'adsblol':save_adsblol,
-               'avioadsb':save_avio,'adsbiq':save_adsbiq,'opensky':save_opensky,'planetrack':save_planetrack}
+               'avioadsb':save_avio,'adsbiq':save_adsbiq,'opensky':save_opensky,'planetrack':save_planetrack,'mapflights':save_mapflights,'flyoverhead':save_flyoverhead}
     if provider not in functions:raise ValueError('Unknown API source')
     with _lock:
         functions[provider](payload)
@@ -512,7 +540,7 @@ def save_provider_key(provider,payload):
 def run_provider_test(provider):
     functions={'flyitaly':test_flyitaly,'adsblol':test_adsblol,
                'avioadsb':test_avio,'adsbiq':test_adsbiq,'adsbfi':test_adsbfi,
-               'opensky':test_opensky,'airplaneslive':test_airplaneslive,'adsbhub':test_adsbhub,'planetrack':test_planetrack}
+               'opensky':test_opensky,'airplaneslive':test_airplaneslive,'adsbhub':test_adsbhub,'planetrack':test_planetrack,'mapflights':test_mapflights,'flyoverhead':test_flyoverhead}
     if provider not in functions:raise ValueError('Unknown API source')
     with _lock,connect() as c:
         key=_provider_key(c,provider)
@@ -546,7 +574,7 @@ def provider_usage():
     regional=regional_sources.health()
     ids={'flyitaly':'FlyItalyADSB','adsblol':'adsb.lol','adsbfi':'adsb.fi',
          'avioadsb':'AvioADSB','adsbiq':'ADSBiq','airplaneslive':'airplanes.live',
-         'adsbhub':'ADSBHub','opensky':'OpenSky Network','planetrack':'PlaneTrack'}
+         'adsbhub':'ADSBHub','opensky':'OpenSky Network','planetrack':'PlaneTrack','mapflights':new_networks.MAP,'flyoverhead':new_networks.FLY}
     result={}
     for id,name in ids.items():
         combined=dict(global_status.get(name,{}))
@@ -575,6 +603,7 @@ def snapshot():
                 'avioadsb':{'key_set':bool(_avio_key(c))},'adsbiq':{'key_set':bool(_adsbiq_key(c))},
                 'opensky':{'key_set':bool(_opensky_key(c))},'airplaneslive':{'key_required':False},'adsbhub':{'key_required':False},
                 'planetrack':{'key_set':bool(_planetrack_key(c)),**{k:v for k,v in planetrack.status().items() if k in ('monthly_used','monthly_quota','credits_remaining')}},
+                'mapflights':{'key_set':bool(_mapflights_key(c))},'flyoverhead':{'key_set':bool(_flyoverhead_key(c))},
                 'provider_tests':_provider_tests(c),'provider_usage':usage,
                 'receiver_settings':receiver_settings(c)}
 
@@ -1012,7 +1041,7 @@ def regional_loop():
             with _lock,connect() as c:
                 receiver=receiver_settings(c)
                 rows=c.execute('SELECT max_km FROM rules WHERE enabled=1 AND use_flyitaly=1 AND max_km IS NOT NULL').fetchall()
-                keys={'AvioADSB':_avio_key(c),'ADSBiq':_adsbiq_key(c),'OpenSky Network':_opensky_credentials(c),'PlaneTrack':_planetrack_key(c)}
+                keys={'AvioADSB':_avio_key(c),'ADSBiq':_adsbiq_key(c),'OpenSky Network':_opensky_credentials(c),'PlaneTrack':_planetrack_key(c),new_networks.MAP:_mapflights_key(c),new_networks.FLY:_flyoverhead_key(c)}
                 verified=_provider_tests(c)
             area=None
             if rows and receiver['lat'] is not None and receiver['lon'] is not None:

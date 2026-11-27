@@ -12,7 +12,9 @@ const providers=[
  {id:'airplaneslive',name:'airplanes.live',keyless:true,url:'https://api.airplanes.live/v2/reg/',hint:'Test from your feeder network to enable registration and nearby aircraft lookups.'},
  {id:'adsbhub',name:'ADSBHub',keyless:true,url:'tcp://data.adsbhub.org:5002',hint:'Set your public Data Access IP and SBS/30003 format, then test to activate the shared read-only stream.'},
  {id:'opensky',name:'OpenSky Network',oauth:true,url:'https://opensky-network.org/api/states/all',hint:'Create an OAuth API client on the OpenSky account page. Written permission for automated live use is required.'},
- {id:'planetrack',name:'PlaneTrack',url:'https://planetrack.ai/v1',hint:'Create a free key at planetrack.ai. Data: PlaneTrack.ai; contains information from the Mictronics aircraft database under ODC Attribution License. Free tier 2,000 credits/month; shared snapshots at most every 6 hours, history at most daily. Test checks the balance before live use.'}
+ {id:'planetrack',name:'PlaneTrack',url:'https://planetrack.ai/v1',hint:'Create a free key at planetrack.ai. Data: PlaneTrack.ai; contains information from the Mictronics aircraft database under ODC Attribution License. Free tier 2,000 credits/month; shared snapshots at most every 6 hours, history at most daily. Test checks the balance before live use.'},
+ {id:'mapflights',name:'map.flights',url:'https://map.flights/api/v1',hint:'Feeder key: regional live data, observed routes and landing history. Poll 10s, up to 250 km around saved antenna; respects 1,000 daily non-live requests.'},
+ {id:'flyoverhead',name:'Fly Overhead',url:'https://flyoverhead.com/api/public/aircraft/bounds',hint:'Free key: regional bounds endpoint, 65s polling to stay below 2,000 requests/day. Test checks compatible observed aircraft format. Route endpoint not verified.'}
 ];
 let alertsData=null,alertsTimer=null,editingRule=null,alertsBusy=false;
 const pendingProviders=new Set();
@@ -79,7 +81,7 @@ function providerCard(p,d){
   '<div class="alert-editor-buttons">'+(p.keyless?'':'<button class="btn primary" type="submit">Save key</button>')+
   '<button class="btn small" type="button" '+(p.id==='adsbfi'?'id="alertAdsbfiTest" ':'')+'data-test-provider="'+p.id+'">Test connection</button>'+
   (p.keyless?'':'<button class="btn small alert-delete" type="button" data-remove-provider="'+p.id+'" '+(saved?'':'disabled')+'>Remove key</button>')+'</div>'+
-  result+background+
+  result+background+(p.id==='mapflights'?'<p class="alert-provider-note">Data: map.flights. Flight data (c) map.flights, adsb.fi; attribution required. Contains information from Mictronics Aircraft Database, which is made available under the ODC Attribution License (ODC-BY 1.0). Contains information from plane-alert-db (sdr-enthusiasts), which is made available under the Open Database License (ODbL 1.0).</p>':'')+
   (info.monthly_used!=null?'<p class="alert-provider-note">'+(p.id==='planetrack'?'Credits ':'Requests ')+ae(info.monthly_used)+'/'+ae(info.monthly_quota||'?')+'</p>':'')+
   '</form></details>';
 }

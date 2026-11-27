@@ -199,7 +199,7 @@ class App(BaseHTTPRequestHandler):
 
     def alerts_post(self, path):
         """Same-origin, trusted-LAN-only control plane for personal alert rules."""
-        if path not in ('/api/preferences','/api/alerts/rule','/api/alerts/delete','/api/alerts/ntfy','/api/alerts/test','/api/alerts/receiver','/api/alerts/receiver/check','/api/alerts/flyitaly','/api/alerts/flyitaly/check','/api/alerts/adsblol','/api/alerts/adsblol/check','/api/alerts/adsbfi/check','/api/alerts/avioadsb','/api/alerts/avioadsb/check','/api/alerts/adsbiq','/api/alerts/adsbiq/check','/api/alerts/opensky','/api/alerts/opensky/check','/api/alerts/planetrack','/api/alerts/planetrack/check','/api/alerts/airplaneslive/check','/api/alerts/adsbhub/check','/api/acars/search','/api/acars/track','/api/acars/key','/api/acars/check','/api/acars/stop'):
+        if path not in ('/api/preferences','/api/alerts/rule','/api/alerts/delete','/api/alerts/ntfy','/api/alerts/test','/api/alerts/receiver','/api/alerts/receiver/check','/api/alerts/flyitaly','/api/alerts/flyitaly/check','/api/alerts/adsblol','/api/alerts/adsblol/check','/api/alerts/adsbfi/check','/api/alerts/avioadsb','/api/alerts/avioadsb/check','/api/alerts/adsbiq','/api/alerts/adsbiq/check','/api/alerts/opensky','/api/alerts/opensky/check','/api/alerts/planetrack','/api/alerts/planetrack/check','/api/alerts/mapflights','/api/alerts/mapflights/check','/api/alerts/flyoverhead','/api/alerts/flyoverhead/check','/api/alerts/airplaneslive/check','/api/alerts/adsbhub/check','/api/acars/search','/api/acars/track','/api/acars/key','/api/acars/check','/api/acars/stop'):
             return self.send_json({'error':'Unknown endpoint'},404)
         origin=self.headers.get('Origin','')
         host=self.headers.get('Host','')
@@ -237,6 +237,12 @@ class App(BaseHTTPRequestHandler):
             return self.send_json({'ok':True})
         if path=='/api/alerts/adsbfi/check':
             return self.send_json(alerts.run_provider_test('adsbfi'))
+        for provider in ('mapflights','flyoverhead'):
+            if path=='/api/alerts/'+provider:
+                alerts.save_provider_key(provider,payload)
+                return self.send_json({'ok':True})
+            if path=='/api/alerts/'+provider+'/check':
+                return self.send_json(alerts.run_provider_test(provider))
         if path=='/api/alerts/planetrack':
             alerts.save_provider_key('planetrack',payload)
             return self.send_json({'ok':True})

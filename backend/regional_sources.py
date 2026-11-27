@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import threading
 import time
-from . import api_budget, planetrack, extra_flight_sources as extra
+from . import api_budget, planetrack, new_networks, extra_flight_sources as extra
 
 _lock=threading.RLock()
 _region=None
@@ -15,6 +15,7 @@ _errors={}
 _busy=set()
 _enabled=set()
 _pt_identity=''
+_new_identities={}
 
 def valid(v):
     return isinstance(v,(int,float)) and not isinstance(v,bool) and math.isfinite(v)
@@ -54,6 +55,8 @@ def aircraft():
                 if q.get('seen',999)<=120:out.append(q)
         if 'PlaneTrack' in _enabled:
             out.extend(p for p in planetrack.cached(_pt_identity) if nearby(p,_region))
+        # Freshness is rechecked against the shared regional cache at read time.
+        out.extend(p for p in new_networks.peek(_new_identities) if nearby(p,_region))
         enabled='ADSBHub' in _enabled
     if enabled:out.extend(extra.hub_nearby())
     return out
@@ -92,7 +95,7 @@ def _fetch(name,area,key):
 
 def configure(area,keys,verified):
     """Called independently of receiver matching; only cache reads in the alert loop."""
-    global _region,_enabled,_pt_identity
+    global _region,_enabled,_pt_identity,_new_identities
     names={n for n in ('AvioADSB','ADSBiq') if keys.get(n)}
     if verified.get('airplaneslive',{}).get('ok'):names.add('airplanes.live')
     if verified.get('adsbhub',{}).get('ok'):names.add('ADSBHub')
@@ -109,7 +112,10 @@ def configure(area,keys,verified):
             if name not in _enabled:del _cache[name]
         now=time.monotonic()
         extra.set_region(area,'ADSBHub' in _enabled)
+        new_keys={n:keys[n] for n,id in ((new_networks.MAP,'mapflights'),(new_networks.FLY,'flyoverhead')) if keys.get(n) and verified.get(id,{}).get('ok')} if area else {}
+        _new_identities={n:new_networks.fingerprint(k) for n,k in new_keys.items()}
         if not area:return
+        if new_keys:new_networks.collect(new_keys,(area[0],area[1],250))
         if pt_key:planetrack.ensure_live(pt_key)
         for name,delay in [('AvioADSB',900),('ADSBiq',300),('airplanes.live',480),('OpenSky Network',240)]:
             if name not in _enabled or name in _busy or now<_next.get(name,0) or api_budget.remaining(name)>0:continue
