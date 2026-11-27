@@ -22,7 +22,7 @@ class LauncherFeedersV11042Tests(unittest.TestCase):
             conn.execute('CREATE TABLE config(key TEXT PRIMARY KEY, value TEXT)')
             original = {'excluded_days':['2026-11-09'], 'links':[
                 {'id':'custom-1','name':'Custom','group':'stats','url':'https://example.org/'},
-                {'id':'custom-dataero','name':'Dataero','group':'stats','url':'https://radar.dataero.eu/user/dashboard','extraLabel':'Map','extraUrl':'https://radar.dataero.eu/map'},
+                {'id':'custom-dataero','name':'Data Aero','group':'stats','url':'https://radar.dataero.eu/user/dashboard','extraLabel':'Map','extraUrl':'https://radar.dataero.eu/map'},
                 {'id':'old-tat','name':'The Air Traffic','group':'stats','url':'https://theairtraffic.com/'},
                 {'id':'fr24','name':'Flightradar24','group':'feeders','port':'8754'},
             ],'revision':7,'migrated':['existing-browser'],'dates_initialized':True,'removed_links':['id:old-custom'],
