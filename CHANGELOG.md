@@ -1,3 +1,8 @@
+# v1.10.42 — Feeder launcher links
+
+- Move existing Dataero shortcuts to Feeder Website Status without resetting other shortcuts. Add TheAirTraffic feeder and Polegate MLAT pages, RealTraffic and useful PlaneTrack, mlat.uk, ADSB Italia, map.flights, Skydex and Plane.watch shortcuts, with live maps. No games, data feeds, APIs, analytics or alert changes.
+- Apply additions once to saved shared settings and legacy browser lists; preserve existing order and unrelated custom shortcuts. RealTraffic and PlaneTrack account features may need login.
+
 # v1.10.41 — Dataero shortcuts and simpler shortcut editing
 
 - Point Dataero’s main card to its feeder dashboard and its second button to the live map. Apply the correction once to existing shared shortcuts, without touching other shortcuts or exclusions.

@@ -77,6 +77,154 @@ def _fix_dataero_links(items):
     return changed
 
 
+# New launcher shortcuts, applied once to an existing saved list. Keep all
+# unrelated shortcut fields, ordering, exclusions and removal history.
+LAUNCHER_FEEDER_LINKS_V11042=[
+    {
+        "id": "theairtraffic",
+        "name": "TheAirTraffic",
+        "group": "feeders",
+        "sub": "Your feeder status",
+        "url": "https://theairtraffic.com/myip",
+        "extraLabel": "Live map",
+        "extraUrl": "https://globe.theairtraffic.com/",
+        "icon": "radar",
+        "brand": "AT",
+        "logoDomain": "theairtraffic.com",
+        "tone": "blue"
+    },
+    {
+        "id": "theairtraffic-mlat",
+        "name": "TheAirTraffic MLAT",
+        "group": "feeders",
+        "sub": "Your Polegate MLAT sync",
+        "url": "https://theairtraffic.com/sync/uk-ireland/feeder?id=Polegate_ADS-B",
+        "extraLabel": "Feeder network map",
+        "extraUrl": "https://theairtraffic.com/feeder-map",
+        "icon": "radar",
+        "brand": "ML",
+        "logoDomain": "theairtraffic.com",
+        "tone": "blue"
+    },
+    {
+        "id": "realtraffic",
+        "name": "RealTraffic",
+        "group": "feeders",
+        "sub": "Feeder account dashboard",
+        "url": "https://flyrealtraffic.com/account/dashboard",
+        "extraLabel": "Live map",
+        "extraUrl": "https://flyrealtraffic.com/livemap/",
+        "icon": "radar",
+        "brand": "RT",
+        "logoDomain": "flyrealtraffic.com",
+        "tone": "teal"
+    },
+    {
+        "id": "planetrack",
+        "name": "PlaneTrack",
+        "group": "feeders",
+        "sub": "Your provider dashboard",
+        "url": "https://planetrack.ai/provider-dashboard.html",
+        "extraLabel": "Live map",
+        "extraUrl": "https://planetrack.ai/",
+        "icon": "radar",
+        "brand": "PT",
+        "logoDomain": "planetrack.ai",
+        "tone": "sky"
+    },
+    {
+        "id": "mlatuk",
+        "name": "mlat.uk",
+        "group": "feeders",
+        "sub": "Receiver stats and MLAT peers",
+        "url": "https://www.mlat.uk/network",
+        "extraLabel": "Live map",
+        "extraUrl": "https://map.mlat.uk/",
+        "icon": "radar",
+        "brand": "UK",
+        "logoDomain": "mlat.uk",
+        "tone": "navy"
+    },
+    {
+        "id": "adsbitalia",
+        "name": "ADSB Italia",
+        "group": "feeders",
+        "sub": "Your feeder status",
+        "url": "https://www.adsbitalia.it/status.html",
+        "extraLabel": "Live map",
+        "extraUrl": "https://map.adsbitalia.it/",
+        "icon": "radar",
+        "brand": "IT",
+        "logoDomain": "adsbitalia.it",
+        "tone": "green"
+    },
+    {
+        "id": "mapflights",
+        "name": "map.flights",
+        "group": "feeders",
+        "sub": "Station network and coverage",
+        "url": "https://map.flights/stations",
+        "extraLabel": "Live map",
+        "extraUrl": "https://map.flights/",
+        "icon": "radar",
+        "brand": "MF",
+        "logoDomain": "map.flights",
+        "tone": "violet"
+    },
+    {
+        "id": "skydex",
+        "name": "Skydex",
+        "group": "feeders",
+        "sub": "Measured receiver coverage",
+        "url": "https://skydex.online/adsb/coverage",
+        "extraLabel": "Live network map",
+        "extraUrl": "https://skydex.online/adsb/live",
+        "icon": "radar",
+        "brand": "SD",
+        "logoDomain": "skydex.online",
+        "tone": "teal"
+    },
+    {
+        "id": "planewatch",
+        "name": "Plane.watch",
+        "group": "feeders",
+        "sub": "Feeder account",
+        "url": "https://atc.plane.watch/",
+        "extraLabel": "Live map",
+        "extraUrl": "https://app.plane.watch/",
+        "icon": "radar",
+        "brand": "PW",
+        "logoDomain": "plane.watch",
+        "tone": "sky"
+    }
+]
+
+def _link_identity(value):
+    return re.sub(r'[^a-z0-9]', '', str(value or '').strip().lower())
+
+def _migrate_launcher_feeders(items):
+    if items is None:return False
+    changed=False
+    for row in items:
+        if _link_identity(row.get('id')) in ('dataero','dataaero') or _link_identity(row.get('name')) in ('dataero','dataaero'):
+            if row.get('group')!='feeders':
+                row['group']='feeders'
+                changed=True
+    for item in LAUNCHER_FEEDER_LINKS_V11042:
+        row=next((r for r in items if _link_identity(r.get('id'))==_link_identity(item['id']) or _link_identity(r.get('name'))==_link_identity(item['name'])),None)
+        if row is not None:
+            changes={'group':'feeders'}
+            if item['id'] in ('theairtraffic','theairtraffic-mlat','realtraffic'):
+                changes.update({key:item[key] for key in ('url','sub','extraLabel','extraUrl')})
+            for key,value in changes.items():
+                if row.get(key)!=value:
+                    row[key]=value
+                    changed=True
+        elif len(items)<100:
+            items.append(dict(item))
+            changed=True
+    return changed
+
 def _load(c):
     row=c.execute('SELECT value FROM config WHERE key=?',(KEY,)).fetchone()
     if row:
@@ -89,8 +237,12 @@ def _load(c):
             if _fix_dataero_links(state['links']):state['revision']+=1
             state['dataero_links_v11041']=True
             c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',(KEY,json.dumps(state,separators=(',',':'))))
+        if not state.get('launcher_feeders_v11042') and state['links'] is not None:
+            if _migrate_launcher_feeders(state['links']):state['revision']+=1
+            state['launcher_feeders_v11042']=True
+            c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',(KEY,json.dumps(state,separators=(',',':'))))
         return state
-    return {'excluded_days':[DEFAULT_DATE],'links':None,'revision':0,'migrated':[],'dates_initialized':False}
+    return {'excluded_days':[DEFAULT_DATE],'links':None,'revision':0,'migrated':[],'dates_initialized':False,'launcher_feeders_v11042':True}
 
 def _public(state):
     return {k:state[k] for k in ('excluded_days','links','revision')}
@@ -117,6 +269,8 @@ def update(payload):
             incoming_links=links(payload.get('links',[]))
             _fix_feeder_links(incoming_links)
             _fix_dataero_links(incoming_links)
+            for row in incoming_links:
+                if _link_identity(row.get('id')) in ('dataero','dataaero') or _link_identity(row.get('name')) in ('dataero','dataaero'):row['group']='feeders'
             if state['links'] is None:state['links']=incoming_links
             elif payload.get('has_legacy_links',True):
                 existing=state['links']
