@@ -17,7 +17,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHandler
 
-from . import alerts, adsbfi, adsblol, flyitaly, data, live_details, flights_routes, flights_history, extra_flight_sources, regional_sources, api_budget, planetrack
+from . import alerts, adsbfi, adsblol, flyitaly, data, live_details, flights_routes, flights_history, extra_flight_sources, regional_sources, api_budget, planetrack, new_networks
 
 _CACHE_LOCK=threading.Lock()
 # Keep the original adsb.fi cache shape for existing callers and regressions.
@@ -190,7 +190,9 @@ def _configured_keys():
     try:
         with alerts._lock,alerts.connect() as db:
             return {'FlyItalyADSB':alerts._flyitaly_key(db),
-                    'adsb.lol':alerts._adsblol_key(db),'AvioADSB':alerts._avio_key(db),'ADSBiq':alerts._adsbiq_key(db),'PlaneTrack':alerts._planetrack_key(db) if alerts._provider_tests(db).get('planetrack',{}).get('ok') else ''}
+                    'adsb.lol':alerts._adsblol_key(db),'AvioADSB':alerts._avio_key(db),'ADSBiq':alerts._adsbiq_key(db),'PlaneTrack':alerts._planetrack_key(db) if alerts._provider_tests(db).get('planetrack',{}).get('ok') else '',
+                    new_networks.MAP:alerts._mapflights_key(db) if alerts._provider_tests(db).get('mapflights',{}).get('ok') else '',
+                    new_networks.FLY:alerts._flyoverhead_key(db) if alerts._provider_tests(db).get('flyoverhead',{}).get('ok') else ''}
     except (OSError,ValueError):
         return {'FlyItalyADSB':'','adsb.lol':''}
 
@@ -316,14 +318,38 @@ def source_health():
     # No network I/O and no secrets. Avoid blocking the HTTP cache reader
     # while the background thread holds the remote lookup lock.
     now=time.monotonic()
-    return {**extra_flight_sources.health(),'PlaneTrack':planetrack.status(),**{name:{'last_attempt_seconds_ago':round(max(0,now-store['updated'])) if store['updated'] else None,
+    return {**extra_flight_sources.health(),**new_networks.health(),'PlaneTrack':planetrack.status(),**{name:{'last_attempt_seconds_ago':round(max(0,now-store['updated'])) if store['updated'] else None,
                   'matching_aircraft':sum(1 for p in store['aircraft'] if isinstance(p.get('seen'),(int,float)) and p['seen']+max(0,now-store['updated'])<=120),
                   'error':store.get('error'),
                   'retry_seconds':round(max(0,_ROTATION['retry_until'].get(name,0)-now))}
             for name,store in [('adsb.fi',_REMOTE),*_OTHER_REMOTE.items()]}}
 
 
-def snapshot(value='',network_fetch=_lookup_network):
+_parallel_busy=set()
+
+def _parallel_lookup(registrations,provider_keys):
+    # Called under cache lock; all network I/O happens in independent workers.
+    now=time.monotonic()
+    for provider in ('adsb.fi','FlyItalyADSB','adsb.lol','ADSBiq','AvioADSB'):
+        if provider not in provider_keys or provider in _parallel_busy or now<_ROTATION['retry_until'].get(provider,0) or api_budget.remaining(provider)>0:continue
+        _parallel_busy.add(provider)
+        _ROTATION['retry_until'][provider]=now+PROVIDER_INTERVAL[provider]
+        def work(p=provider,key=provider_keys[provider],regs=list(registrations)):
+            try:
+                found=_lookup_provider(regs,p,key)
+                with _CACHE_LOCK:
+                    store=_REMOTE if p=='adsb.fi' else _OTHER_REMOTE[p]
+                    store.update(updated=time.monotonic(),aircraft=found,error=None)
+            except (OSError,ValueError) as error:
+                with _CACHE_LOCK:
+                    store=_REMOTE if p=='adsb.fi' else _OTHER_REMOTE[p]
+                    store['error']=str(error)[:110]
+                    _ROTATION['retry_until'][p]=max(_ROTATION['retry_until'].get(p,0),time.monotonic()+(900 if 'rate limit' in str(error).lower() else 150))
+            finally:
+                with _CACHE_LOCK:_parallel_busy.discard(p)
+        threading.Thread(target=work,daemon=True,name='airspace-global-'+provider).start()
+
+def snapshot(value='',network_fetch=_lookup_network,background=False):
     tokens=[str(v).strip().upper() for v in str(value).split(',') if v.strip()]
     if len(tokens)>MAX_REGS or len(value)>2000:
         raise ValueError('Too many registrations for a status lookup')
@@ -350,7 +376,8 @@ def snapshot(value='',network_fetch=_lookup_network):
     with _CACHE_LOCK:
         now=time.monotonic()
         if network_fetch is _lookup_network:
-            if not _ROTATION['at'] or now-_ROTATION['at']>=MIN_REMOTE_PERIOD:
+            if background:_parallel_lookup(registrations,provider_keys)
+            elif not _ROTATION['at'] or now-_ROTATION['at']>=MIN_REMOTE_PERIOD:
                 eligible=[key for key in ('adsb.fi','FlyItalyADSB','adsb.lol','ADSBiq','AvioADSB')
                           if key in provider_keys and now>=_ROTATION['retry_until'].get(key,0) and api_budget.remaining(key)<=0]
                 if eligible:
@@ -417,6 +444,11 @@ def snapshot(value='',network_fetch=_lookup_network):
         remote+=extra_flight_sources.collect(registrations,identities,set(registrations)-current,
                                            credentials,airplanes,hub)
 
+    new_keys={n:configured[n] for n in (new_networks.MAP,new_networks.FLY) if configured.get(n)}
+    if new_keys:
+        with alerts._lock,alerts.connect() as db:coords=alerts.receiver_settings(db)
+        if coords['lat'] is not None and coords['lon'] is not None:
+            remote+=new_networks.collect(new_keys,(coords['lat'],coords['lon'],250))
     pt_key=configured.get('PlaneTrack','')
     if pt_key:
         # An inexpensive shared snapshot serves both Flights and opted-in alerts.
@@ -478,6 +510,13 @@ def snapshot(value='',network_fetch=_lookup_network):
     unknown_regs=[reg for key,reg in targets.items() if key not in seen or (seen[key].get('alt_baro')=='ground' and not airport_for_ground(seen[key]))]
     if history_key and unknown_regs:
         flights_history.schedule(unknown_regs,history_key)
+    map_routes,map_landings=new_networks.enrich(new_keys.get(new_networks.MAP,''),[(str(p.get('flight') or '').strip().upper(),str(p.get('hex') or '').lower()) for p in seen.values() if str(p.get('flight') or '').strip().upper() not in route_map and str(p.get('flight') or '').strip().upper() not in direct_routes],[(reg,str((seen.get(normal_reg(reg)) or {}).get('hex') or local_history.get(normal_reg(reg),{}).get('hex') or '').lower()) for reg in unknown_regs]) if new_keys.get(new_networks.MAP) else ({},{})
+    for (call,h),(origin,dest) in map_routes.items():
+        route=live_details._route(origin,dest)
+        if route:direct_routes[call]=route.replace(' – ','–')
+    def recent_landing(reg):
+        choices=[x for x in (flights_history.cached(reg),map_landings.get(reg)) if x]
+        return max(choices,key=lambda x:x['time']) if choices else None
     output={}
     for key,registration in targets.items():
         history=local_history.get(key,{})
@@ -487,12 +526,12 @@ def snapshot(value='',network_fetch=_lookup_network):
                 'local_hex':history.get('hex',''),
                 'local_last_seen_at':history.get('last_seen_at')}
         if plane is None:
-            recent=flights_history.cached(registration)
+            recent=recent_landing(registration)
             if recent:
                 raw_airport=recent['airport']
                 airport=raw_airport if len(raw_airport)==3 else live_details._iata(raw_airport)
                 if airport:result.update(status='Last landed '+airport,
-                              source='FlyItalyADSB observed history',
+                              source=recent.get('source','FlyItalyADSB observed history'),
                               last_landed_at=recent['time'],
                               at_airport=airport)
             output[registration]=result
@@ -513,13 +552,14 @@ def snapshot(value='',network_fetch=_lookup_network):
             airport=airport_for_ground(plane) or ''
             status='At '+airport if airport else 'Ground'
             if not airport:
-                recent=flights_history.cached(registration)
+                recent=recent_landing(registration)
                 if recent:
                     candidate=live_details._iata(recent['airport'])
                     if candidate:
                         airport=candidate
                         status='Last landed '+airport
                         result['last_landed_at']=recent['time']
+                        result['history_source']=recent.get('source','FlyItalyADSB observed history')
         else:
             speed=plane.get('gs')
             high=isinstance(altitude,(int,float)) and altitude>=2000
@@ -530,6 +570,7 @@ def snapshot(value='',network_fetch=_lookup_network):
         if not re.fullmatch(r'[a-f0-9]{6}',hexcode):hexcode=''
         result.update(status=status,route=route if status.startswith('Flying') else '',
                       route_confidence=confidence if status.startswith('Flying') else '',
+                      route_source=new_networks.MAP if (flight,str(plane.get('hex') or '').lower()) in map_routes else '',
                       source=str(plane.get('_source',''))[:30],hex=hexcode,
                       at_airport=airport,callsign=flight,
                       updated_seconds_ago=plane.get('seen'),
