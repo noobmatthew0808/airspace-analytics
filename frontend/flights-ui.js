@@ -206,7 +206,7 @@ function rowHtml(row){
 function renderTable(){
  const rows=filteredRows();updateStats(rows);
  const count=document.getElementById('flightsResults');
- if(count){count.textContent=rows.length+' flight'+(rows.length===1?'':'s')+' shown';if(rows.some(row=>liveFor(row).source==='AvioADSB')){const credit=document.createElement('a');credit.href='https://avioadsb.org';credit.target='_blank';credit.rel='noopener noreferrer';credit.textContent=' · Data: AvioADSB (CC BY-NC 4.0)';count.append(credit);}}
+ if(count){count.textContent=rows.length+' flight'+(rows.length===1?'':'s')+' shown';if(rows.some(row=>liveFor(row).source==='AvioADSB')){const credit=document.createElement('a');credit.href='https://avioadsb.org';credit.target='_blank';credit.rel='noopener noreferrer';credit.textContent=' · Data: AvioADSB (CC BY-NC 4.0)';count.append(credit);}if(rows.some(row=>{const v=liveFor(row);return [v.source,v.route_source,v.history_source].some(s=>String(s||'').includes('map.flights'));})){const credit=document.createElement('small');credit.textContent=' · Data: map.flights. Flight data (c) map.flights, adsb.fi; attribution required. Contains information from Mictronics Aircraft Database, which is made available under the ODC Attribution License (ODC-BY 1.0). Contains information from plane-alert-db (sdr-enthusiasts), which is made available under the Open Database License (ODbL 1.0).';count.append(credit);}}
  const table=document.getElementById('flightsTableBody');
  if(!table)return;
  table.innerHTML=rows.length?rows.map(row=>rowHtml(row)+(expandedFlightId===row.id&&!manageMode?flightDetailsHtml(row):'')).join(''):
