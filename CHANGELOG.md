@@ -1,3 +1,8 @@
+# v1.10.47 — Fly Overhead connection and freshness separation
+
+- Verify authenticated structured responses independently of usable live aircraft. Keep an accepted key active when snapshots are old or identifiers unavailable. Discard stale/future aircraft; a snapshot and contact must both be within the existing 120-second Flights limit. No distance/altitude alerts enabled for this source.
+- Use a wider test area and display safe snapshot age, reported and identifiable aircraft counts and schema diagnostics; background retries automatically recover. Other providers unchanged.
+
 # v1.10.46 — Fly Overhead live response compatibility
 
 - Decode the actual authenticated nested aircraft response and validate contact and snapshot times. Match ICAO-only records to recent known registrations; use explicit airborne/ground state for Flights. Keep generic numeric altitude/speed and geographic alert use disabled until units and position freshness are documented. Preserve legacy readsb-format decoder and other providers.

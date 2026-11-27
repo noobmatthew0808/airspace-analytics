@@ -162,7 +162,7 @@ def parse_map(payload,now=None):
         out.append(p)
     return out
 
-def _parse_fly_nested(payload,now):
+def _parse_fly_nested(payload,now,details=None):
     """Authenticated bounds response observed on the user's feeder.
     lastContact is contact time, not a separately proven position timestamp.
     Generic altitude/velocity units are undocumented: never guess feet/knots.
@@ -171,18 +171,27 @@ def _parse_fly_nested(payload,now):
     if payload.get('success') is not True or not isinstance(data,dict):
         raise FlySchemaError(payload)
     rows=data.get('aircraft')
-    delta=_age(data.get('timestamp'),now)
+    stamp=_stamp(data.get('timestamp'))
     if not isinstance(rows,list):raise FlySchemaError(payload)
-    if delta is None or delta>30:raise ValueError('Fly Overhead snapshot is stale')
+    if stamp is None:raise FlySchemaError(payload)
+    offset=now-stamp
+    delta=max(0,offset)
+    fresh_snapshot=-10<=offset<=120
     result=[]
     identifiable=0
+    contact_ages=[]
+    if details is not None:
+        details.update(snapshot_age_seconds=round(offset,1),reported_aircraft=len(rows))
+
     for row in rows[:5000]:
         if not isinstance(row,dict):continue
         h=_ident(row.get('icao24') or row.get('icaoHex') or row.get('hex') or row.get('modeS') or row.get('icao'))
         if not re.fullmatch(r'[0-9a-f]{6}',h):continue
         identifiable+=1
+        contact=_stamp(row.get('lastContact'))
+        if contact is not None:contact_ages.append(now-contact)
         age=_age(row.get('lastContact'),now)
-        if age is None or age>120 or row.get('estimated') or row.get('est'):continue
+        if not fresh_snapshot or age is None or age>120 or row.get('estimated') or row.get('est'):continue
         if str(row.get('source') or '').lower() in ('estimated','predicted','extrapolated'):continue
         lat,lon=row.get('latitude'),row.get('longitude')
         if not (_num(lat) and _num(lon) and -90<=lat<=90 and -180<=lon<=180):continue
@@ -194,16 +203,28 @@ def _parse_fly_nested(payload,now):
                 p[dst]=value.strip().upper()
         if isinstance(row.get('onGround'),bool):p['_fly_on_ground']=row['onGround']
         result.append(p)
-    if rows and not identifiable:raise FlySchemaError(payload)
+    if details is not None:
+        details.update(identifiable_aircraft=identifiable,fresh_aircraft=len(result))
+        if contact_ages:details['newest_contact_age_seconds']=round(min(contact_ages),1)
+        if not fresh_snapshot:
+            details['data_note']='Snapshot outside live freshness window; no aircraft used'
+        elif rows and not identifiable:
+            details['data_note']='No supported ICAO identifiers; no aircraft used'
+        elif not result:
+            details['data_note']='No usable fresh aircraft in this response'
+        else:
+            details['data_note']='Fresh aircraft contacts available'
+        if not result:details['diagnostic']=json.dumps(_shape(payload),indent=2)[:3500]
+    elif rows and not identifiable:raise FlySchemaError(payload)
     return result
 
-def parse_fly(payload,now=None):
+def parse_fly(payload,now=None,details=None):
     """Only accept explicit readsb-compatible timestamps, units and fields.
     Unknown formats fail the test rather than silently fabricating freshness.
     """
     now=time.time() if now is None else now
     if not isinstance(payload,dict):raise FlySchemaError(payload)
-    if 'data' in payload or 'success' in payload:return _parse_fly_nested(payload,now)
+    if 'data' in payload or 'success' in payload:return _parse_fly_nested(payload,now,details)
     rows=payload.get('ac')
     delta=_age(payload.get('now'),now)
     if not isinstance(rows,list) or delta is None or delta>30:
@@ -224,7 +245,7 @@ def parse_fly(payload,now=None):
         out.append(p)
     return out
 
-def near(name,key,area,opener=None):
+def near(name,key,area,opener=None,details=None):
     lat,lon,radius=area
     if not all(_num(v) for v in area) or not -90<=lat<=90 or not -180<=lon<=180:raise ValueError('Receiver coordinates required')
     # Conservative margin around the feeder's 300 km circle (station grid may
@@ -237,11 +258,27 @@ def near(name,key,area,opener=None):
     radius=min(radius,150)
     dy=radius/111.2;dx=radius/(111.2*max(.2,math.cos(math.radians(lat))))
     path='/aircraft/bounds?'+urlencode({'latMin':max(-90,lat-dy),'lonMin':max(-180,lon-dx),'latMax':min(90,lat+dy),'lonMax':min(180,lon+dx)})
-    return parse_fly(_request(name,path,key,opener,live=True))
+    return parse_fly(_request(name,path,key,opener,live=True),details=details)
 
 def test(name,key,area):
-    result=near(name,key,(area[0],area[1],15))
-    return {'ok':True,'plan':'Fresh regional status endpoint verified' if name==FLY else 'Fresh regional aircraft endpoint verified','aircraft':len(result)}
+    if name!=FLY:
+        result=near(name,key,(area[0],area[1],15))
+        return {'ok':True,'plan':'Fresh regional aircraft endpoint verified','aircraft':len(result)}
+    details={}
+    # Test a useful area, not a tiny 15km box which often has no fresh traffic.
+    result=near(name,key,(area[0],area[1],150),details=details)
+    note='API verified; fresh contacts available' if result else 'API verified; no usable fresh contacts'
+    return {'ok':True,'plan':note,'aircraft':len(result),
+            'diagnostic':_fly_diagnostic(details) if details else None}
+
+def _fly_diagnostic(details):
+    safe={k:v for k,v in details.items() if k!='diagnostic'}
+    return (json.dumps(safe,indent=2)+('\n\n'+details['diagnostic'] if details.get('diagnostic') else ''))[:3500]
+
+def _fly_live(key,area):
+    details={}
+    result=near(FLY,key,area,details=details)
+    return result,details
 
 def reset(name):
     with _lock:
@@ -268,7 +305,11 @@ def _start(name,scope,key,delay,job):
             result=job()
             with _lock:
                 if _identity.get(name)!=ident:return
-                if scope=='live':_cache[name]=(time.monotonic(),result)
+                if scope=='live':
+                    if name==FLY:
+                        result,details=result
+                        _health.setdefault(name,{}).update(data_note=details.get('data_note',''),snapshot_age_seconds=details.get('snapshot_age_seconds'),reported_aircraft=details.get('reported_aircraft'),identifiable_aircraft=details.get('identifiable_aircraft'),newest_contact_age_seconds=details.get('newest_contact_age_seconds'))
+                    _cache[name]=(time.monotonic(),result)
                 _health.setdefault(name,{}).update(error=None,last_success=time.time())
         except (ValueError,OSError,TypeError) as err:
             with _lock:
@@ -299,7 +340,7 @@ def collect(keys,area):
         for name in BASE:
             key=keys.get(name)
             if not key:continue
-            _start(name,'live',key,INTERVAL[name],lambda n=name,k=key:near(n,k,area))
+            _start(name,'live',key,INTERVAL[name],lambda n=name,k=key:_fly_live(k,area) if n==FLY else near(n,k,area))
             cached=_cache.get(name)
             if not cached:continue
             stamp,planes=cached;elapsed=max(0,time.monotonic()-stamp)
