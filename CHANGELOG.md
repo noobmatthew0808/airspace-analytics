@@ -1,3 +1,8 @@
+# v1.10.41 — Dataero shortcuts and simpler shortcut editing
+
+- Point Dataero’s main card to its feeder dashboard and its second button to the live map. Apply the correction once to existing shared shortcuts, without touching other shortcuts or exclusions.
+- Make website address fields prominent, keep local port/path and logo options available, add an inline save action and feedback, and confirm restoring all defaults. No other tabs or services changed.
+
 # v1.10.40 — ACARS access and search diagnostics
 
 - Resolve current callsigns via adsb.fi before historical datalink searches, use registration and ICAO fallback, distinguish text matches from identity matches, and display provider-specific cooldowns and results. Successful background searches verify message access. Add a separate optional feeder-IP authentication mode for vdlIQ without modifying ADSBiq aircraft credentials.

@@ -75,6 +75,33 @@ class SharedPreferencesTests(unittest.TestCase):
         self.assertEqual(result['links'][0]['url'],shared_settings.FEEDER_LINK_FIXES['adsbiq'])
         self.assertEqual(result['excluded_days'],['2026-11-24'])
 
+    def test_dataero_correction_only_touches_dataero_and_preserves_later_edits(self):
+        other=shortcut('custom')
+        old={'id':'dataero','name':'Dataero','group':'feeders','url':'https://radar.dataero.eu/map',
+             'extraLabel':'Claim receiver','extraUrl':'https://radar.dataero.eu/contribute/connect','tone':'sky'}
+        state={'excluded_days':['2026-11-24'],'links':[other,old],'revision':7,
+               'migrated':['browser-one'],'dates_initialized':True,'feeder_links_v11033':True}
+        with alerts.connect() as c:
+            c.execute('INSERT INTO config(key,value) VALUES(?,?)',(shared_settings.KEY,json.dumps(state)))
+        updated=shared_settings.read()
+        self.assertEqual(updated['revision'],8)
+        self.assertEqual(updated['excluded_days'],state['excluded_days'])
+        self.assertEqual(updated['links'],[other,{**old,**shared_settings.DATAERO_LINKS}])
+        self.assertEqual(shared_settings.read(),updated)
+        updated['links'][1]['url']='https://example.org/my-dataero'
+        result=shared_settings.update({'action':'links','revision':8,'links':updated['links']})
+        self.assertEqual(shared_settings.read(),result)
+        self.assertEqual(result['links'][1]['url'],'https://example.org/my-dataero')
+        imported=self.migrate('browser-two',None,[old])
+        self.assertEqual(imported['links'],result['links'])
+
+    def test_old_dataero_import_and_removed_dataero(self):
+        old={'name':'Dataero','group':'feeders','url':'https://radar.dataero.eu/map'}
+        result=self.migrate('browser-one',[],[old,shortcut('custom')])
+        self.assertEqual(result['links'][0],{**old,**shared_settings.DATAERO_LINKS})
+        removed=shared_settings.update({'action':'links','revision':result['revision'],'links':[shortcut('custom')]})
+        self.assertEqual(self.migrate('browser-two',[],[old])['links'],removed['links'])
+
     def test_invalid_settings_rejected(self):
         with self.assertRaises(ValueError):shared_settings.update({'action':'add_day','day':'2026-02-31'})
         with self.assertRaises(ValueError):self.migrate('browser-one',[],[{'name':'Unsafe','url':'javascript:alert(1)'}])
