@@ -52,3 +52,24 @@ class LauncherFeedersV11042Tests(unittest.TestCase):
         full=[{'id':str(i),'name':str(i),'group':'stats'} for i in range(100)]
         self.assertFalse(settings._migrate_launcher_feeders(full))
         self.assertEqual(len(full),100)
+
+    def test_combined_upgrade_from_older_settings(self):
+        with sqlite3.connect(':memory:') as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute('CREATE TABLE config(key TEXT PRIMARY KEY, value TEXT)')
+            original = {'excluded_days':['2026-11-24'], 'links':[
+                {'id':'adsbiq','name':'ADSBiq','group':'feeders','url':'https://adsbiq.com/my-stations'},
+                {'id':'custom','name':'Custom','group':'stats','url':'https://example.org/custom'},
+                {'id':'dataero','name':'Dataero','group':'stats','url':'https://radar.dataero.eu/map',
+                 'extraLabel':'Claim receiver','extraUrl':'https://radar.dataero.eu/contribute/connect'},
+            ],'revision':7,'migrated':['browser-one'],'dates_initialized':True}
+            conn.execute('INSERT INTO config VALUES(?,?)',(settings.KEY,json.dumps(original)))
+            upgraded = settings._load(conn)
+            self.assertEqual(upgraded['revision'],10)
+            self.assertEqual(upgraded['links'][0]['url'],settings.FEEDER_LINK_FIXES['adsbiq'])
+            self.assertEqual(upgraded['links'][1],original['links'][1])
+            self.assertEqual(upgraded['links'][2],dict(original['links'][2],**settings.DATAERO_LINKS,group='feeders'))
+            self.assertEqual(upgraded['links'][3:],settings.LAUNCHER_FEEDER_LINKS_V11042)
+            self.assertEqual(upgraded['excluded_days'],original['excluded_days'])
+            self.assertTrue(all(upgraded[k] for k in ('feeder_links_v11033','dataero_links_v11041','launcher_feeders_v11042')))
+            self.assertEqual(settings._load(conn),upgraded)
