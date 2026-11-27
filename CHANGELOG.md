@@ -1,3 +1,7 @@
+# v1.10.45 — Website-only Fly Overhead diagnostic
+
+- When the Fly Overhead live response cannot be decoded, show its bounded, value-free schema in the existing API connection test. No terminal access, raw aircraft records or credentials required. Other providers and polling behaviour unchanged.
+
 # v1.10.44 — Faster background network fallback
 
 - Add map.flights regional observed positions, current callsign route and observed landing history; Fly Overhead documented regional bounds endpoint with strict compatible-schema connection test. Save and test both keys locally. No paid endpoints enabled.
