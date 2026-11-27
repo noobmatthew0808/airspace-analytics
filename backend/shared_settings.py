@@ -240,7 +240,7 @@ def _merge_tat_links(items):
             main.update(id='theairtraffic',name='TheAirTraffic')
             changed=True
     if main is None:return False
-    for key,value in TAT_THREE_LINKS.items():
+    for key,value in {'id':'theairtraffic','name':'TheAirTraffic',**TAT_THREE_LINKS}.items():
         if main.get(key)!=value:
             main[key]=value
             changed=True
