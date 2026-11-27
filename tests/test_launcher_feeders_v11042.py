@@ -26,7 +26,7 @@ class LauncherFeedersV11042Tests(unittest.TestCase):
                 {'id':'old-tat','name':'The Air Traffic','group':'stats','url':'https://theairtraffic.com/'},
                 {'id':'fr24','name':'Flightradar24','group':'feeders','port':'8754'},
             ],'revision':7,'migrated':['existing-browser'],'dates_initialized':True,'removed_links':['id:old-custom'],
-            'feeder_links_v11033':True,'dataero_links_v11041':True}
+            'feeder_links_v11033':True,'dataero_links_v11041':True,'tat_three_v11043':True}
             conn.execute('INSERT INTO config VALUES(?,?)',(settings.KEY,json.dumps(original)))
             new = settings._load(conn)
             self.assertEqual(new['revision'],8)
@@ -62,7 +62,7 @@ class LauncherFeedersV11042Tests(unittest.TestCase):
                 {'id':'custom','name':'Custom','group':'stats','url':'https://example.org/custom'},
                 {'id':'dataero','name':'Dataero','group':'stats','url':'https://radar.dataero.eu/map',
                  'extraLabel':'Claim receiver','extraUrl':'https://radar.dataero.eu/contribute/connect'},
-            ],'revision':7,'migrated':['browser-one'],'dates_initialized':True}
+            ],'revision':7,'migrated':['browser-one'],'dates_initialized':True,'tat_three_v11043':True}
             conn.execute('INSERT INTO config VALUES(?,?)',(settings.KEY,json.dumps(original)))
             upgraded = settings._load(conn)
             self.assertEqual(upgraded['revision'],10)
