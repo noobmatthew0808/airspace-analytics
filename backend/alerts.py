@@ -15,7 +15,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import flyitaly, adsblol, adsbfi, regional_sources, api_budget
+from . import flyitaly, adsblol, adsbfi, regional_sources, api_budget, planetrack
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler, ProxyHandler
 from urllib.parse import urlsplit
@@ -461,9 +461,28 @@ def test_airplaneslive():
     from . import extra_flight_sources
     return extra_flight_sources.test_airplanes()
 
+def _planetrack_key(c):
+    row=c.execute("SELECT value FROM config WHERE key='planetrack_key'").fetchone()
+    return row['value'] if row else ''
+
+def save_planetrack(payload):
+    with _lock,connect() as c:
+        if payload.get('clear'):
+            c.execute("DELETE FROM config WHERE key='planetrack_key'")
+        else:
+            key=str(payload.get('key','')).strip()
+            if not re.fullmatch(r'pt_(?:free|live)_[A-Za-z0-9_-]{8,500}',key):
+                raise ValueError('Invalid PlaneTrack API key format')
+            c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',('planetrack_key',key))
+    planetrack.reset()
+
+def test_planetrack():
+    with _lock,connect() as c:key=_planetrack_key(c)
+    return planetrack.test(key)
+
 def _provider_key(c,provider):
     getters={'flyitaly':_flyitaly_key,'adsblol':_adsblol_key,
-             'avioadsb':_avio_key,'adsbiq':_adsbiq_key,'opensky':_opensky_key}
+             'avioadsb':_avio_key,'adsbiq':_adsbiq_key,'opensky':_opensky_key,'planetrack':_planetrack_key}
     return getters[provider](c) if provider in getters else ''
 
 def _provider_fingerprint(key):
@@ -471,7 +490,7 @@ def _provider_fingerprint(key):
 
 def _provider_tests(c):
     result={}
-    for provider in ('flyitaly','adsblol','avioadsb','adsbiq','adsbfi','opensky','airplaneslive','adsbhub'):
+    for provider in ('flyitaly','adsblol','avioadsb','adsbiq','adsbfi','opensky','airplaneslive','adsbhub','planetrack'):
         row=c.execute('SELECT value FROM config WHERE key=?',('provider_test_'+provider,)).fetchone()
         if not row:continue
         try:entry=json.loads(row['value'])
@@ -482,7 +501,7 @@ def _provider_tests(c):
 
 def save_provider_key(provider,payload):
     functions={'flyitaly':save_flyitaly,'adsblol':save_adsblol,
-               'avioadsb':save_avio,'adsbiq':save_adsbiq,'opensky':save_opensky}
+               'avioadsb':save_avio,'adsbiq':save_adsbiq,'opensky':save_opensky,'planetrack':save_planetrack}
     if provider not in functions:raise ValueError('Unknown API source')
     with _lock:
         functions[provider](payload)
@@ -493,7 +512,7 @@ def save_provider_key(provider,payload):
 def run_provider_test(provider):
     functions={'flyitaly':test_flyitaly,'adsblol':test_adsblol,
                'avioadsb':test_avio,'adsbiq':test_adsbiq,'adsbfi':test_adsbfi,
-               'opensky':test_opensky,'airplaneslive':test_airplaneslive,'adsbhub':test_adsbhub}
+               'opensky':test_opensky,'airplaneslive':test_airplaneslive,'adsbhub':test_adsbhub,'planetrack':test_planetrack}
     if provider not in functions:raise ValueError('Unknown API source')
     with _lock,connect() as c:
         key=_provider_key(c,provider)
@@ -527,7 +546,7 @@ def provider_usage():
     regional=regional_sources.health()
     ids={'flyitaly':'FlyItalyADSB','adsblol':'adsb.lol','adsbfi':'adsb.fi',
          'avioadsb':'AvioADSB','adsbiq':'ADSBiq','airplaneslive':'airplanes.live',
-         'adsbhub':'ADSBHub','opensky':'OpenSky Network'}
+         'adsbhub':'ADSBHub','opensky':'OpenSky Network','planetrack':'PlaneTrack'}
     result={}
     for id,name in ids.items():
         combined=dict(global_status.get(name,{}))
@@ -555,6 +574,7 @@ def snapshot():
                 'adsblol':adsblol.status(bool(_adsblol_key(c))),'adsbfi':adsbfi.status(),
                 'avioadsb':{'key_set':bool(_avio_key(c))},'adsbiq':{'key_set':bool(_adsbiq_key(c))},
                 'opensky':{'key_set':bool(_opensky_key(c))},'airplaneslive':{'key_required':False},'adsbhub':{'key_required':False},
+                'planetrack':{'key_set':bool(_planetrack_key(c)),**{k:v for k,v in planetrack.status().items() if k in ('monthly_used','monthly_quota','credits_remaining')}},
                 'provider_tests':_provider_tests(c),'provider_usage':usage,
                 'receiver_settings':receiver_settings(c)}
 
@@ -992,7 +1012,7 @@ def regional_loop():
             with _lock,connect() as c:
                 receiver=receiver_settings(c)
                 rows=c.execute('SELECT max_km FROM rules WHERE enabled=1 AND use_flyitaly=1 AND max_km IS NOT NULL').fetchall()
-                keys={'AvioADSB':_avio_key(c),'ADSBiq':_adsbiq_key(c),'OpenSky Network':_opensky_credentials(c)}
+                keys={'AvioADSB':_avio_key(c),'ADSBiq':_adsbiq_key(c),'OpenSky Network':_opensky_credentials(c),'PlaneTrack':_planetrack_key(c)}
                 verified=_provider_tests(c)
             area=None
             if rows and receiver['lat'] is not None and receiver['lon'] is not None:
