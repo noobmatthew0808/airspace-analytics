@@ -81,8 +81,10 @@ def _usage(key,opener=None):
 
 def test(key,opener=None):
     info=_usage(key,opener)
+    global _identity
     with _lock:
-        if _identity in ('',fingerprint(key)):_state.update(info)
+        if _identity in ('',fingerprint(key)):
+            _identity=fingerprint(key);_state.update(info)
     return {'ok':True,'plan':info['tier']+' · '+str(info['credits_remaining'])+' credits left (balance verified)'}
 
 def parse_live(payload,now=None):
@@ -198,10 +200,10 @@ def usual_routes(key,calls):
     if not key:return {}
     valid=list(dict.fromkeys(c for c in calls if re.fullmatch(r'[A-Z]{3}[0-9][A-Z0-9]{0,4}',c)))
     with _lock:
-        if fingerprint(key)!=_identity:return {}
         now=time.monotonic()
-        result={c:_routes[c][1] for c in valid if c in _routes and _routes[c][0]>now and _routes[c][1]}
-        missing=[c for c in valid if c not in _routes or _routes[c][0]<=now]
+        matching=fingerprint(key)==_identity
+        result={c:_routes[c][1] for c in valid if matching and c in _routes and _routes[c][0]>now and _routes[c][1]}
+        missing=[c for c in valid if not matching or c not in _routes or _routes[c][0]<=now]
     if missing:_schedule(key,'history',missing[0])
     return result
 
@@ -211,5 +213,4 @@ def status():
         info=dict(_state)
         if 'last_attempt' in info:info['last_attempt_seconds_ago']=round(max(0,now-info.pop('last_attempt')))
         info['retry_seconds']=round(max(0,_next_live-time.monotonic(),api_budget.remaining(NAME)))
-        info['matching_aircraft']=0
         return info
