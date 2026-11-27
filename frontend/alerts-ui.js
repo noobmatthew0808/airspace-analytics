@@ -81,7 +81,7 @@ function providerCard(p,d){
   '<div class="alert-editor-buttons">'+(p.keyless?'':'<button class="btn primary" type="submit">Save key</button>')+
   '<button class="btn small" type="button" '+(p.id==='adsbfi'?'id="alertAdsbfiTest" ':'')+'data-test-provider="'+p.id+'">Test connection</button>'+
   (p.keyless?'':'<button class="btn small alert-delete" type="button" data-remove-provider="'+p.id+'" '+(saved?'':'disabled')+'>Remove key</button>')+'</div>'+
-  result+background+(p.id==='mapflights'?'<p class="alert-provider-note">Data: map.flights. Flight data (c) map.flights, adsb.fi; attribution required. Contains information from Mictronics Aircraft Database, which is made available under the ODC Attribution License (ODC-BY 1.0). Contains information from plane-alert-db (sdr-enthusiasts), which is made available under the Open Database License (ODbL 1.0).</p>':'')+
+  result+background+(p.id==='flyoverhead'&&test?.diagnostic?'<details class="alert-provider-note" open><summary>Response diagnostic (safe to share)</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto;">'+ae(test.diagnostic)+'</pre></details>':'')+(p.id==='mapflights'?'<p class="alert-provider-note">Data: map.flights. Flight data (c) map.flights, adsb.fi; attribution required. Contains information from Mictronics Aircraft Database, which is made available under the ODC Attribution License (ODC-BY 1.0). Contains information from plane-alert-db (sdr-enthusiasts), which is made available under the Open Database License (ODbL 1.0).</p>':'')+
   (info.monthly_used!=null?'<p class="alert-provider-note">'+(p.id==='planetrack'?'Credits ':'Requests ')+ae(info.monthly_used)+'/'+ae(info.monthly_quota||'?')+'</p>':'')+
   '</form></details>';
 }

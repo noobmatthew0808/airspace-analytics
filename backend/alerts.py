@@ -524,7 +524,7 @@ def _provider_tests(c):
         try:entry=json.loads(row['value'])
         except (TypeError,ValueError):continue
         if not isinstance(entry,dict) or entry.get('credential')!=_provider_fingerprint(_provider_key(c,provider)):continue
-        result[provider]={k:entry[k] for k in ('ok','at','message') if k in entry}
+        result[provider]={k:entry[k] for k in ('ok','at','message','diagnostic') if k in entry}
     return result
 
 def save_provider_key(provider,payload):
@@ -545,12 +545,14 @@ def run_provider_test(provider):
     with _lock,connect() as c:
         key=_provider_key(c,provider)
     fingerprint=_provider_fingerprint(key)
-    def save(ok,message):
+    def save(ok,message,diagnostic=None):
         with _lock,connect() as c:
             if _provider_fingerprint(_provider_key(c,provider))!=fingerprint:return
             # Do not expose credential text, even if an upstream error echoes it.
             if key:message=message.replace(key,'[redacted]')
             record={'credential':fingerprint,'ok':ok,'at':int(time.time()),'message':message[:300]}
+            if provider=='flyoverhead' and diagnostic:
+                record['diagnostic']=str(diagnostic).replace(key,'[redacted]')[:3500] if key else str(diagnostic)[:3500]
             c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',
                       ('provider_test_'+provider,json.dumps(record)))
     try:
@@ -559,7 +561,7 @@ def run_provider_test(provider):
         # A temporary cooldown is not a revoked key or a failed authorization.
         # Preserve activation so a provider can resume automatically.
         if not any(x in str(error).lower() for x in ('rate limit','http 429','retry later','background lookup in progress')):
-            save(False,str(error))
+            save(False,str(error),getattr(error,'diagnostic',None) if isinstance(error,new_networks.FlySchemaError) else None)
         raise
     message='Connection successful'
     if result.get('plan'):message+=' · '+str(result['plan'])[:50]

@@ -32,6 +32,36 @@ _identity={}
 _routes={}
 _landings={}
 _daily={}
+class FlySchemaError(ValueError):
+    """Schema only, never include raw provider values or private credentials."""
+    def __init__(self,payload):
+        super().__init__('Fly Overhead response received, but aircraft format is not recognised. See response diagnostic below.')
+        self.diagnostic=json.dumps(_shape(payload),indent=2)[:3500]
+
+def _shape(value,depth=0):
+    if depth>=6:return type(value).__name__
+    if isinstance(value,dict):
+        result={}
+        for k,v in list(value.items())[:40]:
+            # Dynamic IDs, arbitrary strings, secrets and credential fields
+            # are omitted. Never include response values.
+            if not isinstance(k,str) or not re.fullmatch(r'[A-Za-z][A-Za-z_]{0,39}',k):continue
+            if re.search(r'key|token|auth|secret|password|email|cookie|session|credential|account|user',k,re.I):continue
+            result[k]=_shape(v,depth+1)
+        return result
+    if isinstance(value,list):
+        return {'count':len(value),'first':_shape(value[0],depth+1) if value else None}
+    if isinstance(value,bool):return 'boolean'
+    if isinstance(value,(int,float)):
+        if 1e9<=value<=2e9:return 'number (possible Unix seconds)'
+        if 1e12<=value<=2e12:return 'number (possible Unix milliseconds)'
+        return 'number'
+    if isinstance(value,str):
+        if re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})',value):return 'ISO timestamp string'
+        if re.fullmatch(r'[A-Fa-f0-9]{6}',value):return 'six-character hex string'
+        return 'string'
+    return 'null' if value is None else type(value).__name__
+
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):return None
 
@@ -96,6 +126,7 @@ def _request(name,path,key,opener=None,live=False):
             if remaining is not None and str(remaining).isdigit() and (not live or name==FLY):
                 with _lock:
                     if _identity.get(name)==ident:_health.setdefault(name,{})['remaining']=int(remaining)
+        if name==FLY and not isinstance(data,dict):raise FlySchemaError(data)
         if not isinstance(data,dict):raise ValueError('Invalid API response')
         return data
     except HTTPError as e:
@@ -136,11 +167,11 @@ def parse_fly(payload,now=None):
     Unknown formats fail the test rather than silently fabricating freshness.
     """
     now=time.time() if now is None else now
-    if not isinstance(payload,dict):raise ValueError('Fly Overhead invalid response')
+    if not isinstance(payload,dict):raise FlySchemaError(payload)
     rows=payload.get('ac')
     delta=_age(payload.get('now'),now)
     if not isinstance(rows,list) or delta is None or delta>30:
-        raise ValueError('Fly Overhead schema not verified: need timestamped ac array')
+        raise FlySchemaError(payload)
     out=[]
     for r in rows[:5000]:
         if not isinstance(r,dict) or not re.fullmatch(r'[0-9a-f]{6}',_ident(r.get('hex'))):continue
