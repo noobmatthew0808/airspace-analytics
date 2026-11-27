@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import threading
 import time
-from . import api_budget, extra_flight_sources as extra
+from . import api_budget, planetrack, extra_flight_sources as extra
 
 _lock=threading.RLock()
 _region=None
@@ -14,6 +14,7 @@ _next={}
 _errors={}
 _busy=set()
 _enabled=set()
+_pt_identity=''
 
 def valid(v):
     return isinstance(v,(int,float)) and not isinstance(v,bool) and math.isfinite(v)
@@ -51,6 +52,8 @@ def aircraft():
                 for k in ('seen','seen_pos'):
                     if valid(q.get(k)):q[k]+=max(0,now-stamp)
                 if q.get('seen',999)<=120:out.append(q)
+        if 'PlaneTrack' in _enabled:
+            out.extend(p for p in planetrack.cached(_pt_identity) if nearby(p,_region))
         enabled='ADSBHub' in _enabled
     if enabled:out.extend(extra.hub_nearby())
     return out
@@ -89,21 +92,25 @@ def _fetch(name,area,key):
 
 def configure(area,keys,verified):
     """Called independently of receiver matching; only cache reads in the alert loop."""
-    global _region,_enabled
+    global _region,_enabled,_pt_identity
     names={n for n in ('AvioADSB','ADSBiq') if keys.get(n)}
     if verified.get('airplaneslive',{}).get('ok'):names.add('airplanes.live')
     if verified.get('adsbhub',{}).get('ok'):names.add('ADSBHub')
     # OpenSky region may be used only with written authorization.
     if keys.get('OpenSky Network') and verified.get('opensky',{}).get('ok'):names.add('OpenSky Network')
+    pt_key=keys.get('PlaneTrack') if verified.get('planetrack',{}).get('ok') else ''
+    if pt_key:names.add('PlaneTrack')
     with _lock:
         if area!=_region:_cache.clear()
         _region=area
         _enabled=names if area else set()
+        _pt_identity=planetrack.fingerprint(pt_key) if area and pt_key else ''
         for name in list(_cache):
             if name not in _enabled:del _cache[name]
         now=time.monotonic()
         extra.set_region(area,'ADSBHub' in _enabled)
         if not area:return
+        if pt_key:planetrack.ensure_live(pt_key)
         for name,delay in [('AvioADSB',900),('ADSBiq',300),('airplanes.live',480),('OpenSky Network',240)]:
             if name not in _enabled or name in _busy or now<_next.get(name,0) or api_budget.remaining(name)>0:continue
             if name in _cache and now-_cache[name][0]<45:continue
@@ -122,7 +129,7 @@ def configure(area,keys,verified):
 def health():
     with _lock:
         now=time.monotonic()
-        return {name:{'nearby_aircraft':len(extra.hub_nearby()) if name=='ADSBHub' else (len(_cache[name][1]) if name in _cache and now-_cache[name][0]<=120 else 0),
+        return {name:{'nearby_aircraft':len(extra.hub_nearby()) if name=='ADSBHub' else sum(1 for p in planetrack.cached(_pt_identity) if nearby(p,_region)) if name=='PlaneTrack' else (len(_cache[name][1]) if name in _cache and now-_cache[name][0]<=120 else 0),
                       'last_attempt_seconds_ago':round(max(0,now-_cache[name][0])) if name in _cache else None,
                       'error':_errors.get(name),'retry_seconds':round(api_budget.remaining(name))}
                 for name in sorted(_enabled)}

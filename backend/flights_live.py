@@ -17,7 +17,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHandler
 
-from . import alerts, adsbfi, adsblol, flyitaly, data, live_details, flights_routes, flights_history, extra_flight_sources, regional_sources, api_budget
+from . import alerts, adsbfi, adsblol, flyitaly, data, live_details, flights_routes, flights_history, extra_flight_sources, regional_sources, api_budget, planetrack
 
 _CACHE_LOCK=threading.Lock()
 # Keep the original adsb.fi cache shape for existing callers and regressions.
@@ -190,7 +190,7 @@ def _configured_keys():
     try:
         with alerts._lock,alerts.connect() as db:
             return {'FlyItalyADSB':alerts._flyitaly_key(db),
-                    'adsb.lol':alerts._adsblol_key(db),'AvioADSB':alerts._avio_key(db),'ADSBiq':alerts._adsbiq_key(db)}
+                    'adsb.lol':alerts._adsblol_key(db),'AvioADSB':alerts._avio_key(db),'ADSBiq':alerts._adsbiq_key(db),'PlaneTrack':alerts._planetrack_key(db) if alerts._provider_tests(db).get('planetrack',{}).get('ok') else ''}
     except (OSError,ValueError):
         return {'FlyItalyADSB':'','adsb.lol':''}
 
@@ -316,7 +316,7 @@ def source_health():
     # No network I/O and no secrets. Avoid blocking the HTTP cache reader
     # while the background thread holds the remote lookup lock.
     now=time.monotonic()
-    return {**extra_flight_sources.health(),**{name:{'last_attempt_seconds_ago':round(max(0,now-store['updated'])) if store['updated'] else None,
+    return {**extra_flight_sources.health(),'PlaneTrack':planetrack.status(),**{name:{'last_attempt_seconds_ago':round(max(0,now-store['updated'])) if store['updated'] else None,
                   'matching_aircraft':sum(1 for p in store['aircraft'] if isinstance(p.get('seen'),(int,float)) and p['seen']+max(0,now-store['updated'])<=120),
                   'error':store.get('error'),
                   'retry_seconds':round(max(0,_ROTATION['retry_until'].get(name,0)-now))}
@@ -417,6 +417,12 @@ def snapshot(value='',network_fetch=_lookup_network):
         remote+=extra_flight_sources.collect(registrations,identities,set(registrations)-current,
                                            credentials,airplanes,hub)
 
+    pt_key=configured.get('PlaneTrack','')
+    if pt_key:
+        # An inexpensive shared snapshot serves both Flights and opted-in alerts.
+        remote+=planetrack.cached(planetrack.fingerprint(pt_key))
+        if any(reg not in {normal_reg(p.get('r','')) for p in remote+others+local if _active(p)} for reg in targets):
+            planetrack.ensure_live(pt_key)
     seen={}
     for plane in remote+others+local:
         if not _active(plane):continue
@@ -463,6 +469,11 @@ def snapshot(value='',network_fetch=_lookup_network):
         dest=live_details._iata(route_info.get('to_iata') or route_info.get('to'))
         if re.fullmatch(r'[A-Z]{3}',orig) and re.fullmatch(r'[A-Z]{3}',dest) and orig!=dest:
             usual_routes[str(item['flight']).strip().upper()]=orig+'–'+dest
+    if pt_key:
+        missing=[call for call in calls if call and not route_map.get(call) and call not in usual_routes and call not in direct_routes]
+        for call,(origin,destination) in planetrack.usual_routes(pt_key,missing).items():
+            value=live_details._route(origin,destination)
+            if value:usual_routes[call]=value.replace(' – ','–')
     history_key=configured.get('FlyItalyADSB','') if isinstance(configured,dict) else ''
     unknown_regs=[reg for key,reg in targets.items() if key not in seen or (seen[key].get('alt_baro')=='ground' and not airport_for_ground(seen[key]))]
     if history_key and unknown_regs:

@@ -11,7 +11,8 @@ const providers=[
  {id:'adsbfi',name:'adsb.fi',url:'https://opendata.adsb.fi/api',hint:'Free public API; worldwide snapshot access uses your feeder IP.',keyless:true},
  {id:'airplaneslive',name:'airplanes.live',keyless:true,url:'https://api.airplanes.live/v2/reg/',hint:'Test from your feeder network to enable registration and nearby aircraft lookups.'},
  {id:'adsbhub',name:'ADSBHub',keyless:true,url:'tcp://data.adsbhub.org:5002',hint:'Set your public Data Access IP and SBS/30003 format, then test to activate the shared read-only stream.'},
- {id:'opensky',name:'OpenSky Network',oauth:true,url:'https://opensky-network.org/api/states/all',hint:'Create an OAuth API client on the OpenSky account page. Written permission for automated live use is required.'}
+ {id:'opensky',name:'OpenSky Network',oauth:true,url:'https://opensky-network.org/api/states/all',hint:'Create an OAuth API client on the OpenSky account page. Written permission for automated live use is required.'},
+ {id:'planetrack',name:'PlaneTrack',url:'https://planetrack.ai/v1',hint:'Create a free key at planetrack.ai. Data: PlaneTrack.ai; contains information from the Mictronics aircraft database under ODC Attribution License. Free tier 2,000 credits/month; shared snapshots at most every 6 hours, history at most daily. Test checks the balance before live use.'}
 ];
 let alertsData=null,alertsTimer=null,editingRule=null,alertsBusy=false;
 const pendingProviders=new Set();
@@ -79,7 +80,7 @@ function providerCard(p,d){
   '<button class="btn small" type="button" '+(p.id==='adsbfi'?'id="alertAdsbfiTest" ':'')+'data-test-provider="'+p.id+'">Test connection</button>'+
   (p.keyless?'':'<button class="btn small alert-delete" type="button" data-remove-provider="'+p.id+'" '+(saved?'':'disabled')+'>Remove key</button>')+'</div>'+
   result+background+
-  (info.monthly_used?'<p class="alert-provider-note">Requests '+ae(info.monthly_used)+'/'+ae(info.monthly_quota||'?')+'</p>':'')+
+  (info.monthly_used!=null?'<p class="alert-provider-note">'+(p.id==='planetrack'?'Credits ':'Requests ')+ae(info.monthly_used)+'/'+ae(info.monthly_quota||'?')+'</p>':'')+
   '</form></details>';
 }
 function renderAlertPageContents(){
