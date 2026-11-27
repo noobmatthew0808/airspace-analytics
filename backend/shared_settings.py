@@ -206,7 +206,7 @@ def _migrate_launcher_feeders(items):
     if items is None:return False
     changed=False
     for row in items:
-        if _link_identity(row.get('id'))=='dataero' or _link_identity(row.get('name'))=='dataero':
+        if _link_identity(row.get('id')) in ('dataero','dataaero') or _link_identity(row.get('name')) in ('dataero','dataaero'):
             if row.get('group')!='feeders':
                 row['group']='feeders'
                 changed=True
@@ -270,7 +270,7 @@ def update(payload):
             _fix_feeder_links(incoming_links)
             _fix_dataero_links(incoming_links)
             for row in incoming_links:
-                if _link_identity(row.get('id'))=='dataero' or _link_identity(row.get('name'))=='dataero':row['group']='feeders'
+                if _link_identity(row.get('id')) in ('dataero','dataaero') or _link_identity(row.get('name')) in ('dataero','dataaero'):row['group']='feeders'
             if state['links'] is None:state['links']=incoming_links
             elif payload.get('has_legacy_links',True):
                 existing=state['links']
