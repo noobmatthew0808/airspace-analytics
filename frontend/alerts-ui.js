@@ -14,7 +14,7 @@ const providers=[
  {id:'opensky',name:'OpenSky Network',oauth:true,url:'https://opensky-network.org/api/states/all',hint:'Create an OAuth API client on the OpenSky account page. Written permission for automated live use is required.'},
  {id:'planetrack',name:'PlaneTrack',url:'https://planetrack.ai/v1',hint:'Create a free key at planetrack.ai. Data: PlaneTrack.ai; contains information from the Mictronics aircraft database under ODC Attribution License. Free tier 2,000 credits/month; shared snapshots at most every 6 hours, history at most daily. Test checks the balance before live use.'},
  {id:'mapflights',name:'map.flights',url:'https://map.flights/api/v1',hint:'Feeder key: regional live data, observed routes and landing history. Poll 10s, up to 250 km around saved antenna; respects 1,000 daily non-live requests.'},
- {id:'flyoverhead',name:'Fly Overhead',url:'https://flyoverhead.com/api/public/aircraft/bounds',hint:'Free key: regional bounds endpoint, 65s polling to stay below 2,000 requests/day. Test checks compatible observed aircraft format. Route endpoint not verified.'}
+ {id:'flyoverhead',name:'Fly Overhead',url:'https://flyoverhead.com/api/public/aircraft/bounds',hint:'Free key: regional bounds endpoint, 65s polling to stay below 2,000 requests/day. Uses fresh aircraft contact and reported airborne/ground state for Flights. Numeric units and position age are unverified; distance/altitude alerts and route endpoint are not enabled.'}
 ];
 let alertsData=null,alertsTimer=null,editingRule=null,alertsBusy=false;
 const pendingProviders=new Set();
