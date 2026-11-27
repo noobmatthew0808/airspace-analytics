@@ -334,7 +334,7 @@ defaultLinks.push(...newFeederLinks,...launcherFeederLinksV11042);
 function migrateLauncherFeederLinks(list){
  const normalize=value=>String(value||'').trim().toLowerCase().replace(/[^a-z0-9]/g,'');
  for(const row of list){
-  if(normalize(row.id)==='dataero'||normalize(row.name)==='dataero')row.group='feeders';
+  if(['dataero','dataaero'].includes(normalize(row.id))||['dataero','dataaero'].includes(normalize(row.name)))row.group='feeders';
  }
  for(const item of launcherFeederLinksV11042){
   const existing=list.find(row=>normalize(row.id)===normalize(item.id)||normalize(row.name)===normalize(item.name));
