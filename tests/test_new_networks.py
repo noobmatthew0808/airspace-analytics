@@ -46,8 +46,36 @@ class NewNetworkTests(unittest.TestCase):
         self.assertEqual(result[0]['seen'],3)
         self.assertIs(result[0]['_fly_on_ground'],False)
         for field in ('alt_baro','gs','seen_pos'):self.assertNotIn(field,result[0])
-        with self.assertRaises(ValueError):n.parse_fly({'success':True,'data':{'timestamp':now-90,'aircraft':[row]}},now)
+        self.assertEqual(n.parse_fly({'success':True,'data':{'timestamp':now-90,'aircraft':[row]}},now)[0]['seen'],90)
+        self.assertEqual(n.parse_fly({'success':True,'data':{'timestamp':now-121,'aircraft':[row]}},now),[])
         self.assertIn('icao24',n._shape(row))
+
+    def test_fly_verified_stale_snapshot_never_supplies_live_aircraft(self):
+        now=1800000000
+        row={'icao24':'abcdef','lastContact':now-4,'latitude':50.8,'longitude':0.2,'onGround':False}
+        details={}
+        payload={'success':True,'data':{'timestamp':now-300,'aircraft':[row]}}
+        self.assertEqual(n.parse_fly(payload,now,details),[])
+        self.assertEqual(details['snapshot_age_seconds'],300)
+        self.assertEqual(details['identifiable_aircraft'],1)
+        self.assertEqual(details['fresh_aircraft'],0)
+        with patch.object(n,'near',side_effect=lambda name,key,area,details=None:n.parse_fly(payload,now,details)):
+            result=n.test(n.FLY,'test-key',(50.8,.2,15))
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['aircraft'],0)
+        self.assertIn('no usable fresh',result['plan'])
+        self.assertNotIn('abcdef',result['diagnostic'])
+
+    def test_fly_verified_missing_ids_and_future_snapshot_fail_closed(self):
+        now=1800000000
+        row={'lastContact':now,'latitude':50.8,'longitude':0.2,'onGround':False}
+        details={}
+        self.assertEqual(n.parse_fly({'success':True,'data':{'timestamp':now,'aircraft':[row]}},now,details),[])
+        self.assertEqual(details['identifiable_aircraft'],0)
+        self.assertIn('No supported ICAO',details['data_note'])
+        self.assertEqual(n.parse_fly({'success':True,'data':{'timestamp':now+20,'aircraft':[dict(row,icao24='abcdef')]}},now,{}),[])
+        with self.assertRaises(n.FlySchemaError):
+            n.parse_fly({'success':False,'data':{'timestamp':now,'aircraft':[]}},now,{})
 
     def test_fly_icao_only_matches_recent_known_registration_without_guessing(self):
         p={'hex':'abcdef','seen':2,'_fly_status_only':True,'_fly_on_ground':False}
