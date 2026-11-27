@@ -48,9 +48,10 @@ class SharedPreferencesTests(unittest.TestCase):
              {'id':'adsbhub','name':'ADSBHub','url':'https://www.adsbhub.org/statistic.php'},
              {'id':'opensky','name':'OpenSky Network','url':'https://opensky-network.org/my-opensky'},
              shortcut('custom')]
-        # Simulate the unmodified v1.10.32 SQLite record.
+        # Isolate the historical v1.10.33 correction; the v1.10.42 migration
+        # and the combined upgrade are covered in test_launcher_feeders_v11042.
         state={'excluded_days':['2026-11-24'],'links':old,'revision':7,
-               'migrated':['browser-one'],'dates_initialized':True}
+               'migrated':['browser-one'],'dates_initialized':True,'launcher_feeders_v11042':True}
         with alerts.connect() as c:
             c.execute('INSERT INTO config(key,value) VALUES(?,?)',(shared_settings.KEY,json.dumps(state)))
         updated=shared_settings.read()
@@ -80,7 +81,8 @@ class SharedPreferencesTests(unittest.TestCase):
         old={'id':'dataero','name':'Dataero','group':'feeders','url':'https://radar.dataero.eu/map',
              'extraLabel':'Claim receiver','extraUrl':'https://radar.dataero.eu/contribute/connect','tone':'sky'}
         state={'excluded_days':['2026-11-24'],'links':[other,old],'revision':7,
-               'migrated':['browser-one'],'dates_initialized':True,'feeder_links_v11033':True}
+               'migrated':['browser-one'],'dates_initialized':True,'feeder_links_v11033':True,
+               'launcher_feeders_v11042':True}
         with alerts.connect() as c:
             c.execute('INSERT INTO config(key,value) VALUES(?,?)',(shared_settings.KEY,json.dumps(state)))
         updated=shared_settings.read()
