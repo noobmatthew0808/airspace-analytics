@@ -10,9 +10,9 @@ from urllib.error import HTTPError
 _lock=threading.Lock()
 _next={}
 MIN_GAP={'FlyItalyADSB':2,'adsb.lol':2,'adsb.fi':2,'AvioADSB':1,
-         'ADSBiq':20,'airplanes.live':2,'OpenSky Network':2}
+         'ADSBiq':20,'airplanes.live':2,'OpenSky Network':2,'PlaneTrack':2}
 DEFAULT_BACKOFF={'AvioADSB':86400,'ADSBiq':900,'FlyItalyADSB':900,
-                 'adsb.lol':900,'adsb.fi':120,'airplanes.live':86400,'OpenSky Network':900}
+                 'adsb.lol':900,'adsb.fi':120,'airplanes.live':86400,'OpenSky Network':900,'PlaneTrack':3600}
 
 def remaining(provider):
     with _lock:return max(0,_next.get(provider,0)-time.monotonic())
