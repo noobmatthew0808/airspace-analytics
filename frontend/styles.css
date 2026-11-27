@@ -418,3 +418,12 @@ body.launcher-mode .launcher-header{margin-bottom:24px;padding-bottom:16px}
  .suggested-exclusion-row{align-items:flex-start;flex-direction:column}
  .suggested-exclusion-row button{align-self:flex-start}
 }
+
+/* Shortcut editor only: keep web addresses prominent and local details optional. */
+.shortcut-edit-row .shortcut-edit-main{grid-template-columns:repeat(2,minmax(0,1fr))}
+.shortcut-url-field{grid-column:1/-1;min-width:0}
+.shortcut-edit-row .field{min-width:0}
+.shortcut-edit-row .field input,.shortcut-edit-row .field select{min-width:0;width:100%;box-sizing:border-box}
+.shortcut-edit-row .shortcut-edit-actions{flex-wrap:wrap;align-items:center}
+.shortcut-save-status{flex:1 1 100%;min-width:0}
+@media(max-width:480px){.shortcut-edit-row .shortcut-edit-main{grid-template-columns:minmax(0,1fr)}}

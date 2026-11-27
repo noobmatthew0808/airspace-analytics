@@ -62,6 +62,21 @@ def _fix_feeder_links(items):
     return changed
 
 
+DATAERO_LINKS={'url':'https://radar.dataero.eu/user/dashboard','sub':'Feeder stats',
+               'extraLabel':'Map','extraUrl':'https://radar.dataero.eu/map'}
+
+def _fix_dataero_links(items):
+    changed=False
+    for row in items or []:
+        if row.get('id')!='dataero' and not (not row.get('id') and row.get('name','').strip().lower()=='dataero'):
+            continue
+        for key,value in DATAERO_LINKS.items():
+            if row.get(key)!=value:
+                row[key]=value
+                changed=True
+    return changed
+
+
 def _load(c):
     row=c.execute('SELECT value FROM config WHERE key=?',(KEY,)).fetchone()
     if row:
@@ -69,6 +84,10 @@ def _load(c):
         if not state.get('feeder_links_v11033'):
             if _fix_feeder_links(state['links']):state['revision']+=1
             state['feeder_links_v11033']=True
+            c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',(KEY,json.dumps(state,separators=(',',':'))))
+        if not state.get('dataero_links_v11041'):
+            if _fix_dataero_links(state['links']):state['revision']+=1
+            state['dataero_links_v11041']=True
             c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',(KEY,json.dumps(state,separators=(',',':'))))
         return state
     return {'excluded_days':[DEFAULT_DATE],'links':None,'revision':0,'migrated':[],'dates_initialized':False}
@@ -97,6 +116,7 @@ def update(payload):
                 state['dates_initialized']=True
             incoming_links=links(payload.get('links',[]))
             _fix_feeder_links(incoming_links)
+            _fix_dataero_links(incoming_links)
             if state['links'] is None:state['links']=incoming_links
             elif payload.get('has_legacy_links',True):
                 existing=state['links']

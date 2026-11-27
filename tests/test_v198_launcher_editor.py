@@ -31,6 +31,10 @@ class TestLauncherEditor(unittest.TestCase):
         self.assertIn("id=\"addLink\"",source)
         self.assertIn("id=\"saveLinks\"",source)
         self.assertIn("id=\"restoreLinks\"",source)
+        for label in ("Main website address","Second website address","Local connection and logo settings","data-save-shortcuts"):
+            self.assertIn(label,source)
+        self.assertIn('"url": "https://radar.dataero.eu/user/dashboard"',source)
+        self.assertIn('"extraUrl": "https://radar.dataero.eu/map"',source)
 
     @unittest.skipUnless(shutil.which("node"),"Node unavailable")
     def test_shortcuts_render_closed_and_keep_edit_fields(self):
