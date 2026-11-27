@@ -211,7 +211,138 @@ const newFeederLinks=[
   "tone": "sky"
  }
 ];
-defaultLinks.push(...newFeederLinks);
+const launcherFeederLinksV11042=[
+ {
+  "id": "theairtraffic",
+  "name": "TheAirTraffic",
+  "group": "feeders",
+  "sub": "Your feeder status",
+  "url": "https://theairtraffic.com/myip",
+  "extraLabel": "Live map",
+  "extraUrl": "https://globe.theairtraffic.com/",
+  "icon": "radar",
+  "brand": "AT",
+  "logoDomain": "theairtraffic.com",
+  "tone": "blue"
+ },
+ {
+  "id": "theairtraffic-mlat",
+  "name": "TheAirTraffic MLAT",
+  "group": "feeders",
+  "sub": "Your Polegate MLAT sync",
+  "url": "https://theairtraffic.com/sync/uk-ireland/feeder?id=Polegate_ADS-B",
+  "extraLabel": "Feeder network map",
+  "extraUrl": "https://theairtraffic.com/feeder-map",
+  "icon": "radar",
+  "brand": "ML",
+  "logoDomain": "theairtraffic.com",
+  "tone": "blue"
+ },
+ {
+  "id": "realtraffic",
+  "name": "RealTraffic",
+  "group": "feeders",
+  "sub": "Feeder account dashboard",
+  "url": "https://flyrealtraffic.com/account/dashboard",
+  "extraLabel": "Live map",
+  "extraUrl": "https://flyrealtraffic.com/livemap/",
+  "icon": "radar",
+  "brand": "RT",
+  "logoDomain": "flyrealtraffic.com",
+  "tone": "teal"
+ },
+ {
+  "id": "planetrack",
+  "name": "PlaneTrack",
+  "group": "feeders",
+  "sub": "Your provider dashboard",
+  "url": "https://planetrack.ai/provider-dashboard.html",
+  "extraLabel": "Live map",
+  "extraUrl": "https://planetrack.ai/",
+  "icon": "radar",
+  "brand": "PT",
+  "logoDomain": "planetrack.ai",
+  "tone": "sky"
+ },
+ {
+  "id": "mlatuk",
+  "name": "mlat.uk",
+  "group": "feeders",
+  "sub": "Receiver stats and MLAT peers",
+  "url": "https://www.mlat.uk/network",
+  "extraLabel": "Live map",
+  "extraUrl": "https://map.mlat.uk/",
+  "icon": "radar",
+  "brand": "UK",
+  "logoDomain": "mlat.uk",
+  "tone": "navy"
+ },
+ {
+  "id": "adsbitalia",
+  "name": "ADSB Italia",
+  "group": "feeders",
+  "sub": "Your feeder status",
+  "url": "https://www.adsbitalia.it/status.html",
+  "extraLabel": "Live map",
+  "extraUrl": "https://map.adsbitalia.it/",
+  "icon": "radar",
+  "brand": "IT",
+  "logoDomain": "adsbitalia.it",
+  "tone": "green"
+ },
+ {
+  "id": "mapflights",
+  "name": "map.flights",
+  "group": "feeders",
+  "sub": "Station network and coverage",
+  "url": "https://map.flights/stations",
+  "extraLabel": "Live map",
+  "extraUrl": "https://map.flights/",
+  "icon": "radar",
+  "brand": "MF",
+  "logoDomain": "map.flights",
+  "tone": "violet"
+ },
+ {
+  "id": "skydex",
+  "name": "Skydex",
+  "group": "feeders",
+  "sub": "Measured receiver coverage",
+  "url": "https://skydex.online/adsb/coverage",
+  "extraLabel": "Live network map",
+  "extraUrl": "https://skydex.online/adsb/live",
+  "icon": "radar",
+  "brand": "SD",
+  "logoDomain": "skydex.online",
+  "tone": "teal"
+ },
+ {
+  "id": "planewatch",
+  "name": "Plane.watch",
+  "group": "feeders",
+  "sub": "Feeder account",
+  "url": "https://atc.plane.watch/",
+  "extraLabel": "Live map",
+  "extraUrl": "https://app.plane.watch/",
+  "icon": "radar",
+  "brand": "PW",
+  "logoDomain": "plane.watch",
+  "tone": "sky"
+ }
+];
+defaultLinks.push(...newFeederLinks,...launcherFeederLinksV11042);
+function migrateLauncherFeederLinks(list){
+ const normalize=value=>String(value||'').trim().toLowerCase().replace(/[^a-z0-9]/g,'');
+ for(const row of list){
+  if(normalize(row.id)==='dataero'||normalize(row.name)==='dataero')row.group='feeders';
+ }
+ for(const item of launcherFeederLinksV11042){
+  const existing=list.find(row=>normalize(row.id)===normalize(item.id)||normalize(row.name)===normalize(item.name));
+  if(existing){existing.group='feeders';if(['theairtraffic','theairtraffic-mlat','realtraffic'].includes(item.id))Object.assign(existing,{url:item.url,sub:item.sub,extraLabel:item.extraLabel,extraUrl:item.extraUrl});}
+  else if(list.length<100)list.push({...item});
+ }
+ return list;
+}
 const fr24Stats={extraLabel:'Feeder stats',extraUrl:'https://www.flightradar24.com/account/feed-stats/'};
 Object.assign(defaultLinks.find(x=>x.id==='fr24'),fr24Stats);
 const linksKey='airspace-analytics-links';
@@ -255,6 +386,11 @@ function legacyLinks(){
    const fr24=list.find(x=>x.id==='fr24');if(fr24&&!fr24.extraLabel&&!fr24.extraUrl&&!fr24.extraPort)Object.assign(fr24,fr24Stats);
    localStorage.setItem(linksKey,JSON.stringify(list));
    localStorage.setItem('airspace-feeder-links-v11032','1');
+  }
+  if(!localStorage.getItem('airspace-feeder-links-v11042')){
+   migrateLauncherFeederLinks(list);
+   localStorage.setItem(linksKey,JSON.stringify(list));
+   localStorage.setItem('airspace-feeder-links-v11042','1');
   }
   return list;
  }catch{return defaultLinks.slice()}
