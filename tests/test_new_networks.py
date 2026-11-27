@@ -34,6 +34,31 @@ class NewNetworkTests(unittest.TestCase):
         for secret in ('abcdef','G-SECRET','sk_live_secret','sensitive value','private','123456'):
             self.assertNotIn(secret,caught.exception.diagnostic)
 
+    def test_fly_nested_response_uses_contact_and_ground_without_guessing_units(self):
+        now=1800000000
+        row={'icao24':'abcdef','callsign':'BAW123','latitude':50.8,'longitude':0.2,
+             'altitude':11000,'velocity':230,'onGround':False,'lastContact':now-3}
+        payload={'success':True,'data':{'timestamp':now-1,'aircraft':[row,dict(row,lastContact=now-180)]}}
+        result=n.parse_fly(payload,now)
+        self.assertEqual(len(result),1)
+        self.assertEqual(result[0]['hex'],'abcdef')
+        self.assertEqual(result[0]['flight'],'BAW123')
+        self.assertEqual(result[0]['seen'],3)
+        self.assertIs(result[0]['_fly_on_ground'],False)
+        for field in ('alt_baro','gs','seen_pos'):self.assertNotIn(field,result[0])
+        with self.assertRaises(ValueError):n.parse_fly({'success':True,'data':{'timestamp':now-90,'aircraft':[row]}},now)
+        self.assertIn('icao24',n._shape(row))
+
+    def test_fly_icao_only_matches_recent_known_registration_without_guessing(self):
+        p={'hex':'abcdef','seen':2,'_fly_status_only':True,'_fly_on_ground':False}
+        history={'GABCD':{'hex':'abcdef','last_seen_at':time.time()-10}}
+        remote,_=live._resolve_fly_identities([p],[],[],history,{'GABCD':'G-ABCD'})
+        self.assertEqual(remote[0]['r'],'G-ABCD')
+        other={'hex':'abcdef','r':'G-OTHER','seen':1,'alt_baro':30000}
+        remote,_=live._resolve_fly_identities([p],[other],[],history,{'GABCD':'G-ABCD'})
+        self.assertNotIn('r',remote[0])
+        self.assertEqual(live._prefer(other,p),other)
+
     def test_current_route_requires_matching_fresh_airframe(self):
         now=1800000000
         p={'flight':{'hex':'abcdef','callsign':'BAW123','origin':{'icao':'EGLL'},'dest':{'iata':'JFK'}},
