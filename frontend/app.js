@@ -350,7 +350,7 @@ function mergeTatLinks(list){
  const isMlat=r=>norm(r.id)==='theairtrafficmlat'||norm(r.name)==='theairtrafficmlat';
  let main=list.find(isMain);
  if(!main){main=list.find(isMlat);if(main)Object.assign(main,{id:'theairtraffic',name:'TheAirTraffic'});}
- if(main){Object.assign(main,tatThreeLinks);for(let i=list.length-1;i>=0;i--)if(list[i]!==main&&(isMain(list[i])||isMlat(list[i])))list.splice(i,1);}
+ if(main){Object.assign(main,{id:'theairtraffic',name:'TheAirTraffic'},tatThreeLinks);for(let i=list.length-1;i>=0;i--)if(list[i]!==main&&(isMain(list[i])||isMlat(list[i])))list.splice(i,1);}
  return list;
 }
 mergeTatLinks(defaultLinks);
