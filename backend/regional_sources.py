@@ -56,7 +56,7 @@ def aircraft():
         if 'PlaneTrack' in _enabled:
             out.extend(p for p in planetrack.cached(_pt_identity) if nearby(p,_region))
         # Freshness is rechecked against the shared regional cache at read time.
-        out.extend(p for p in new_networks.peek(_new_identities) if nearby(p,_region))
+        out.extend(p for p in new_networks.peek(_new_identities) if not p.get('_fly_status_only') and nearby(p,_region))
         enabled='ADSBHub' in _enabled
     if enabled:out.extend(extra.hub_nearby())
     return out
