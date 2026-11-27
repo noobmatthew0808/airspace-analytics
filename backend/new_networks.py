@@ -178,7 +178,7 @@ def test(name,key,area):
 
 def reset(name):
     with _lock:
-        _identity.pop(name,None);_cache.pop(name,None);_health.pop(name,None);_next.pop(name,None)
+        _identity.pop(name,None);_cache.pop(name,None);_health.pop(name,None);[ _next.pop(slot,None) for slot in list(_next) if slot[0]==name ]
         if name==MAP:_routes.clear();_landings.clear()
 
 def _activate(name,key):
@@ -211,6 +211,19 @@ def _start(name,scope,key,delay,job):
         finally:
             with _lock:_busy.discard(slot)
     threading.Thread(target=run,daemon=True,name='airspace-'+name+'-'+scope).start()
+
+def peek(identities):
+    result=[]
+    with _lock:
+        for name,ident in identities.items():
+            if _identity.get(name)!=ident or name not in _cache:continue
+            stamp,planes=_cache[name];elapsed=max(0,time.monotonic()-stamp)
+            for p in planes:
+                if p.get('seen',999)+elapsed>120:continue
+                q=dict(p,seen=p['seen']+elapsed)
+                if _num(q.get('seen_pos')):q['seen_pos']+=elapsed
+                result.append(q)
+    return result
 
 def collect(keys,area):
     if not area:return []
