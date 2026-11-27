@@ -1,3 +1,9 @@
+# v1.10.43 — PlaneTrack and TheAirTraffic links
+
+- Add a single TheAirTraffic card with normal live map, feeder status and Polegate MLAT status. Migrate existing cards once; support editable third HTTPS link in Settings.
+- Add PlaneTrack's documented REST API as an optional quota-aware source for Flights, likely historical route enrichment and opted-in nearby backup alerts. A single shared snapshot is reused, not recorded into Aerodrome. Free-tier credits are checked before each paid-credit request; at most one live snapshot per six hours and one history query daily, with a balance reserve. Save the key privately and test the account balance in Settings. No key is committed or preinstalled.
+- No changes to local receiver data, ACARS message sources or recorded flight log.
+
 # v1.10.42 — Feeder launcher links
 
 - Move existing Dataero shortcuts to Feeder Website Status without resetting other shortcuts. Add TheAirTraffic feeder and Polegate MLAT pages, RealTraffic and useful PlaneTrack, mlat.uk, ADSB Italia, map.flights, Skydex and Plane.watch shortcuts, with live maps. No games, data feeds, APIs, analytics or alert changes.
