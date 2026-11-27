@@ -14,7 +14,7 @@ assert.match(render({avioadsb:{key_set:true},provider_tests:{avioadsb:{ok:false,
 assert.match(render({avioadsb:{key_set:true},provider_tests:{avioadsb:{ok:false,message:'HTTP 403',at:1800000000}}}),/provider-result-avioadsb[^]*HTTP 403/);
 assert.match(providerCard(fi,{}),/alert-api-icon keyless/);
 assert.doesNotMatch(providerCard(fi,{}),/name="key"/);
-assert.deepEqual(providers.map(p=>p.id),['flyitaly','adsblol','avioadsb','adsbiq','adsbfi','airplaneslive','adsbhub','opensky','planetrack']);
+assert.deepEqual(providers.map(p=>p.id),['flyitaly','adsblol','avioadsb','adsbiq','adsbfi','airplaneslive','adsbhub','opensky','planetrack','mapflights','flyoverhead']);
 assert(!src.includes('alertOtherSources'));
 assert(!src.includes('helperCard('));
 for(const p of providers)assert.match(providerCard(p,{}),new RegExp('data-test-provider="'+p.id+'"'));
