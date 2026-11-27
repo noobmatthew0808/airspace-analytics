@@ -8,7 +8,7 @@ from . import alerts
 
 KEY='dashboard_preferences_v1'
 DEFAULT_DATE='2026-11-09'
-LINK_FIELDS=('id','name','group','sub','port','path','url','icon','brand','logoDomain','logoSrc','tone','extraLabel','extraUrl','extraPort','extraPath')
+LINK_FIELDS=('id','name','group','sub','port','path','url','icon','brand','logoDomain','logoSrc','tone','extraLabel','extraUrl','extraPort','extraPath','thirdLabel','thirdUrl')
 
 def dates(value):
     if not isinstance(value,list) or len(value)>64:raise ValueError('Invalid excluded dates')
@@ -27,7 +27,7 @@ def links(value):
         row={k:str(item[k])[:512] for k in LINK_FIELDS if k in item and item[k] is not None}
         if not row.get('name'):raise ValueError('Missing shortcut name')
         row['group']='feeders' if row.get('group')=='feeders' else 'stats'
-        for k in ('url','extraUrl'):
+        for k in ('url','extraUrl','thirdUrl'):
             if row.get(k):
                 u=urlsplit(row[k])
                 if u.scheme not in ('http','https') or not u.hostname or u.username or u.password:raise ValueError('Invalid shortcut URL')
@@ -225,6 +225,32 @@ def _migrate_launcher_feeders(items):
             changed=True
     return changed
 
+TAT_THREE_LINKS={"group":"feeders","sub":"Live aircraft map","url":"https://globe.theairtraffic.com/","extraLabel":"Feeder status","extraUrl":"https://theairtraffic.com/myip","thirdLabel":"MLAT feeder status","thirdUrl":"https://theairtraffic.com/sync/uk-ireland/feeder?id=Polegate_ADS-B"}
+def _merge_tat_links(items):
+    if items is None:return False
+    def is_main(row):
+        return _link_identity(row.get('id'))=='theairtraffic' or _link_identity(row.get('name'))=='theairtraffic'
+    def is_mlat(row):
+        return _link_identity(row.get('id'))=='theairtrafficmlat' or _link_identity(row.get('name'))=='theairtrafficmlat'
+    main=next((r for r in items if is_main(r)),None)
+    changed=False
+    if main is None:
+        main=next((r for r in items if is_mlat(r)),None)
+        if main is not None:
+            main.update(id='theairtraffic',name='TheAirTraffic')
+            changed=True
+    if main is None:return False
+    for key,value in TAT_THREE_LINKS.items():
+        if main.get(key)!=value:
+            main[key]=value
+            changed=True
+    for index in range(len(items)-1,-1,-1):
+        row=items[index]
+        if row is not main and (is_main(row) or is_mlat(row)):
+            del items[index]
+            changed=True
+    return changed
+
 def _load(c):
     row=c.execute('SELECT value FROM config WHERE key=?',(KEY,)).fetchone()
     if row:
@@ -241,8 +267,12 @@ def _load(c):
             if _migrate_launcher_feeders(state['links']):state['revision']+=1
             state['launcher_feeders_v11042']=True
             c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',(KEY,json.dumps(state,separators=(',',':'))))
+        if not state.get('tat_three_v11043') and state['links'] is not None:
+            if _merge_tat_links(state['links']):state['revision']+=1
+            state['tat_three_v11043']=True
+            c.execute('INSERT OR REPLACE INTO config(key,value) VALUES(?,?)',(KEY,json.dumps(state,separators=(',',':'))))
         return state
-    return {'excluded_days':[DEFAULT_DATE],'links':None,'revision':0,'migrated':[],'dates_initialized':False,'launcher_feeders_v11042':True}
+    return {'excluded_days':[DEFAULT_DATE],'links':None,'revision':0,'migrated':[],'dates_initialized':False,'launcher_feeders_v11042':True,'tat_three_v11043':True}
 
 def _public(state):
     return {k:state[k] for k in ('excluded_days','links','revision')}
@@ -267,6 +297,7 @@ def update(payload):
                 else:state['excluded_days']=dates(sorted(set(state['excluded_days'])|(set(incoming)-set(state.get('removed_days',[])))))
                 state['dates_initialized']=True
             incoming_links=links(payload.get('links',[]))
+            _merge_tat_links(incoming_links)
             _fix_feeder_links(incoming_links)
             _fix_dataero_links(incoming_links)
             for row in incoming_links:
