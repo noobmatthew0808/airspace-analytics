@@ -534,7 +534,7 @@ def snapshot(value='',network_fetch=_lookup_network,background=False):
             value=live_details._route(origin,destination)
             if value:usual_routes[call]=value.replace(' – ','–')
     history_key=configured.get('FlyItalyADSB','') if isinstance(configured,dict) else ''
-    unknown_regs=[reg for key,reg in targets.items() if key not in seen or (seen[key].get('alt_baro')=='ground' and not airport_for_ground(seen[key]))]
+    unknown_regs=[reg for key,reg in targets.items() if key not in seen or ((seen[key].get('alt_baro')=='ground' or seen[key].get('_fly_on_ground') is True) and not airport_for_ground(seen[key]))]
     if history_key and unknown_regs:
         flights_history.schedule(unknown_regs,history_key)
     map_routes,map_landings=new_networks.enrich(new_keys.get(new_networks.MAP,''),[(str(p.get('flight') or '').strip().upper(),str(p.get('hex') or '').lower()) for p in seen.values() if str(p.get('flight') or '').strip().upper() not in route_map and str(p.get('flight') or '').strip().upper() not in direct_routes],[(reg,str((seen.get(normal_reg(reg)) or {}).get('hex') or local_history.get(normal_reg(reg),{}).get('hex') or '').lower()) for reg in unknown_regs]) if new_keys.get(new_networks.MAP) else ({},{})
