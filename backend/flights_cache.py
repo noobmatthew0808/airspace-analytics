@@ -8,7 +8,7 @@ import threading
 import time
 from . import alerts, flights_log, flights_live
 
-PERIOD = 15
+PERIOD = 5
 SHEET_PERIOD = 6 * 3600  # SheetDB free quota is only 500 calls/month
 LIVE_TTL = 120
 AIRPORT_TTL = 7 * 24 * 3600
@@ -162,7 +162,7 @@ def _refresh(regs):
     chunks = [regs[i:i+flights_live.MAX_REGS] for i in range(0, len(regs), flights_live.MAX_REGS)]
     batch = chunks[_cursor % len(chunks)]
     _cursor += 1
-    snapshot = flights_live.snapshot(','.join(batch))
+    snapshot = flights_live.snapshot(','.join(batch),background=True)
     now = time.time()
     with _lock:
         previous=dict(_entries)
