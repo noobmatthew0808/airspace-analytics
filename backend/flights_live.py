@@ -302,6 +302,10 @@ def _active(p):
 
 def _prefer(current,other):
     if current is None:return other
+    # Status-only observations cannot displace full position/altitude records.
+    if bool(current.get('_fly_status_only'))!=bool(other.get('_fly_status_only')):
+        full=other if current.get('_fly_status_only') else current
+        if full.get('alt_baro') is not None or full.get('gs') is not None:return full
     # Prefer fresher observations, keeping local reception as a tie-breaker.
     a,b=current.get('seen',999),other.get('seen',999)
     primary,secondary=(other,current) if b+3<a or (abs(a-b)<=3 and other.get('_source')=='Your antenna') else (current,other)
@@ -313,6 +317,26 @@ def _prefer(current,other):
     if x and y and x!=y:return primary
     return alerts._merge_external(primary,secondary)
 
+
+def _resolve_fly_identities(remote,others,local,history,targets):
+    known={}
+    for key,row in history.items():
+        if key in targets and time.time()-row.get('last_seen_at',0)<=7*86400:
+            known.setdefault(str(row.get('hex','')).lower(),set()).add(targets[key])
+    for plane in remote+others+local:
+        if not _active(plane) or plane.get('_fly_status_only'):continue
+        reg=normal_reg(plane.get('r',''))
+        if reg in targets:known.setdefault(str(plane.get('hex','')).lower(),set()).add(targets[reg])
+        elif reg:known.setdefault(str(plane.get('hex','')).lower(),set()).add('!other')
+    def fill(planes):
+        result=[]
+        for plane in planes:
+            if plane.get('_fly_status_only') and not plane.get('r'):
+                choices=known.get(str(plane.get('hex','')).lower(),set())
+                if len(choices)==1 and '!other' not in choices:plane=dict(plane,r=next(iter(choices)))
+            result.append(plane)
+        return result
+    return fill(remote),fill(others)
 
 def source_health():
     # No network I/O and no secrets. Avoid blocking the HTTP cache reader
@@ -455,6 +479,9 @@ def snapshot(value='',network_fetch=_lookup_network,background=False):
         remote+=planetrack.cached(planetrack.fingerprint(pt_key))
         if any(reg not in {normal_reg(p.get('r','')) for p in remote+others+local if _active(p)} for reg in targets):
             planetrack.ensure_live(pt_key)
+    # Resolve Fly Overhead's ICAO-only records from fresh network metadata or
+    # a recent own-receiver registration. Never infer a tail from a callsign.
+    remote,others=_resolve_fly_identities(remote,others,local,local_history,targets)
     seen={}
     for plane in remote+others+local:
         if not _active(plane):continue
@@ -548,7 +575,7 @@ def snapshot(value='',network_fetch=_lookup_network,background=False):
         altitude=plane.get('alt_baro')
         airport=''
         status='N/A'
-        if altitude=='ground':
+        if altitude=='ground' or plane.get('_fly_on_ground') is True:
             airport=airport_for_ground(plane) or ''
             status='At '+airport if airport else 'Ground'
             if not airport:
@@ -564,7 +591,7 @@ def snapshot(value='',network_fetch=_lookup_network,background=False):
             speed=plane.get('gs')
             high=isinstance(altitude,(int,float)) and altitude>=2000
             moving=isinstance(speed,(int,float)) and speed>=80
-            if high or moving:
+            if high or moving or plane.get('_fly_on_ground') is False:
                 status=('Flying '+route if confidence!='usual' else 'Flying · likely '+route) if route else 'Flying'
         hexcode=str(plane.get('hex') or '').lower().strip()
         if not re.fullmatch(r'[a-f0-9]{6}',hexcode):hexcode=''
