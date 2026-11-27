@@ -25,6 +25,15 @@ class NewNetworkTests(unittest.TestCase):
         self.assertEqual(n.parse_fly({'now':now,'ac':[p]},now)[0]['seen_pos'],2)
         with self.assertRaises(ValueError):n.parse_fly({'aircraft':[p]},now)
 
+    def test_fly_diagnostic_exposes_shape_not_values(self):
+        payload={'aircraft':[{'icao24':'abcdef','lastSeen':'2026-11-27T20:44:00Z','latitude':50.8,'registration':'G-SECRET','apiKey':'sk_live_secret','other':'sensitive value'}],'token':'private','123456':'dynamic'}
+        with self.assertRaises(n.FlySchemaError) as caught:n.parse_fly(payload)
+        diagnostic=json.loads(caught.exception.diagnostic)
+        self.assertEqual(diagnostic['aircraft']['count'],1)
+        self.assertEqual(diagnostic['aircraft']['first']['lastSeen'],'ISO timestamp string')
+        for secret in ('abcdef','G-SECRET','sk_live_secret','sensitive value','private','123456'):
+            self.assertNotIn(secret,caught.exception.diagnostic)
+
     def test_current_route_requires_matching_fresh_airframe(self):
         now=1800000000
         p={'flight':{'hex':'abcdef','callsign':'BAW123','origin':{'icao':'EGLL'},'dest':{'iata':'JFK'}},
