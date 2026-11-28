@@ -2,7 +2,7 @@
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
-from contextlib import contextmanager
+from contextlib import contextmanager, closing
 import json, os, re, sqlite3, threading, time, uuid
 from urllib.request import Request, build_opener, ProxyHandler, HTTPRedirectHandler
 from urllib.error import HTTPError, URLError
@@ -30,7 +30,7 @@ def _open(req,timeout=10):
 @contextmanager
 def db():
     PATH.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
-    with sqlite3.connect(str(PATH),timeout=8) as c:
+    with closing(sqlite3.connect(str(PATH),timeout=8)) as c, c:
         c.row_factory=sqlite3.Row
         c.executescript("""
         CREATE TABLE IF NOT EXISTS trips(id TEXT PRIMARY KEY, spec TEXT NOT NULL, fields TEXT NOT NULL DEFAULT '{}', active INTEGER NOT NULL DEFAULT 1);
@@ -210,7 +210,9 @@ def parse_board(payload,s,direction,day,now=None):
             dt=datetime.fromisoformat(t)
             return dt.astimezone(ZoneInfo(d['tz'])).isoformat() if dt.tzinfo else ''
         except (ValueError,KeyError,TypeError):return ''
-    _clock(out,direction,local(r.get('planTime')),local(r.get('estTime')))
+    planned=local(r.get('planTime'))
+    if not planned or planned[:10]!=day:return {}
+    _clock(out,direction,planned,local(r.get('estTime')))
     _put(out,callsign=r.get('callsign'),aircraft_type=r.get('typecode'))
     stamp=new_networks._stamp(d.get('boardFetched'))
     if d.get('source')=='feed' and r.get('basis')=='board' and stamp is not None and -10<=now-stamp<=900:
@@ -267,7 +269,11 @@ def _claim(c,id,p,s,now):
     if _usage(c,p,now)>=limit:return False
     r=c.execute('SELECT next FROM state WHERE trip=? AND provider=?',(id,p)).fetchone()
     if r and r['next']>now:return False
-    delay=interval if _due_date(s,now)<=0 else max(interval,3600)
+    delta=_due_date(s,now)
+    delay=interval if delta==0 else max(interval,3600 if -1<=delta<=1 else 6*3600)
+    if p in ('flightbyte','aviationstack','aerodatabox'):
+        # Preserve scarce free requests for the actual travel window.
+        delay=max(delay,1800 if delta==0 else 6*3600)
     # Store the charge before network I/O. Restarting or switching keys never resets quotas.
     c.execute('INSERT INTO attempts VALUES(?,?)',(p,now))
     c.execute('INSERT OR REPLACE INTO state VALUES(?,?,?,?)',(id,p,now+delay,'Checking'))
@@ -302,7 +308,9 @@ def _work(id,s,p,key,fields,scope=None):
     finally:
         with _lock,db() as c:
             row=c.execute('SELECT * FROM trips WHERE id=?',(id,)).fetchone()
-            if row and row['active']:
+            # Do not publish in-flight requests from removed or replaced credentials.
+            key_valid=p in ('mapflights','weather') or _keys(c).get(p)==key
+            if row and row['active'] and key_valid:
                 spec=json.loads(row['spec']);current=json.loads(row['fields'])
                 changes=_merge(current,result,p,now)
                 c.execute('UPDATE trips SET fields=? WHERE id=?',(json.dumps(current),id))
@@ -335,12 +343,16 @@ def tick():
                 c.execute('UPDATE trips SET active=0 WHERE id=?',(id,));_sessions.pop(id,None);continue
             for p,key in {**keys,'mapflights':mapkey,'weather':''}.items():
                 if p not in PROVIDERS or p in _busy or not _eligible(s,p,now) or (p!='weather' and not key):continue
+                # Avoid spending scarce fallback calls if the airport board is current
+                # and the fields it can supply are already populated.
+                if p in ('flightbyte','aviationstack','aerodatabox') and all(_field(fields,k) and now-fields[k]['at']<900 for k in ('dep_gate','belt','status','registration','dep_scheduled','arr_scheduled')):continue
                 if p=='mapflights':
                     if new_networks.api_budget.remaining(new_networks.MAP)>0:continue
                     scope=next((x for x in ('dep','arr') if (x=='dep' or s.get('arrival_date') or _field(fields,'arrival_date')) and not c.execute('SELECT 1 FROM state WHERE trip=? AND provider=? AND next>?',(id,p+'-'+x,now)).fetchone()),None)
                     if not scope or _usage(c,p,now)>=PROVIDERS[p][1]:continue
                     c.execute('INSERT INTO attempts VALUES(?,?)',(p,now))
-                    c.execute('INSERT OR REPLACE INTO state VALUES(?,?,?,?)',(id,p+'-'+scope,now+180,'Checking'))
+                    delay=180 if _due_date(s,now)==0 else 1800
+                    c.execute('INSERT OR REPLACE INTO state VALUES(?,?,?,?)',(id,p+'-'+scope,now+delay,'Checking'))
                 else:
                     scope=None
                     if not _claim(c,id,p,s,now):continue
