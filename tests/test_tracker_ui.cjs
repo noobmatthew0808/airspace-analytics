@@ -1,0 +1,14 @@
+'use strict';
+const fs=require('node:fs'),assert=require('node:assert/strict');
+const app=fs.readFileSync('frontend/app.js','utf8');
+const src=fs.readFileSync('frontend/tracker-ui.js','utf8');
+assert.match(app,/data-page="tracker">Flight Tracker/);
+assert.doesNotMatch(app,/data-page="acars">/);
+assert.match(app,/mountTrackerSettings/);
+const {tripMarkup}=new Function(src.slice(0,src.indexOf('function renderData'))+';return {tripMarkup}')();
+const h=tripMarkup({id:'test',flight:'BA123',date:'2026-11-28',origin:'LGW',destination:'BTS',active:true,fields:{dep_gate:{value:'<img onerror=alert(1)>',source:'flightbyte',at:1795800000}},events:[],sources:[]});
+assert.match(h,/&lt;img/);assert.doesNotMatch(h,/<img onerror/);
+for(const value of ['Departure gate','Baggage belt','Flight timeline','Live ACARS','Data sources','Push alerts'])assert(h.includes(value));
+assert.match(src,/SUGGESTED FROM YOUR FLIGHTS LOG/);
+assert.match(src,/api\('\/action',\{\.\.\.d,action:'add'\}\)/);
+console.log('Tracker UI and escaping checks passed');
