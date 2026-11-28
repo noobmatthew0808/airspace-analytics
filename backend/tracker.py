@@ -293,12 +293,12 @@ def _board_request(s,key,fields,direction):
 
 def _work(id,s,p,key,fields,scope=None):
     now=int(time.time())
-    name=PROVIDERS[p][0]
+    result={};note='Provider unavailable'
     try:
         result=_board_request(s,key,fields,scope) if p=='mapflights' else _request(p,s,key,fields)
         note='Matched flight · '+str(len(result))+' fields' if result else 'No matching data'
     except (ValueError,OSError,TypeError,KeyError) as e:
-        result={};note=str(e)[:100].replace(key,'[redacted]') if key else str(e)[:100]
+        result={};note=(str(e).replace(key,'[redacted]') if key else str(e))[:100]
     finally:
         with _lock,db() as c:
             row=c.execute('SELECT * FROM trips WHERE id=?',(id,)).fetchone()
@@ -336,6 +336,7 @@ def tick():
             for p,key in {**keys,'mapflights':mapkey,'weather':''}.items():
                 if p not in PROVIDERS or p in _busy or not _eligible(s,p,now) or (p!='weather' and not key):continue
                 if p=='mapflights':
+                    if new_networks.api_budget.remaining(new_networks.MAP)>0:continue
                     scope=next((x for x in ('dep','arr') if (x=='dep' or s.get('arrival_date') or _field(fields,'arrival_date')) and not c.execute('SELECT 1 FROM state WHERE trip=? AND provider=? AND next>?',(id,p+'-'+x,now)).fetchone()),None)
                     if not scope or _usage(c,p,now)>=PROVIDERS[p][1]:continue
                     c.execute('INSERT INTO attempts VALUES(?,?)',(p,now))
@@ -389,6 +390,11 @@ def snapshot():
             s=json.loads(row['spec']);fields=json.loads(row['fields']);id=row['id']
             item={**s,'id':id,'active':bool(row['active']),'fields':fields,'sources':[dict(x) for x in c.execute('SELECT provider,note,next FROM state WHERE trip=?',(id,))],
                   'events':[dict(x) for x in c.execute('SELECT field,value,source,at,delivery FROM timeline WHERE trip=? ORDER BY id DESC LIMIT 25',(id,))]}
+            reg=_field(fields,'registration');call=_field(fields,'callsign')
+            if reg and call and re.fullmatch(r'[A-Z0-9-]{2,16}',reg) and -1<=_due_date(s,now)<=0 and flights_cache._started:
+                live=flights_cache.read(reg)['aircraft'].get(reg,{})
+                if _norm(live.get('callsign'))==_norm(call) and 0<=now-(live.get('last_observed_at') or 0)<=120:
+                    item['live']={k:live.get(k) for k in ('status','source','hex','last_observed_at')}
             session=_sessions.get(id)
             if session and item['active'] and s['acars']:
                 try:
