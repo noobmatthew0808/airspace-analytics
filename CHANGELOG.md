@@ -1,3 +1,9 @@
+# v1.10.48 — Personal Flight Tracker
+
+- Replace standalone ACARS navigation with a responsive Flight Tracker. Add dated journeys, opt-in suggestions from upcoming Flights log entries, per-trip notifications, assignment timeline, aircraft information, METARs and embedded existing ACARS sessions.
+- Add local-only FlightByte, Aviationstack, AirLabs and credit-only AeroDataBox key settings; reuse map.flights airport boards. Independent background workers, persisted request caps, strict flight/date/route matching, no paid subscription or public webhooks. All credentials stay local. Source diagnostics are shown per trip; actual new-provider access needs a live connection test.
+- No modifications to Flight log, Traffic, Aerodrome, receiver feeding or existing Alerts rules. ACARS provider settings and previous API paths remain available.
+
 # v1.10.47 — Fly Overhead connection and freshness separation
 
 - Verify authenticated structured responses independently of usable live aircraft. Keep an accepted key active when snapshots are old or identifiers unavailable. Discard stale/future aircraft; a snapshot and contact must both be within the existing 120-second Flights limit. No distance/altitude alerts enabled for this source.
