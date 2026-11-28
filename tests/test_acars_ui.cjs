@@ -5,7 +5,8 @@ const alerts=fs.readFileSync('frontend/alerts-ui.js','utf8');
 const acars=fs.readFileSync('frontend/acars-ui.js','utf8');
 assert.match(app,/mountSettingsProviders/);
 assert.match(app,/mountAcarsSettings/);
-assert.match(app,/#acars/);
+assert.match(app,/#tracker/); // ACARS UI replaced; original engine/settings still retained
+assert.match(app,/hash==='acars'\?'tracker'/);
 assert.match(acars,/\/api\/acars\/search/);
 assert.match(acars,/\/api\/acars\/track/);
 assert.match(acars,/opts\(\[1,3,6,12,24\]/);

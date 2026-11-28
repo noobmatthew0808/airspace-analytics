@@ -21,7 +21,7 @@ import sys
 import time
 import traceback
 
-from . import data, alerts, healthchecks, live_terminal, live_details, flights_log, flights_live, flights_cache, shared_settings, acars
+from . import data, alerts, healthchecks, live_terminal, live_details, flights_log, flights_live, flights_cache, shared_settings, acars, tracker
 
 BASE = Path(__file__).resolve().parents[1]
 STATIC = BASE / 'frontend'
@@ -133,7 +133,7 @@ class App(BaseHTTPRequestHandler):
         if path=='/api/live/terminal': return live_terminal.stream(self)
         if path=='/api/live/details': return self.send_json(live_details.details(q))
         if path=='/api/alerts': return self.send_json(alerts.snapshot())
-        if path.startswith('/api/acars/'):
+        if path.startswith(('/api/acars/','/api/tracker')):
             try:
                 remote=ipaddress.ip_address(self.client_address[0])
                 ranges=('127.0.0.0/8','10.0.0.0/8','172.16.0.0/12','192.168.0.0/16','100.64.0.0/10','::1/128','fc00::/7')
@@ -141,6 +141,8 @@ class App(BaseHTTPRequestHandler):
                     return self.send_json({'error':'ACARS is only available on your trusted network'},403)
             except ValueError:
                 return self.send_json({'error':'Invalid client address'},403)
+        if path=='/api/tracker': return self.send_json(tracker.snapshot())
+        if path=='/api/tracker/settings': return self.send_json(tracker.settings())
         if path=='/api/acars/settings': return self.send_json(acars.settings())
         if path=='/api/acars/session': return self.send_json(acars.read(q.get('id','')))
         if path=='/api/preferences': return self.send_json(shared_settings.read())
@@ -199,7 +201,7 @@ class App(BaseHTTPRequestHandler):
 
     def alerts_post(self, path):
         """Same-origin, trusted-LAN-only control plane for personal alert rules."""
-        if path not in ('/api/preferences','/api/alerts/rule','/api/alerts/delete','/api/alerts/ntfy','/api/alerts/test','/api/alerts/receiver','/api/alerts/receiver/check','/api/alerts/flyitaly','/api/alerts/flyitaly/check','/api/alerts/adsblol','/api/alerts/adsblol/check','/api/alerts/adsbfi/check','/api/alerts/avioadsb','/api/alerts/avioadsb/check','/api/alerts/adsbiq','/api/alerts/adsbiq/check','/api/alerts/opensky','/api/alerts/opensky/check','/api/alerts/planetrack','/api/alerts/planetrack/check','/api/alerts/mapflights','/api/alerts/mapflights/check','/api/alerts/flyoverhead','/api/alerts/flyoverhead/check','/api/alerts/airplaneslive/check','/api/alerts/adsbhub/check','/api/acars/search','/api/acars/track','/api/acars/key','/api/acars/check','/api/acars/stop'):
+        if path not in ('/api/preferences','/api/alerts/rule','/api/alerts/delete','/api/alerts/ntfy','/api/alerts/test','/api/alerts/receiver','/api/alerts/receiver/check','/api/alerts/flyitaly','/api/alerts/flyitaly/check','/api/alerts/adsblol','/api/alerts/adsblol/check','/api/alerts/adsbfi/check','/api/alerts/avioadsb','/api/alerts/avioadsb/check','/api/alerts/adsbiq','/api/alerts/adsbiq/check','/api/alerts/opensky','/api/alerts/opensky/check','/api/alerts/planetrack','/api/alerts/planetrack/check','/api/alerts/mapflights','/api/alerts/mapflights/check','/api/alerts/flyoverhead','/api/alerts/flyoverhead/check','/api/alerts/airplaneslive/check','/api/alerts/adsbhub/check','/api/acars/search','/api/acars/track','/api/acars/key','/api/acars/check','/api/acars/stop','/api/tracker/action','/api/tracker/key'):
             return self.send_json({'error':'Unknown endpoint'},404)
         origin=self.headers.get('Origin','')
         host=self.headers.get('Host','')
@@ -222,6 +224,8 @@ class App(BaseHTTPRequestHandler):
         if not isinstance(payload,dict):raise ValueError('Expected a JSON object')
         if path=='/api/preferences':
             return self.send_json(shared_settings.update(payload))
+        if path=='/api/tracker/action': return self.send_json(tracker.mutate(payload))
+        if path=='/api/tracker/key': return self.send_json(tracker.save_key(payload))
         if path=='/api/acars/search': return self.send_json(acars.search(payload))
         if path=='/api/acars/track': return self.send_json(acars.track(payload))
         if path=='/api/acars/key': return self.send_json(acars.save_key(payload.get('provider'),payload))
@@ -312,7 +316,7 @@ class App(BaseHTTPRequestHandler):
         path, _=self.get_query()
         if path.startswith('/api/flights/'):
             return self.flights_post(path)
-        if path=='/api/preferences' or path.startswith(('/api/alerts/','/api/acars/')):
+        if path=='/api/preferences' or path.startswith(('/api/alerts/','/api/acars/','/api/tracker/')):
             return self.alerts_post(path)
         if path not in ('/api/update/apply','/api/update/rollback'):
             return self.send_json({'error':'Unknown endpoint'},404)
@@ -390,6 +394,7 @@ def run():
     flights_log.start_cache()
     flights_cache.start()
     acars.start()
+    tracker.start()
     print(f'Airspace Analytics v{VERSION} on http://{host}:{port}; Aerodrome DB {data.db_path()}',flush=True)
     try: server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt: pass
